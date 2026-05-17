@@ -1,10 +1,3 @@
-:root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: dark;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 html,
 body,
 #root {
@@ -12,12 +5,20 @@ body,
   padding: 0;
   width: 100vw;
   min-height: 100vh;
-  background: #000;
+  background: #0b0b0c;
   overflow-x: hidden;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   display: block;
-  text-align: initial;
-  border: none;
+}
+
+button {
+  font: inherit;
 }

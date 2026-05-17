@@ -5,6 +5,17 @@ import './App.css'
 
 const ORIGINAL_PURPLE = '#9c36b5'
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const NOTE_DISPLAY = NOTE_NAMES.map((n) => n.replace('#', '♯'))
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12)
+}
+
+function padId(id) {
+  return String(id).padStart(2, '0')
+}
+
 function GlyphRow({ rowIndex, accent }) {
   const strokes = glyphs[rowIndex]
   if (!strokes) return <svg className="glyph" viewBox={`0 0 ${GLYPH_VIEWBOX.w} ${GLYPH_VIEWBOX.h}`} />
@@ -38,10 +49,12 @@ function GlyphRow({ rowIndex, accent }) {
   )
 }
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
-function midiToFreq(midi) {
-  return 440 * Math.pow(2, (midi - 69) / 12)
+function PlayIcon() {
+  return (
+    <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
+      <path d="M2 1 L11 7 L2 13 Z" fill="currentColor" />
+    </svg>
+  )
 }
 
 function App() {
@@ -81,14 +94,17 @@ function App() {
   return (
     <div className="app" style={{ '--accent': accent }}>
       <div className="frame">
-        <label className="theme-picker" title="accent color">
-          <input
-            type="color"
-            value={accent}
-            onChange={(e) => setAccent(e.target.value)}
-          />
-          <span className="theme-swatch" style={{ background: accent }} />
-        </label>
+        <div className="theme-picker" title="accent color">
+          <span className="theme-label">Accent</span>
+          <label className="theme-swatch-wrap">
+            <input
+              type="color"
+              value={accent}
+              onChange={(e) => setAccent(e.target.value)}
+            />
+            <span className="theme-swatch" style={{ background: accent }} />
+          </label>
+        </div>
 
         <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
           {visibleScales.map((s) => {
@@ -102,7 +118,7 @@ function App() {
                 onMouseEnter={(e) => {
                   const r = e.currentTarget.getBoundingClientRect()
                   setHoverRow(s.id - 1)
-                  setHoverPos({ x: r.right + 12, y: r.top + r.height / 2 })
+                  setHoverPos({ x: r.right + 16, y: r.top + r.height / 2 })
                 }}
                 onMouseLeave={() => setHoverRow(null)}
               >
@@ -125,75 +141,80 @@ function App() {
           })}
         </div>
 
-      <aside className="panel">
-        <div className="roots">
-          {NOTE_NAMES.map((name, i) => (
-            <button
-              key={i}
-              className={`root ${root === i ? 'active' : ''}`}
-              onClick={() => setRoot(i)}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-
-        {scale && (
-          <div className="pattern">
-            {Array.from({ length: 12 }, (_, pc) => {
-              const inScale = scale.notes.some((n) => (n + root) % 12 === pc)
-              return (
-                <div
-                  key={pc}
-                  className={`pattern-cell ${inScale ? 'on' : 'off'}`}
-                />
-              )
-            })}
+        <aside className="panel">
+          <div className="section">
+            <div className="roots">
+              {NOTE_DISPLAY.map((name, i) => (
+                <button
+                  key={i}
+                  className={`root ${root === i ? 'active' : ''}`}
+                  onClick={() => setRoot(i)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
 
-        {scale ? (
-          <>
-            <div className="info">
-              <div className="info-row">
-                <span className="label">scale</span>
-                <span className="value">#{scale.id}</span>
+          {scale && (
+            <div className="section">
+              <div className="pattern">
+                {Array.from({ length: 12 }, (_, pc) => {
+                  const inScale = scale.notes.some((n) => (n + root) % 12 === pc)
+                  return (
+                    <div
+                      key={pc}
+                      className={`pattern-cell ${inScale ? 'on' : 'off'}`}
+                    />
+                  )
+                })}
               </div>
-              <div className="info-row">
-                <span className="label">root</span>
-                <span className="value">{NOTE_NAMES[root]}</span>
+              <div className="pattern-labels">
+                {Array.from({ length: 12 }, (_, pc) => (
+                  <div key={pc} className="pattern-label">
+                    {pc}
+                  </div>
+                ))}
               </div>
-              <div className="info-row">
-                <span className="label">notes</span>
-                <div className="notes">
-                  {concrete.length === 0 ? (
-                    <span className="muted">— not yet drawn</span>
-                  ) : (
-                    concrete.map((pc, i) => (
-                      <span key={i} className="note">
-                        {NOTE_NAMES[pc]}
-                      </span>
-                    ))
-                  )}
+            </div>
+          )}
+
+          {scale ? (
+            <>
+              <div className="section">
+                <div className="hero">
+                  <div className="hero-number">{padId(scale.id)}</div>
+                  <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
+                  <div className="hero-line">
+                    <button
+                      className="play"
+                      onClick={playScale}
+                      disabled={concrete.length === 0}
+                      aria-label="play scale"
+                    >
+                      <PlayIcon />
+                    </button>
+                    <div className="hero-notes">
+                      {concrete.map((pc, i) => (
+                        <span key={i} className="note">
+                          {NOTE_DISPLAY[pc]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button
-                className="play"
-                onClick={playScale}
-                disabled={concrete.length === 0}
-              >
-                ▶ play
-              </button>
-            </div>
 
-            <div className="chords">
-              <div className="label">chords</div>
+              <div className="section">
+                <div className="label">Chords</div>
+              </div>
+            </>
+          ) : (
+            <div className="section">
+              <div className="hint">Choose a scale.</div>
             </div>
-          </>
-        ) : (
-          <div className="hint">click a row in the grid to select a scale</div>
-        )}
-      </aside>
+          )}
+        </aside>
       </div>
 
       {hoverRow !== null && (
@@ -202,6 +223,7 @@ function App() {
           style={{ left: hoverPos.x, top: hoverPos.y }}
         >
           <GlyphRow rowIndex={hoverRow} accent={accent} />
+          <div className="glyph-popup-caption">Scale {padId(hoverRow + 1)}</div>
         </div>
       )}
     </div>
