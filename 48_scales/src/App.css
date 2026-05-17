@@ -506,3 +506,321 @@
   color: var(--mute);
   text-align: right;
 }
+
+/* ---------- Hero actions ---------- */
+
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.open-roll {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--hairline);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.open-roll:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.open-roll:disabled {
+  color: var(--mute);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ---------- Piano roll view ---------- */
+
+.roll-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.roll-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 20px;
+  color: var(--mute);
+  padding: 6px 14px 6px 10px;
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.back-btn:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+
+.roll-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.roll-number {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+
+.roll-divider {
+  color: var(--mute);
+  font-size: 18px;
+}
+
+.roll-name {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.roll-play {
+  flex-shrink: 0;
+}
+
+.roll-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 32px;
+  min-height: 0;
+}
+
+/* Variation panel */
+
+.variation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 16px;
+  border-right: 1px solid var(--hairline);
+}
+
+.variation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.variation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+}
+
+.variation-label {
+  letter-spacing: 0.02em;
+}
+
+.variation-control {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+}
+
+/* Stage — vertical keyboard + scrollable roll */
+
+.roll-stage {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--frame);
+  overflow: hidden;
+  display: flex;
+}
+
+.roll-scroll {
+  flex: 1;
+  height: 100%;
+  overflow: auto;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+
+.roll-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.roll-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.roll-scroll::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 4px;
+}
+
+.pitch-row {
+  display: flex;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.pitch-row.octave {
+  border-top: 1px solid color-mix(in srgb, var(--mute) 30%, transparent);
+}
+
+.kbd-key {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 74px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid color-mix(in srgb, var(--off) 60%, transparent);
+  user-select: none;
+}
+
+.pitch-row.white .kbd-key {
+  background: color-mix(in srgb, var(--fg) 22%, var(--off) 78%);
+  color: var(--mute);
+}
+
+.pitch-row.black .kbd-key {
+  background: color-mix(in srgb, var(--off) 92%, #000 8%);
+  color: var(--mute);
+  font-size: 9px;
+}
+
+.pitch-row.in .kbd-key {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 18%, var(--fg) 82%) 0%,
+    color-mix(in srgb, var(--accent) 32%, var(--fg) 68%) 100%
+  );
+  color: color-mix(in srgb, var(--off) 80%, var(--accent) 20%);
+}
+
+.pitch-row.in.black .kbd-key {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 28%, var(--off) 72%) 0%,
+    color-mix(in srgb, var(--accent) 52%, var(--off) 48%) 100%
+  );
+  color: var(--fg);
+}
+
+.pitch-row.is-root .kbd-key {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 75%, var(--fg) 25%) 0%,
+    var(--accent) 100%
+  );
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.pitch-row .key-label {
+  white-space: nowrap;
+}
+
+.beats-row {
+  display: flex;
+  min-width: max-content;
+  flex-shrink: 0;
+}
+
+.beat-cell {
+  width: 26px;
+  height: 100%;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-right: 1px solid color-mix(in srgb, var(--hairline) 55%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--hairline) 55%, transparent);
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s var(--ease);
+}
+
+.beat-cell.measure {
+  border-left: 1px solid var(--hairline);
+}
+
+.pitch-row.black .beat-cell {
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+}
+
+.pitch-row.in .beat-cell {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.pitch-row.in.black .beat-cell {
+  background: color-mix(in srgb, var(--accent) 8%, var(--off) 22%);
+}
+
+.pitch-row.is-root .beat-cell {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.beat-cell:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.beat-cell.has-note:hover .roll-note {
+  filter: brightness(1.1);
+}
+
+.roll-note {
+  position: absolute;
+  inset: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 65%, var(--fg) 35%) 0%,
+    var(--accent) 100%
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 45%, var(--fg) 55%);
+  pointer-events: none;
+}
+

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { scales, PITCH_CLASSES } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
+import PianoRoll from './PianoRoll'
 import './App.css'
 
 const ORIGINAL_PURPLE = '#9c36b5'
@@ -78,6 +79,7 @@ function App() {
   const [hoverRow, setHoverRow] = useState(null)
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
   const [accent, setAccent] = useState(ORIGINAL_PURPLE)
+  const [view, setView] = useState('matrix')
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
@@ -121,6 +123,16 @@ function App() {
           </label>
         </div>
 
+        {view === 'roll' && scale ? (
+          <PianoRoll
+            scale={scale}
+            root={root}
+            accent={accent}
+            onBack={() => setView('matrix')}
+            onPlay={playScale}
+          />
+        ) : (
+        <>
         <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
           {visibleScales.map((s, idx) => {
             const set = new Set(s.notes)
@@ -240,14 +252,23 @@ function App() {
                 <div className="hero">
                   <div className="hero-number">{padId(scale.id)}</div>
                   <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
-                  <button
-                    className="play"
-                    onClick={playScale}
-                    disabled={concrete.length === 0}
-                    aria-label="play scale"
-                  >
-                    <PlayIcon />
-                  </button>
+                  <div className="hero-actions">
+                    <button
+                      className="open-roll"
+                      onClick={() => setView('roll')}
+                      disabled={concrete.length === 0}
+                    >
+                      open roll
+                    </button>
+                    <button
+                      className="play"
+                      onClick={playScale}
+                      disabled={concrete.length === 0}
+                      aria-label="play scale"
+                    >
+                      <PlayIcon />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -261,9 +282,11 @@ function App() {
             </div>
           )}
         </aside>
+        </>
+        )}
       </div>
 
-      {hoverRow !== null && (
+      {hoverRow !== null && view === 'matrix' && (
         <div
           className="glyph-popup"
           style={{ left: hoverPos.x, top: hoverPos.y }}
