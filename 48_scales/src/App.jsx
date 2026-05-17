@@ -16,20 +16,31 @@ function padId(id) {
   return String(id).padStart(2, '0')
 }
 
+// Each glyph in the original SVG is actually two sub-symbols separated by ~25
+// viewBox units of empty space. We close that gap at render time: anything past
+// SPLIT_X gets pulled leftward by SHIFT, and the viewBox is trimmed by the same.
+const GLYPH_SPLIT_X = 30
+const GLYPH_SHIFT = -22
+
 function GlyphRow({ rowIndex, accent }) {
   const strokes = glyphs[rowIndex]
-  if (!strokes) return <svg className="glyph" viewBox={`0 0 ${GLYPH_VIEWBOX.w} ${GLYPH_VIEWBOX.h}`} />
+  const w = GLYPH_VIEWBOX.w + GLYPH_SHIFT
+  if (!strokes) return <svg className="glyph" viewBox={`0 0 ${w} ${GLYPH_VIEWBOX.h}`} />
   return (
     <svg
       className="glyph"
-      viewBox={`0 0 ${GLYPH_VIEWBOX.w} ${GLYPH_VIEWBOX.h}`}
+      viewBox={`0 0 ${w} ${GLYPH_VIEWBOX.h}`}
       preserveAspectRatio="xMidYMid meet"
     >
       {strokes.map((s, i) => {
         const isAccent = s.color === ORIGINAL_PURPLE
         const color = isAccent ? accent : s.color
+        const dx = s.x >= GLYPH_SPLIT_X ? GLYPH_SHIFT : 0
         return (
-          <g key={i} transform={`translate(${s.x} ${s.y}) rotate(0 ${s.rx} ${s.ry})`}>
+          <g
+            key={i}
+            transform={`translate(${s.x + dx} ${s.y}) rotate(0 ${s.rx} ${s.ry})`}
+          >
             {s.kind === 'fill' ? (
               <path d={s.d} fill={color} stroke="none" />
             ) : (
@@ -55,6 +66,10 @@ function PlayIcon() {
       <path d="M2 1 L11 7 L2 13 Z" fill="currentColor" />
     </svg>
   )
+}
+
+function cellPulseDelay(scaleId, pitchClass) {
+  return ((scaleId * 0.07 + pitchClass * 0.12) % 4).toFixed(2)
 }
 
 function App() {
@@ -107,9 +122,10 @@ function App() {
         </div>
 
         <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
-          {visibleScales.map((s) => {
+          {visibleScales.map((s, idx) => {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
+            const onLeft = idx % 2 === 0
             return (
               <div
                 key={s.id}
@@ -122,19 +138,45 @@ function App() {
                 }}
                 onMouseLeave={() => setHoverRow(null)}
               >
-                <div className="glyph-cell">
-                  <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                <div className="glyph-zone left">
+                  {onLeft && (
+                    <>
+                      <div className="glyph-slot">
+                        <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                      </div>
+                      <div className="connector" />
+                    </>
+                  )}
                 </div>
+                <div className="row-number">{padId(s.id)}</div>
                 <div
                   className="row-cells"
                   style={{ gridTemplateColumns: `repeat(${PITCH_CLASSES}, var(--cell))` }}
                 >
-                  {Array.from({ length: PITCH_CLASSES }, (_, pc) => (
-                    <div
-                      key={pc}
-                      className={`cell ${set.has(pc) ? 'on' : 'off'}`}
-                    />
-                  ))}
+                  {Array.from({ length: PITCH_CLASSES }, (_, pc) => {
+                    const isOn = set.has(pc)
+                    return (
+                      <div
+                        key={pc}
+                        className={`cell ${isOn ? 'on' : 'off'}`}
+                        style={
+                          isOn
+                            ? { animationDelay: `${cellPulseDelay(s.id, pc)}s` }
+                            : undefined
+                        }
+                      />
+                    )
+                  })}
+                </div>
+                <div className="glyph-zone right">
+                  {!onLeft && (
+                    <>
+                      <div className="connector" />
+                      <div className="glyph-slot">
+                        <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )
@@ -144,37 +186,50 @@ function App() {
         <aside className="panel">
           <div className="section">
             <div className="roots">
-              {NOTE_DISPLAY.map((name, i) => (
-                <button
-                  key={i}
-                  className={`root ${root === i ? 'active' : ''}`}
-                  onClick={() => setRoot(i)}
-                >
-                  {name}
-                </button>
-              ))}
+              {Array.from({ length: 12 }, (_, c) => {
+                const pc = (root + c) % 12
+                const isActive = c === 0
+                const inScale = !scale || scale.notes.includes(c)
+                const dim = !isActive && !inScale
+                return (
+                  <button
+                    key={c}
+                    className={`root ${isActive ? 'active' : ''} ${dim ? 'dim' : ''}`}
+                    onClick={() => setRoot(pc)}
+                  >
+                    {NOTE_DISPLAY[pc]}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
           {scale && (
             <div className="section">
               <div className="pattern">
-                {Array.from({ length: 12 }, (_, pc) => {
-                  const inScale = scale.notes.some((n) => (n + root) % 12 === pc)
+                {Array.from({ length: 12 }, (_, c) => {
+                  const inScale = scale.notes.includes(c)
                   return (
                     <div
-                      key={pc}
+                      key={c}
                       className={`pattern-cell ${inScale ? 'on' : 'off'}`}
                     />
                   )
                 })}
               </div>
-              <div className="pattern-labels">
-                {Array.from({ length: 12 }, (_, pc) => (
-                  <div key={pc} className="pattern-label">
-                    {pc}
-                  </div>
-                ))}
+              <div className="notes-row">
+                {Array.from({ length: 12 }, (_, c) => {
+                  const inScale = scale.notes.includes(c)
+                  const pc = (root + c) % 12
+                  return (
+                    <div
+                      key={c}
+                      className={`note-slot ${inScale ? 'in' : 'out'}`}
+                    >
+                      {inScale ? NOTE_DISPLAY[pc] : ''}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -185,23 +240,14 @@ function App() {
                 <div className="hero">
                   <div className="hero-number">{padId(scale.id)}</div>
                   <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
-                  <div className="hero-line">
-                    <button
-                      className="play"
-                      onClick={playScale}
-                      disabled={concrete.length === 0}
-                      aria-label="play scale"
-                    >
-                      <PlayIcon />
-                    </button>
-                    <div className="hero-notes">
-                      {concrete.map((pc, i) => (
-                        <span key={i} className="note">
-                          {NOTE_DISPLAY[pc]}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <button
+                    className="play"
+                    onClick={playScale}
+                    disabled={concrete.length === 0}
+                    aria-label="play scale"
+                  >
+                    <PlayIcon />
+                  </button>
                 </div>
               </div>
 
