@@ -3,7 +3,9 @@ import { scales, PITCH_CLASSES } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import './App.css'
 
-function GlyphRow({ rowIndex, scale = 1 }) {
+const ORIGINAL_PURPLE = '#9c36b5'
+
+function GlyphRow({ rowIndex, accent }) {
   const strokes = glyphs[rowIndex]
   if (!strokes) return <svg className="glyph" viewBox={`0 0 ${GLYPH_VIEWBOX.w} ${GLYPH_VIEWBOX.h}`} />
   return (
@@ -13,16 +15,17 @@ function GlyphRow({ rowIndex, scale = 1 }) {
       preserveAspectRatio="xMidYMid meet"
     >
       {strokes.map((s, i) => {
-        const isPurple = s.color === '#9c36b5'
+        const isAccent = s.color === ORIGINAL_PURPLE
+        const color = isAccent ? accent : s.color
         return (
           <g key={i} transform={`translate(${s.x} ${s.y}) rotate(0 ${s.rx} ${s.ry})`}>
             {s.kind === 'fill' ? (
-              <path d={s.d} fill={s.color} stroke="none" />
+              <path d={s.d} fill={color} stroke="none" />
             ) : (
               <path
                 d={s.d}
-                stroke={s.color}
-                strokeWidth={(isPurple ? 1.3 : 1) / scale}
+                stroke={color}
+                strokeWidth={isAccent ? 1.3 : 1}
                 fill="none"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -46,6 +49,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null)
   const [hoverRow, setHoverRow] = useState(null)
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
+  const [accent, setAccent] = useState(ORIGINAL_PURPLE)
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
@@ -75,41 +79,51 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
-        {visibleScales.map((s) => {
-          const set = new Set(s.notes)
-          const isSel = s.id === selectedId
-          return (
-            <div
-              key={s.id}
-              className={`row ${isSel ? 'selected' : ''}`}
-              onClick={() => setSelectedId(s.id)}
-              onMouseEnter={(e) => {
-                const r = e.currentTarget.getBoundingClientRect()
-                setHoverRow(s.id - 1)
-                setHoverPos({ x: r.right + 12, y: r.top + r.height / 2 })
-              }}
-              onMouseLeave={() => setHoverRow(null)}
-            >
-              <div className="glyph-cell">
-                <GlyphRow rowIndex={s.id - 1} />
-              </div>
+    <div className="app" style={{ '--accent': accent }}>
+      <div className="frame">
+        <label className="theme-picker" title="accent color">
+          <input
+            type="color"
+            value={accent}
+            onChange={(e) => setAccent(e.target.value)}
+          />
+          <span className="theme-swatch" style={{ background: accent }} />
+        </label>
+
+        <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
+          {visibleScales.map((s) => {
+            const set = new Set(s.notes)
+            const isSel = s.id === selectedId
+            return (
               <div
-                className="row-cells"
-                style={{ gridTemplateColumns: `repeat(${PITCH_CLASSES}, var(--cell))` }}
+                key={s.id}
+                className={`row ${isSel ? 'selected' : ''}`}
+                onClick={() => setSelectedId(s.id)}
+                onMouseEnter={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setHoverRow(s.id - 1)
+                  setHoverPos({ x: r.right + 12, y: r.top + r.height / 2 })
+                }}
+                onMouseLeave={() => setHoverRow(null)}
               >
-                {Array.from({ length: PITCH_CLASSES }, (_, pc) => (
-                  <div
-                    key={pc}
-                    className={`cell ${set.has(pc) ? 'on' : 'off'}`}
-                  />
-                ))}
+                <div className="glyph-cell">
+                  <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                </div>
+                <div
+                  className="row-cells"
+                  style={{ gridTemplateColumns: `repeat(${PITCH_CLASSES}, var(--cell))` }}
+                >
+                  {Array.from({ length: PITCH_CLASSES }, (_, pc) => (
+                    <div
+                      key={pc}
+                      className={`cell ${set.has(pc) ? 'on' : 'off'}`}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
 
       <aside className="panel">
         <div className="roots">
@@ -180,13 +194,14 @@ function App() {
           <div className="hint">click a row in the grid to select a scale</div>
         )}
       </aside>
+      </div>
 
       {hoverRow !== null && (
         <div
           className="glyph-popup"
           style={{ left: hoverPos.x, top: hoverPos.y }}
         >
-          <GlyphRow rowIndex={hoverRow} />
+          <GlyphRow rowIndex={hoverRow} accent={accent} />
         </div>
       )}
     </div>
