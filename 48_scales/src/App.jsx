@@ -37,10 +37,11 @@ function GlyphRow({ rowIndex, accent }) {
         const isAccent = s.color === ORIGINAL_PURPLE
         const color = isAccent ? accent : s.color
         const dx = s.x >= GLYPH_SPLIT_X ? GLYPH_SHIFT : 0
+        const rot = s.rot ?? 0
         return (
           <g
             key={i}
-            transform={`translate(${s.x + dx} ${s.y}) rotate(0 ${s.rx} ${s.ry})`}
+            transform={`translate(${s.x + dx} ${s.y}) rotate(${rot} ${s.rx} ${s.ry})`}
           >
             {s.kind === 'fill' ? (
               <path d={s.d} fill={color} stroke="none" />
