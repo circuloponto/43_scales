@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { scales, PITCH_CLASSES } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
+import { templates as defaultTemplates } from './templates'
 import PianoRoll from './PianoRoll'
 import './App.css'
 
@@ -81,6 +82,7 @@ function App() {
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
   const [accent, setAccent] = useState(ORIGINAL_PURPLE)
   const [view, setView] = useState('matrix')
+  const [templates, setTemplates] = useState(defaultTemplates)
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
@@ -131,6 +133,8 @@ function App() {
             accent={accent}
             onBack={() => setView('matrix')}
             onPlay={playScale}
+            templates={templates}
+            setTemplates={setTemplates}
           />
         ) : (
         <>

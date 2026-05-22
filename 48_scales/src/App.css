@@ -709,6 +709,57 @@
   color: var(--fg);
 }
 
+/* Scale summary strip — quick reference for which pitch classes the
+   current scale contains, mirroring the matrix's row. */
+.roll-scale-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 14px;
+  flex-shrink: 0;
+}
+
+.roll-scale-tag {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mute);
+  user-select: none;
+}
+
+.roll-scale-pattern {
+  display: grid;
+  grid-template-columns: repeat(12, 30px);
+  gap: 4px;
+}
+
+.roll-scale-cell {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  user-select: none;
+}
+
+.roll-scale-cell.on {
+  background: linear-gradient(
+    135deg,
+    var(--fg) 0%,
+    color-mix(in srgb, var(--fg) 65%, var(--accent) 35%) 100%
+  );
+  color: var(--off);
+}
+
+.roll-scale-cell.off {
+  background: var(--off);
+  color: var(--mute);
+}
+
 .roll-body {
   flex: 1;
   display: grid;
@@ -747,6 +798,183 @@
   font-size: 13px;
   color: var(--fg);
   background: color-mix(in srgb, var(--off) 50%, transparent);
+}
+
+.templates-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.templates-export {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  min-width: 64px;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+
+.templates-export:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+
+/* Templates list */
+.templates-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.template-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.template-row:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.template-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.template-delete {
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.template-delete:hover {
+  color: var(--fg);
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background: var(--frame);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 22px 22px 18px;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.modal h3 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+}
+
+.modal-sub {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--mute);
+  line-height: 1.5;
+}
+
+.modal input {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--fg);
+  outline: none;
+  margin-top: 4px;
+}
+
+.modal input:focus {
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.modal-actions button {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.modal-actions button:hover {
+  border-color: var(--mute);
+}
+
+.modal-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.modal-actions button.primary:hover {
+  filter: brightness(1.1);
 }
 
 .variation-label {
@@ -986,6 +1214,10 @@
   cursor: crosshair;
 }
 
+.grid-row:not(.in) .beats-track {
+  cursor: not-allowed;
+}
+
 .row-note {
   position: absolute;
   top: 1px;
@@ -1008,6 +1240,59 @@
 
 .row-note:active {
   cursor: grabbing;
+}
+
+.row-note.selected {
+  box-shadow: 0 0 0 1.5px var(--fg), 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent);
+  z-index: 3;
+}
+
+.row-note-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.row-note-handle:hover {
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.marquee {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 2px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Loop region on the timeline */
+.timeline-loop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-left: 1.5px solid var(--accent);
+  border-right: 1.5px solid var(--accent);
+  pointer-events: none;
+  z-index: 2;
+  cursor: move;
+}
+
+/* Loop region overlay on the grid */
+.grid-loop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .beat-cell:hover {

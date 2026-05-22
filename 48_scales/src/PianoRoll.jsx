@@ -205,8 +205,11 @@ function BackIcon() {
   )
 }
 
+// notes is a Map<string, number>:
+//   key   = `${beat}-${midi}`  (unique position)
+//   value = length in cells (default 1)
 function buildInitialPattern(scale, root) {
-  const notes = new Set()
+  const notes = new Map()
   if (!scale || scale.notes.length === 0) return notes
   const sorted = [...scale.notes].sort((a, b) => a - b)
   const baseRoot = 60 + root // C4 + root
@@ -215,7 +218,7 @@ function buildInitialPattern(scale, root) {
     const idx = b < n ? b : 2 * n - 2 - b
     if (idx < 0 || idx >= n) continue
     const midi = baseRoot + sorted[idx]
-    notes.add(`${b}-${midi}`)
+    notes.set(`${b}-${midi}`, 1)
   }
   return notes
 }
@@ -244,7 +247,13 @@ function VariationPanel() {
   )
 }
 
-export default function PianoRoll({ scale, root, onBack }) {
+export default function PianoRoll({
+  scale,
+  root,
+  onBack,
+  templates = [],
+  setTemplates,
+}) {
   const [notes, setNotes] = useState(() => buildInitialPattern(scale, root))
   const [totalBeats, setTotalBeats] = useState(DEFAULT_BEATS)
   const [bpm, setBpm] = useState(DEFAULT_BPM)
@@ -252,14 +261,31 @@ export default function PianoRoll({ scale, root, onBack }) {
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
   const [metronome, setMetronome] = useState(false)
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set())
+  const [marquee, setMarquee] = useState(null)
+  const [loop, setLoop] = useState(null)
+  const [captureOpen, setCaptureOpen] = useState(false)
+  const [captureName, setCaptureName] = useState('')
+  const [exportFeedback, setExportFeedback] = useState('')
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
   const scrollRef = useRef(null)
   const dragRef = useRef(null)
+  const marqueeRef = useRef(null)
+  const historyRef = useRef([])
+  const futureRef = useRef([])
+  const clipboardRef = useRef(null)
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+  const loopRef = useRef(loop)
+  loopRef.current = loop
 
   useEffect(() => {
     setNotes(buildInitialPattern(scale, root))
+    historyRef.current = []
+    futureRef.current = []
+    setSelectedKeys(new Set())
   }, [scale?.id, root])
 
   useEffect(() => {
@@ -273,12 +299,38 @@ export default function PianoRoll({ scale, root, onBack }) {
     const handler = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
-      if (e.code === 'Space') {
+      const meta = e.ctrlKey || e.metaKey
+      if (meta && e.code === 'KeyZ') {
+        e.preventDefault()
+        undo()
+      } else if (meta && e.code === 'KeyX') {
+        e.preventDefault()
+        redo()
+      } else if (meta && e.code === 'KeyC') {
+        e.preventDefault()
+        copyNotes()
+      } else if (meta && e.code === 'KeyV') {
+        e.preventDefault()
+        pasteNotes()
+      } else if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
       } else if (e.code === 'Enter') {
         e.preventDefault()
         playFromStart()
+      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+        if (selectedKeys.size > 0) {
+          e.preventDefault()
+          pushHistory()
+          setNotes((prev) => {
+            const next = new Map(prev)
+            for (const k of selectedKeys) next.delete(k)
+            return next
+          })
+          setSelectedKeys(new Set())
+        }
+      } else if (e.code === 'Escape') {
+        if (selectedKeys.size > 0) setSelectedKeys(new Set())
       }
     }
     window.addEventListener('keydown', handler)
@@ -339,10 +391,176 @@ export default function PianoRoll({ scale, root, onBack }) {
   const inScale = (pc) =>
     scale.notes.some((n) => (n + root) % 12 === pc)
 
+  // Snap a MIDI value to the nearest pitch that belongs to the current scale.
+  const nearestScaleMidi = (midi) => {
+    const clamped = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, midi))
+    if (inScale(clamped % 12)) return clamped
+    for (let d = 1; d < 12; d++) {
+      if (clamped + d <= MIDI_HIGH && inScale((clamped + d) % 12))
+        return clamped + d
+      if (clamped - d >= MIDI_LOW && inScale(((clamped - d) % 12 + 12) % 12))
+        return clamped - d
+    }
+    return clamped
+  }
+
+  const pushHistory = (snapshot) => {
+    historyRef.current.push(snapshot ?? new Map(notesRef.current))
+    if (historyRef.current.length > 200) historyRef.current.shift()
+    futureRef.current = []
+  }
+
+  const undo = () => {
+    if (historyRef.current.length === 0) return
+    const prev = historyRef.current.pop()
+    futureRef.current.push(new Map(notesRef.current))
+    if (futureRef.current.length > 200) futureRef.current.shift()
+    setNotes(prev)
+    setSelectedKeys(new Set())
+  }
+
+  const redo = () => {
+    if (futureRef.current.length === 0) return
+    const next = futureRef.current.pop()
+    historyRef.current.push(new Map(notesRef.current))
+    if (historyRef.current.length > 200) historyRef.current.shift()
+    setNotes(next)
+    setSelectedKeys(new Set())
+  }
+
+  const copyNotes = () => {
+    if (selectedKeys.size === 0) return
+    let minBeat = Infinity
+    const items = []
+    for (const key of selectedKeys) {
+      const [beatStr, midiStr] = key.split('-')
+      const b = Number(beatStr)
+      const length = notes.get(key) ?? 1
+      items.push({ beat: b, midi: Number(midiStr), length })
+      if (b < minBeat) minBeat = b
+    }
+    clipboardRef.current = items.map((it) => ({
+      relBeat: it.beat - minBeat,
+      midi: it.midi,
+      length: it.length,
+    }))
+  }
+
+  // Convert each note in the roll to a { beat, degree, octave } record,
+  // where degree is the position within the parent scale (0..7) and octave
+  // is the offset in octaves from the root + C4 base. Notes outside the
+  // current scale are skipped — the template only tracks scale degrees so it
+  // can be reapplied to any other scale's note set.
+  const captureCurrentTemplate = () => {
+    if (!scale) return []
+    const baseRoot = 60 + root
+    const items = []
+    for (const [key, length] of notesRef.current) {
+      const [beatStr, midiStr] = key.split('-')
+      const beat = Number(beatStr)
+      const midi = Number(midiStr)
+      const pcRelative = ((midi - root) % 12 + 12) % 12
+      const degree = scale.notes.indexOf(pcRelative)
+      if (degree === -1) continue
+      const octave = Math.round((midi - baseRoot - scale.notes[degree]) / 12)
+      items.push({ beat, degree, octave, length })
+    }
+    return items
+  }
+
+  const saveCurrentAsTemplate = () => {
+    if (!setTemplates) return
+    const items = captureCurrentTemplate()
+    if (items.length === 0) {
+      setCaptureOpen(false)
+      return
+    }
+    const tpl = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: captureName.trim() || `Template ${templates.length + 1}`,
+      capturedFrom: { scaleId: scale.id, root },
+      notes: items,
+    }
+    setTemplates([...templates, tpl])
+    setCaptureOpen(false)
+    setCaptureName('')
+  }
+
+  // Resolve a template's scale degrees back to absolute MIDI using the
+  // current scale + root. Notes whose degree exceeds the current scale
+  // length, or whose computed MIDI lands outside the visible range, are
+  // skipped silently.
+  const applyTemplate = (tpl) => {
+    if (!scale || !tpl) return
+    const baseRoot = 60 + root
+    const next = new Map()
+    for (const item of tpl.notes) {
+      if (item.degree < 0 || item.degree >= scale.notes.length) continue
+      const midi = baseRoot + scale.notes[item.degree] + item.octave * 12
+      if (midi < MIDI_LOW || midi > MIDI_HIGH) continue
+      next.set(`${item.beat}-${midi}`, item.length ?? 1)
+    }
+    pushHistory()
+    setNotes(next)
+    setSelectedKeys(new Set())
+  }
+
+  const deleteTemplate = (id) => {
+    if (!setTemplates) return
+    setTemplates(templates.filter((t) => t.id !== id))
+  }
+
+  // Serialize the current templates as a JS module so it can be pasted back
+  // into src/templates.js to ship them as defaults.
+  const exportTemplates = async () => {
+    if (templates.length === 0) return
+    const code = `export const templates = ${JSON.stringify(templates, null, 2)}\n`
+    try {
+      await navigator.clipboard.writeText(code)
+      setExportFeedback('Copied')
+    } catch (e) {
+      // Fallback for non-secure contexts
+      const ta = document.createElement('textarea')
+      ta.value = code
+      document.body.appendChild(ta)
+      ta.select()
+      try {
+        document.execCommand('copy')
+        setExportFeedback('Copied')
+      } catch (_) {
+        setExportFeedback('Failed')
+      } finally {
+        document.body.removeChild(ta)
+      }
+    }
+    setTimeout(() => setExportFeedback(''), 1600)
+  }
+
+  const pasteNotes = () => {
+    const clip = clipboardRef.current
+    if (!clip || clip.length === 0) return
+    const target = playheadBeat ?? 0
+    pushHistory()
+    const newSelection = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const item of clip) {
+        let beat = target + item.relBeat
+        if (!freeMode) beat = Math.round(beat)
+        if (beat < 0 || beat >= totalBeats) continue
+        const key = `${beat}-${item.midi}`
+        next.set(key, item.length ?? 1)
+        newSelection.add(key)
+      }
+      return next
+    })
+    setSelectedKeys(newSelection)
+  }
+
   const removeNote = (key) => {
     setNotes((prev) => {
       if (!prev.has(key)) return prev
-      const next = new Set(prev)
+      const next = new Map(prev)
       next.delete(key)
       return next
     })
@@ -351,26 +569,88 @@ export default function PianoRoll({ scale, root, onBack }) {
   const handleRowMouseDown = (e, midi) => {
     // Ignore mousedown on a child note — it has its own drag handler.
     if (e.target !== e.currentTarget) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    let beat = x / BEAT_WIDTH
+    // Block placing notes on rows that aren't in the scale. Marquee selection
+    // still works because it relies on mousemove past the threshold.
+    const isInScale = inScale(midi % 12)
+    const trackRect = e.currentTarget.getBoundingClientRect()
+    const rowIdx = MIDI_HIGH - midi
+    const startContentX = e.clientX - trackRect.left
+    const startContentY = rowIdx * ROW_HEIGHT + (e.clientY - trackRect.top)
+    const initialX = e.clientX
+    const initialY = e.clientY
+
+    let beat = startContentX / BEAT_WIDTH
     if (!freeMode) beat = Math.floor(beat)
     beat = Math.max(0, Math.min(totalBeats - 0.001, beat))
-    const key = `${beat}-${midi}`
-    setNotes((prev) => {
-      const next = new Set(prev)
-      next.add(key)
-      return next
-    })
-    playOneNote(midi, undefined, 0.3)
+    let moved = false
+
+    const move = (mv) => {
+      const dx = mv.clientX - initialX
+      const dy = mv.clientY - initialY
+      if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+      moved = true
+      const curX = startContentX + dx
+      const curY = startContentY + dy
+      const m = {
+        x1: Math.max(0, Math.min(startContentX, curX)),
+        y1: Math.max(0, Math.min(startContentY, curY)),
+        x2: Math.max(startContentX, curX),
+        y2: Math.max(startContentY, curY),
+      }
+      marqueeRef.current = m
+      setMarquee(m)
+    }
+
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      if (!moved) {
+        // single click on empty space → add note (only if row is in scale)
+        if (!isInScale) {
+          setSelectedKeys(new Set())
+          return
+        }
+        const key = `${beat}-${midi}`
+        pushHistory()
+        setNotes((prev) => {
+          const next = new Map(prev)
+          next.set(key, 1)
+          return next
+        })
+        playOneNote(midi, undefined, 0.3)
+        setSelectedKeys(new Set())
+      } else {
+        const m = marqueeRef.current
+        const picked = new Set()
+        for (const [key] of notes) {
+          const [beatStr, midiStr] = key.split('-')
+          const noteBeat = Number(beatStr)
+          const noteMidi = Number(midiStr)
+          const nx1 = noteBeat * BEAT_WIDTH
+          const nx2 = nx1 + BEAT_WIDTH
+          const ny1 = (MIDI_HIGH - noteMidi) * ROW_HEIGHT
+          const ny2 = ny1 + ROW_HEIGHT
+          if (nx1 < m.x2 && nx2 > m.x1 && ny1 < m.y2 && ny2 > m.y1) {
+            picked.add(key)
+          }
+        }
+        setSelectedKeys(picked)
+        setMarquee(null)
+        marqueeRef.current = null
+      }
+    }
+
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
   }
 
-  const handleNoteMouseDown = (e, key, beat, midi) => {
+  const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
     e.stopPropagation()
     e.preventDefault()
     const drag = {
       originalBeat: beat,
       originalMidi: midi,
+      originalLength: length,
       currentKey: key,
       lastMidi: midi,
       startX: e.clientX,
@@ -379,11 +659,16 @@ export default function PianoRoll({ scale, root, onBack }) {
     }
     dragRef.current = drag
 
+    let snapshotPushed = false
     const move = (mv) => {
       if (!dragRef.current) return
       const dx = mv.clientX - drag.startX
       const dy = mv.clientY - drag.startY
       if (!drag.hasMoved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
       drag.hasMoved = true
 
       let newBeat = drag.originalBeat + dx / BEAT_WIDTH
@@ -393,6 +678,8 @@ export default function PianoRoll({ scale, root, onBack }) {
       const midiDelta = -Math.round(dy / ROW_HEIGHT)
       let newMidi = drag.originalMidi + midiDelta
       newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
+      // Snap to the nearest in-scale row so notes stay within the scale.
+      newMidi = nearestScaleMidi(newMidi)
 
       const newKey = `${newBeat}-${newMidi}`
       if (newKey === drag.currentKey) return
@@ -404,9 +691,9 @@ export default function PianoRoll({ scale, root, onBack }) {
       const previousKey = drag.currentKey
       drag.currentKey = newKey
       setNotes((prev) => {
-        const next = new Set(prev)
+        const next = new Map(prev)
         next.delete(previousKey)
-        next.add(newKey)
+        next.set(newKey, drag.originalLength)
         return next
       })
       if (newMidi !== drag.lastMidi) {
@@ -419,7 +706,10 @@ export default function PianoRoll({ scale, root, onBack }) {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       document.body.style.cursor = ''
-      if (!drag.hasMoved) removeNote(drag.currentKey)
+      if (!drag.hasMoved) {
+        pushHistory()
+        removeNote(drag.currentKey)
+      }
       dragRef.current = null
     }
 
@@ -428,14 +718,48 @@ export default function PianoRoll({ scale, root, onBack }) {
     window.addEventListener('mouseup', up)
   }
 
+  const handleNoteResize = (e, key, beat, midi, currentLength) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    let snapshotPushed = false
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      if (!snapshotPushed && Math.abs(dx) < 2) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
+      let newLength = currentLength + dx / BEAT_WIDTH
+      if (!freeMode) newLength = Math.round(newLength)
+      newLength = Math.max(
+        freeMode ? 0.25 : 1,
+        Math.min(totalBeats - beat, newLength)
+      )
+      setNotes((prev) => {
+        const next = new Map(prev)
+        next.set(key, newLength)
+        return next
+      })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   const notesByMidi = useMemo(() => {
     const map = new Map()
-    for (const key of notes) {
+    for (const [key, length] of notes) {
       const [beatStr, midiStr] = key.split('-')
       const midi = Number(midiStr)
       const beat = Number(beatStr)
       const arr = map.get(midi) ?? []
-      arr.push({ key, beat })
+      arr.push({ key, beat, length })
       map.set(midi, arr)
     }
     return map
@@ -460,23 +784,34 @@ export default function PianoRoll({ scale, root, onBack }) {
     const cellDur = beatDurForBpm(bpm)
     const startBase = ctx.currentTime + 0.05
     const swing = swingPct
+    const activeLoop = loopRef.current
+    // Snap startBeat into the loop region if a loop is active.
+    if (activeLoop && (startBeat < activeLoop.start || startBeat >= activeLoop.end)) {
+      startBeat = activeLoop.start
+    }
     const swungStart = applySwingBeat(startBeat, swing)
     let lastBeat = 0
-    for (const key of notes) {
+    for (const [key, length] of notes) {
       const [beatStr, midiStr] = key.split('-')
       const beat = Number(beatStr)
       const midi = Number(midiStr)
-      if (beat > lastBeat) lastBeat = beat
-      if (beat >= startBeat) {
+      const noteEndBeat = beat + length
+      if (noteEndBeat > lastBeat) lastBeat = noteEndBeat
+      const scheduleEnd = activeLoop ? activeLoop.end : Infinity
+      if (beat >= startBeat && beat < scheduleEnd) {
         const swungNoteStart = applySwingBeat(beat, swing)
-        const swungNoteEnd = applySwingBeat(beat + 1, swing)
+        const swungNoteEnd = applySwingBeat(beat + length, swing)
         const noteTime = startBase + (swungNoteStart - swungStart) * cellDur
         const noteDur = Math.max(0.06, (swungNoteEnd - swungNoteStart) * cellDur)
         playOneNote(midi, noteTime, noteDur)
       }
     }
 
-    const endBeat = notes.size > 0 ? lastBeat + 1 : totalBeats
+    const endBeat = activeLoop
+      ? activeLoop.end
+      : notes.size > 0
+      ? lastBeat
+      : totalBeats
 
     // Metronome stays straight (no swing). Quarter notes = every 4 cells,
     // measure downbeats = every 16 cells get the accented click.
@@ -498,6 +833,7 @@ export default function PianoRoll({ scale, root, onBack }) {
       swingPct: swing,
       endBeat,
       offsetBeat: startBeat,
+      loop: activeLoop,
     }
     setPlayheadBeat(startBeat)
 
@@ -508,6 +844,12 @@ export default function PianoRoll({ scale, root, onBack }) {
       const elapsedTime = ctx2.currentTime - state.startTime
       const currentSwungBeat = state.swungStart + elapsedTime / state.cellDur
       if (currentSwungBeat >= state.swungEnd) {
+        if (state.loop) {
+          // Loop wrap: restart playback at the loop start, continuing the
+          // transport feel. Tiny gap accepted on the boundary.
+          playFromBeat(state.loop.start)
+          return
+        }
         stopPlayback(true)
         return
       }
@@ -543,16 +885,82 @@ export default function PianoRoll({ scale, root, onBack }) {
     playFromBeat(0)
   }
 
-  const seekFromTimelineEvent = (e) => {
+  const handleTimelineMouseDown = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const beat = Math.max(0, Math.min(totalBeats, x / BEAT_WIDTH))
-    if (playStateRef.current) {
-      // already playing → seek and continue playing from new position
-      playFromBeat(beat)
-    } else {
-      setPlayheadBeat(beat)
+    const startX = e.clientX - rect.left
+    const initialBeat = Math.max(0, Math.min(totalBeats, startX / BEAT_WIDTH))
+
+    const currentLoop = loopRef.current
+    const EDGE_PX = 6
+    let mode = 'create'
+    let initialLoopSnap = null
+    if (currentLoop) {
+      const loopStartX = currentLoop.start * BEAT_WIDTH
+      const loopEndX = currentLoop.end * BEAT_WIDTH
+      if (Math.abs(startX - loopStartX) <= EDGE_PX) mode = 'resize-start'
+      else if (Math.abs(startX - loopEndX) <= EDGE_PX) mode = 'resize-end'
+      else if (startX > loopStartX && startX < loopEndX) mode = 'move-loop'
+      initialLoopSnap = { ...currentLoop }
     }
+
+    let moved = false
+    const move = (mv) => {
+      const x = mv.clientX - rect.left
+      const dx = x - startX
+      if (!moved && Math.abs(dx) < 3) return
+      moved = true
+      const beat = Math.max(0, Math.min(totalBeats, x / BEAT_WIDTH))
+
+      if (mode === 'create') {
+        const a = Math.min(initialBeat, beat)
+        const b = Math.max(initialBeat, beat)
+        setLoop({ start: a, end: b })
+      } else if (mode === 'resize-start') {
+        const end = initialLoopSnap.end
+        setLoop({
+          start: Math.min(beat, end - 0.25),
+          end,
+        })
+      } else if (mode === 'resize-end') {
+        const start = initialLoopSnap.start
+        setLoop({
+          start,
+          end: Math.max(beat, start + 0.25),
+        })
+      } else if (mode === 'move-loop') {
+        const len = initialLoopSnap.end - initialLoopSnap.start
+        const delta = beat - initialBeat
+        let ns = initialLoopSnap.start + delta
+        ns = Math.max(0, Math.min(totalBeats - len, ns))
+        setLoop({ start: ns, end: ns + len })
+      }
+    }
+
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      if (!moved) {
+        // single click → seek; if click landed outside an existing loop body,
+        // also clear the loop
+        const inside =
+          currentLoop &&
+          startX > currentLoop.start * BEAT_WIDTH &&
+          startX < currentLoop.end * BEAT_WIDTH
+        if (currentLoop && !inside) setLoop(null)
+        if (playStateRef.current) {
+          playFromBeat(initialBeat)
+        } else {
+          setPlayheadBeat(initialBeat)
+        }
+      } else {
+        // discard zero-or-tiny loops
+        const final = loopRef.current
+        if (final && final.end - final.start < 0.5) setLoop(null)
+      }
+    }
+
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
   }
 
   return (
@@ -594,6 +1002,17 @@ export default function PianoRoll({ scale, root, onBack }) {
         />
         <button
           type="button"
+          className="mode-toggle"
+          onClick={() => {
+            setCaptureName('')
+            setCaptureOpen(true)
+          }}
+          title="Save current pattern as a scale-degree template"
+        >
+          Capture
+        </button>
+        <button
+          type="button"
           className={`mode-toggle ${metronome ? 'on' : ''}`}
           onClick={() => setMetronome((v) => !v)}
           aria-pressed={metronome}
@@ -620,8 +1039,75 @@ export default function PianoRoll({ scale, root, onBack }) {
         </button>
       </header>
 
+      <div className="roll-scale-bar">
+        <span className="roll-scale-tag">Scale</span>
+        <div className="roll-scale-pattern">
+          {Array.from({ length: 12 }, (_, c) => {
+            const isIn = scale.notes.includes(c)
+            const pc = (root + c) % 12
+            return (
+              <div
+                key={c}
+                className={`roll-scale-cell ${isIn ? 'on' : 'off'}`}
+                title={NOTE_DISPLAY[pc]}
+              >
+                {isIn ? NOTE_DISPLAY[pc] : ''}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="roll-body">
-        <VariationPanel />
+        <aside className="variation-panel">
+          <div className="templates-header">
+            <span className="label">Templates</span>
+            {templates.length > 0 && (
+              <button
+                type="button"
+                className="templates-export"
+                onClick={exportTemplates}
+                title="Copy all templates as a JS code block for src/templates.js"
+              >
+                {exportFeedback || 'Export'}
+              </button>
+            )}
+          </div>
+          {templates.length === 0 ? (
+            <div className="hint">
+              Capture a pattern to reuse on any scale.
+            </div>
+          ) : (
+            <ul className="templates-list">
+              {templates.map((tpl) => (
+                <li
+                  key={tpl.id}
+                  className="template-row"
+                  onClick={() => applyTemplate(tpl)}
+                  title={`Captured from scale ${padId(
+                    tpl.capturedFrom.scaleId
+                  )} · ${tpl.notes.length} notes`}
+                >
+                  <span className="template-name">{tpl.name}</span>
+                  <span className="template-meta">
+                    {tpl.notes.length}n
+                    <button
+                      type="button"
+                      className="template-delete"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteTemplate(tpl.id)
+                      }}
+                      aria-label="delete template"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
         <div className="roll-stage">
           <div className="roll-scroll" ref={scrollRef}>
             <div className="timeline">
@@ -629,11 +1115,17 @@ export default function PianoRoll({ scale, root, onBack }) {
               <div
                 className="timeline-bar"
                 style={{ width: totalBeats * BEAT_WIDTH }}
-                onMouseDown={seekFromTimelineEvent}
-                onMouseMove={(e) => {
-                  if (e.buttons & 1) seekFromTimelineEvent(e)
-                }}
+                onMouseDown={handleTimelineMouseDown}
               >
+                {loop && (
+                  <div
+                    className="timeline-loop"
+                    style={{
+                      left: `${loop.start * BEAT_WIDTH}px`,
+                      width: `${(loop.end - loop.start) * BEAT_WIDTH}px`,
+                    }}
+                  />
+                )}
                 {Array.from({ length: totalBeats }, (_, b) => {
                   if (b % 4 !== 0) return null
                   const isMeasure = b % 16 === 0
@@ -680,6 +1172,26 @@ export default function PianoRoll({ scale, root, onBack }) {
                 })}
               </div>
               <div className="grid-area">
+                {loop && (
+                  <div
+                    className="grid-loop"
+                    style={{
+                      left: `${loop.start * BEAT_WIDTH}px`,
+                      width: `${(loop.end - loop.start) * BEAT_WIDTH}px`,
+                    }}
+                  />
+                )}
+                {marquee && (
+                  <div
+                    className="marquee"
+                    style={{
+                      left: `${marquee.x1}px`,
+                      top: `${marquee.y1}px`,
+                      width: `${marquee.x2 - marquee.x1}px`,
+                      height: `${marquee.y2 - marquee.y1}px`,
+                    }}
+                  />
+                )}
                 {playheadBeat !== null && (
                   <div
                     className="playhead"
@@ -707,18 +1219,27 @@ export default function PianoRoll({ scale, root, onBack }) {
                         style={{ width: totalBeats * BEAT_WIDTH }}
                         onMouseDown={(e) => handleRowMouseDown(e, midi)}
                       >
-                        {rowNotes.map(({ key, beat }) => (
+                        {rowNotes.map(({ key, beat, length }) => (
                           <div
                             key={key}
-                            className="row-note"
+                            className={`row-note ${
+                              selectedKeys.has(key) ? 'selected' : ''
+                            }`}
                             style={{
                               left: `${beat * BEAT_WIDTH}px`,
-                              width: `${BEAT_WIDTH}px`,
+                              width: `${length * BEAT_WIDTH}px`,
                             }}
                             onMouseDown={(e) =>
-                              handleNoteMouseDown(e, key, beat, midi)
+                              handleNoteMouseDown(e, key, beat, midi, length)
                             }
-                          />
+                          >
+                            <div
+                              className="row-note-handle"
+                              onMouseDown={(e) =>
+                                handleNoteResize(e, key, beat, midi, length)
+                              }
+                            />
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -729,6 +1250,58 @@ export default function PianoRoll({ scale, root, onBack }) {
           </div>
         </div>
       </div>
+
+      {captureOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setCaptureOpen(false)}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3>Capture template</h3>
+            <p className="modal-sub">
+              Save this pattern by scale degree so you can replay it on any
+              other scale.
+              {(() => {
+                const items = captureCurrentTemplate()
+                return ` ${items.length} of ${notes.size} note${
+                  notes.size === 1 ? '' : 's'
+                } sit on a scale degree.`
+              })()}
+            </p>
+            <input
+              autoFocus
+              type="text"
+              value={captureName}
+              onChange={(e) => setCaptureName(e.target.value)}
+              placeholder="Template name"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveCurrentAsTemplate()
+                if (e.key === 'Escape') setCaptureOpen(false)
+              }}
+            />
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => setCaptureOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={saveCurrentAsTemplate}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
