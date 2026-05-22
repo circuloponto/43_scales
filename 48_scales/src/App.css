@@ -399,6 +399,21 @@
   color: transparent;
 }
 
+.electrons {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+.electron-note {
+  min-width: 1.4em;
+  text-align: center;
+}
+
 /* ---------- Scale info hero ---------- */
 
 .hero {
@@ -624,6 +639,16 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--mute);
+  user-select: none;
+}
+
+.beats-label.draggable {
+  cursor: ew-resize;
+  transition: color 0.15s var(--ease);
+}
+
+.beats-label.draggable:hover {
+  color: var(--fg);
 }
 
 .beats-input {
@@ -654,6 +679,34 @@
 .beats-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.mode-toggle {
+  background: transparent;
+  color: var(--mute);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 7px 12px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+
+.mode-toggle:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+
+.mode-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg);
 }
 
 .roll-body {
@@ -737,6 +790,72 @@
 .roll-scroll::-webkit-scrollbar-thumb {
   background: var(--hairline);
   border-radius: 4px;
+}
+
+/* Timeline above the grid — sticky top, scrolls horizontally with content */
+.timeline {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--frame);
+  border-bottom: 1px solid var(--hairline);
+  height: 26px;
+  min-width: max-content;
+}
+
+.timeline-corner {
+  position: sticky;
+  left: 0;
+  width: 86px;
+  flex-shrink: 0;
+  background: var(--frame);
+  z-index: 5;
+  border-right: 1px solid #0a0a0b;
+}
+
+.timeline-bar {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+  cursor: pointer;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+  padding: 5px 0 0 6px;
+  letter-spacing: 0.03em;
+  user-select: none;
+}
+
+.timeline-tick.beat::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 6px;
+  background: color-mix(in srgb, var(--mute) 55%, transparent);
+}
+
+.timeline-tick.measure {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.timeline-tick.measure::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 100%;
+  background: color-mix(in srgb, var(--mute) 50%, transparent);
 }
 
 /* Roll content: keyboard column + grid area side-by-side */
@@ -839,25 +958,56 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.beat-cell {
-  width: 28px;
+/* Beat track per row — clickable surface that holds absolute-positioned notes.
+   The grid lines are drawn via background-image so individual beat cells aren't
+   needed (and free-mode placement isn't constrained to integer positions). */
+.beats-track {
+  position: relative;
   height: 100%;
   flex-shrink: 0;
-  background: transparent;
-  border: none;
-  border-right: 1px solid color-mix(in srgb, var(--hairline) 55%, transparent);
-  padding: 0;
   cursor: pointer;
-  position: relative;
-  transition: background 0.12s var(--ease);
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--hairline) 55%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--mute) 35%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 100%, 112px 100%;
+  background-position: 0 0, 0 0;
+  background-repeat: repeat-x, repeat-x;
 }
 
-.beat-cell.measure {
-  border-left: 1px solid var(--hairline);
+.beats-track.free {
+  cursor: crosshair;
 }
 
-.beat-cell:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+.row-note {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 2px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 65%, var(--fg) 35%) 0%,
+    var(--accent) 100%
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 45%, var(--fg) 55%);
+  cursor: grab;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.row-note:hover {
+  filter: brightness(1.12);
+}
+
+.row-note:active {
+  cursor: grabbing;
 }
 
 .beat-cell:hover {
