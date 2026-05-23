@@ -721,11 +721,35 @@ export default function PianoRoll({
   const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
     e.stopPropagation()
     e.preventDefault()
+
+    // If the clicked note is part of an active multi-selection, drag the
+    // whole group together. Otherwise, drag just this note.
+    const isGroup = selectedKeys.has(key) && selectedKeys.size > 1
+    const group = []
+    if (isGroup) {
+      for (const k of selectedKeys) {
+        const [bStr, mStr] = k.split('-')
+        group.push({
+          currentKey: k,
+          originalBeat: Number(bStr),
+          originalMidi: Number(mStr),
+          length: notesRef.current.get(k) ?? 1,
+        })
+      }
+    } else {
+      group.push({
+        currentKey: key,
+        originalBeat: beat,
+        originalMidi: midi,
+        length,
+      })
+    }
+
     const drag = {
       originalBeat: beat,
       originalMidi: midi,
-      originalLength: length,
-      currentKey: key,
+      group,
+      isGroup,
       lastMidi: midi,
       startX: e.clientX,
       startY: e.clientY,
@@ -745,34 +769,51 @@ export default function PianoRoll({
       }
       drag.hasMoved = true
 
-      let newBeat = drag.originalBeat + dx / BEAT_WIDTH
-      if (!freeMode) newBeat = Math.round(newBeat)
-      newBeat = Math.max(0, Math.min(totalBeats - 0.001, newBeat))
+      // Compute the anchor's new position; the same delta is applied to the
+      // whole group so relative spacing is preserved.
+      let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
+      if (!freeMode) newAnchorBeat = Math.round(newAnchorBeat)
+      newAnchorBeat = Math.max(0, Math.min(totalBeats - 0.001, newAnchorBeat))
 
-      const midiDelta = -Math.round(dy / ROW_HEIGHT)
-      let newMidi = drag.originalMidi + midiDelta
-      newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
-      // Snap to the nearest in-scale row so notes stay within the scale.
-      newMidi = nearestScaleMidi(newMidi)
+      const midiDeltaRaw = -Math.round(dy / ROW_HEIGHT)
+      let newAnchorMidi = drag.originalMidi + midiDeltaRaw
+      newAnchorMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newAnchorMidi))
+      newAnchorMidi = nearestScaleMidi(newAnchorMidi)
 
-      const newKey = `${newBeat}-${newMidi}`
-      if (newKey === drag.currentKey) return
+      const beatDelta = newAnchorBeat - drag.originalBeat
+      const midiDelta = newAnchorMidi - drag.originalMidi
 
-      // Capture the previous key locally before mutating the ref — the
-      // setNotes updater may run after the mutation otherwise, which would
-      // make us "delete" the new key (no-op) and leave the old one behind,
-      // producing duplicates.
-      const previousKey = drag.currentKey
-      drag.currentKey = newKey
+      const newPositions = drag.group.map((g) => {
+        let nb = g.originalBeat + beatDelta
+        nb = Math.max(0, Math.min(totalBeats - 0.001, nb))
+        let nm = g.originalMidi + midiDelta
+        nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
+        nm = nearestScaleMidi(nm)
+        return { newBeat: nb, newMidi: nm, newKey: `${nb}-${nm}`, length: g.length }
+      })
+
+      const anyChanged = newPositions.some((np, i) => np.newKey !== drag.group[i].currentKey)
+      if (!anyChanged) return
+
+      const previousKeys = drag.group.map((g) => g.currentKey)
+      newPositions.forEach((np, i) => {
+        drag.group[i].currentKey = np.newKey
+      })
+
       setNotes((prev) => {
         const next = new Map(prev)
-        next.delete(previousKey)
-        next.set(newKey, drag.originalLength)
+        for (const pk of previousKeys) next.delete(pk)
+        for (const np of newPositions) next.set(np.newKey, np.length)
         return next
       })
-      if (newMidi !== drag.lastMidi) {
-        playOneNote(newMidi, undefined, 0.2)
-        drag.lastMidi = newMidi
+
+      if (drag.isGroup) {
+        setSelectedKeys(new Set(newPositions.map((np) => np.newKey)))
+      }
+
+      if (newAnchorMidi !== drag.lastMidi) {
+        playOneNote(newAnchorMidi, undefined, 0.2)
+        drag.lastMidi = newAnchorMidi
       }
     }
 
@@ -780,9 +821,9 @@ export default function PianoRoll({
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       document.body.style.cursor = ''
-      if (!drag.hasMoved) {
+      if (!drag.hasMoved && !drag.isGroup) {
         pushHistory()
-        removeNote(drag.currentKey)
+        removeNote(drag.group[0].currentKey)
       }
       dragRef.current = null
     }
