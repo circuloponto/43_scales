@@ -709,6 +709,14 @@
   color: var(--fg);
 }
 
+.mode-toggle.icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 9px;
+  min-width: 32px;
+}
+
 /* Scale summary strip — quick reference for which pitch classes the
    current scale contains, mirroring the matrix's row. */
 .roll-scale-bar {

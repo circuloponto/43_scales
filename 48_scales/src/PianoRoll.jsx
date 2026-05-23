@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Magnet } from 'lucide-react'
 
 const NOTE_DISPLAY = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
@@ -331,6 +332,12 @@ export default function PianoRoll({
         }
       } else if (e.code === 'Escape') {
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
+      } else if (e.shiftKey && e.code === 'KeyH') {
+        e.preventDefault()
+        flipHorizontal()
+      } else if (e.shiftKey && e.code === 'KeyV') {
+        e.preventDefault()
+        flipVertical()
       }
     }
     window.addEventListener('keydown', handler)
@@ -534,6 +541,73 @@ export default function PianoRoll({
       }
     }
     setTimeout(() => setExportFeedback(''), 1600)
+  }
+
+  // Reverse the order of selected notes in time — the bounding range
+  // [minStart, maxEnd] stays the same, each note's end becomes the new
+  // note's start in the mirrored position. Pitch + length are preserved.
+  const flipHorizontal = () => {
+    if (selectedKeys.size === 0) return
+    let minStart = Infinity
+    let maxEnd = -Infinity
+    for (const key of selectedKeys) {
+      const [beatStr] = key.split('-')
+      const b = Number(beatStr)
+      const length = notesRef.current.get(key) ?? 1
+      if (b < minStart) minStart = b
+      if (b + length > maxEnd) maxEnd = b + length
+    }
+    pushHistory()
+    const newSel = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const key of selectedKeys) next.delete(key)
+      for (const key of selectedKeys) {
+        const [beatStr, midiStr] = key.split('-')
+        const b = Number(beatStr)
+        const length = notesRef.current.get(key) ?? 1
+        const newB = minStart + maxEnd - (b + length)
+        const newKey = `${newB}-${midiStr}`
+        next.set(newKey, length)
+        newSel.add(newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
+  }
+
+  // Flip the selected notes around the midpoint of their MIDI range. The
+  // pitch axis is reflected: highest note becomes lowest and vice-versa.
+  // Each flipped note is snapped to the nearest in-scale row so the result
+  // still lives on the scale.
+  const flipVertical = () => {
+    if (selectedKeys.size === 0) return
+    let minMidi = Infinity
+    let maxMidi = -Infinity
+    for (const key of selectedKeys) {
+      const [, midiStr] = key.split('-')
+      const m = Number(midiStr)
+      if (m < minMidi) minMidi = m
+      if (m > maxMidi) maxMidi = m
+    }
+    const sum = minMidi + maxMidi
+    pushHistory()
+    const newSel = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const key of selectedKeys) next.delete(key)
+      for (const key of selectedKeys) {
+        const [beatStr, midiStr] = key.split('-')
+        const m = Number(midiStr)
+        const length = notesRef.current.get(key) ?? 1
+        const newMidi = nearestScaleMidi(sum - m)
+        const newKey = `${beatStr}-${newMidi}`
+        next.set(newKey, length)
+        newSel.add(newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
   }
 
   const pasteNotes = () => {
@@ -1022,12 +1096,17 @@ export default function PianoRoll({
         </button>
         <button
           type="button"
-          className={`mode-toggle ${freeMode ? 'on' : ''}`}
+          className={`mode-toggle icon-toggle ${!freeMode ? 'on' : ''}`}
           onClick={() => setFreeMode((v) => !v)}
-          aria-pressed={freeMode}
-          title="Disable grid snapping — drop notes at any beat position"
+          aria-pressed={!freeMode}
+          aria-label={freeMode ? 'Enable grid snap' : 'Disable grid snap (free placement)'}
+          title={
+            freeMode
+              ? 'Free placement — click to snap to grid'
+              : 'Snap to grid — click for free placement'
+          }
         >
-          Free
+          <Magnet size={14} strokeWidth={2} />
         </button>
         <button
           className="play roll-play"
