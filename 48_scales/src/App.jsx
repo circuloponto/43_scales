@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { scales, PITCH_CLASSES } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
-import { templates as defaultTemplates } from './templates'
+import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
 import PianoRoll from './PianoRoll'
 import './App.css'
 
@@ -83,6 +83,7 @@ function App() {
   const [accent, setAccent] = useState(ORIGINAL_PURPLE)
   const [view, setView] = useState('matrix')
   const [templates, setTemplates] = useState(defaultTemplates)
+  const [chordTemplates, setChordTemplates] = useState(defaultChordTemplates)
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
@@ -135,6 +136,8 @@ function App() {
             onPlay={playScale}
             templates={templates}
             setTemplates={setTemplates}
+            chordTemplates={chordTemplates}
+            setChordTemplates={setChordTemplates}
           />
         ) : (
         <>
@@ -201,6 +204,10 @@ function App() {
         </div>
 
         <aside className="panel">
+          <div className="app-masthead">
+            <span className="app-mark">8</span>
+            <span className="app-name">Fold Way</span>
+          </div>
           <div className="section">
             <div className="roots">
               {Array.from({ length: 12 }, (_, c) => {

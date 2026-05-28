@@ -277,6 +277,31 @@
   padding-top: 8px;
 }
 
+.app-masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.app-mark {
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--accent);
+  font-feature-settings: 'tnum';
+}
+
+.app-name {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
 .section {
   padding-top: 32px;
   margin-top: 32px;
@@ -1265,6 +1290,11 @@
   z-index: 2;
 }
 
+.row-note-handle.left {
+  right: auto;
+  left: 0;
+}
+
 .row-note-handle:hover {
   background: color-mix(in srgb, var(--fg) 30%, transparent);
 }
@@ -1322,5 +1352,265 @@
   );
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 45%, var(--fg) 55%);
   pointer-events: none;
+}
+
+/* ---- Chord lane ----------------------------------------------------- */
+
+.chord-lane-row {
+  display: flex;
+  position: sticky;
+  top: 26px;
+  z-index: 3;
+  background: var(--frame);
+  border-bottom: 1px solid var(--hairline);
+  height: 40px;
+  min-width: max-content;
+}
+
+.chord-lane-corner {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 86px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  background: var(--frame);
+  border-right: 1px solid #0a0a0b;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  z-index: 5;
+  user-select: none;
+}
+
+.chord-lane {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--off) 35%, transparent);
+}
+
+.chord-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  cursor: grab;
+  user-select: none;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+  overflow: hidden;
+}
+
+.chord-block:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.chord-block.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.chord-block:active {
+  cursor: grabbing;
+}
+
+.chord-block-label {
+  pointer-events: none;
+  padding: 0 4px;
+}
+
+.chord-block-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.chord-block-handle.left {
+  right: auto;
+  left: 0;
+}
+
+.chord-block-handle:hover {
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.chord-drop-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+}
+
+/* ---- Templates tabs ------------------------------------------------- */
+
+.templates-tabs {
+  display: flex;
+  gap: 0;
+  margin: 8px 0 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.templates-tab {
+  background: transparent;
+  border: none;
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  border-bottom: 1.5px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+
+.templates-tab:hover {
+  color: var(--fg);
+}
+
+.templates-tab.on {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- Chord palette modal ------------------------------------------- */
+
+.chord-palette-modal {
+  position: fixed;
+  top: 100px;
+  right: 24px;
+  width: 320px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--frame);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 1500;
+  overflow: hidden;
+}
+
+.chord-palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.chord-palette-close {
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.chord-palette-close:hover {
+  color: var(--fg);
+}
+
+.chord-palette-hint {
+  margin: 0;
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.chord-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 12px 14px 14px 14px;
+  overflow-y: auto;
+}
+
+.chord-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.chord-card:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.chord-card:active {
+  cursor: grabbing;
+}
+
+.chord-card-roman {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--fg);
+  letter-spacing: 0.02em;
+}
+
+.chord-card-name {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+.chord-card-notes {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.chord-ghost {
+  position: fixed;
+  pointer-events: none;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--accent) 65%, var(--ink));
+  color: var(--fg);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  z-index: 2000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 

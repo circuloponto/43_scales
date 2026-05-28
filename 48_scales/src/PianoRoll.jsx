@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Magnet } from 'lucide-react'
+import {
+  chords as chordCatalog,
+  chordToMidiNotes,
+  chordRomanLabel,
+  chordDisplayName,
+} from './chords'
 
 const NOTE_DISPLAY = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
@@ -254,8 +260,11 @@ export default function PianoRoll({
   onBack,
   templates = [],
   setTemplates,
+  chordTemplates = [],
+  setChordTemplates,
 }) {
   const [notes, setNotes] = useState(() => buildInitialPattern(scale, root))
+  const [chordBlocks, setChordBlocks] = useState(() => [])
   const [totalBeats, setTotalBeats] = useState(DEFAULT_BEATS)
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [swingPct, setSwingPct] = useState(DEFAULT_SWING)
@@ -263,11 +272,15 @@ export default function PianoRoll({
   const [freeMode, setFreeMode] = useState(false)
   const [metronome, setMetronome] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState(() => new Set())
+  const [selectedChordIds, setSelectedChordIds] = useState(() => new Set())
   const [marquee, setMarquee] = useState(null)
   const [loop, setLoop] = useState(null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [captureName, setCaptureName] = useState('')
   const [exportFeedback, setExportFeedback] = useState('')
+  const [chordModalOpen, setChordModalOpen] = useState(false)
+  const [templateTab, setTemplateTab] = useState('melody')
+  const [paletteGhost, setPaletteGhost] = useState(null)
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
@@ -279,14 +292,20 @@ export default function PianoRoll({
   const clipboardRef = useRef(null)
   const notesRef = useRef(notes)
   notesRef.current = notes
+  const chordsRef = useRef(chordBlocks)
+  chordsRef.current = chordBlocks
   const loopRef = useRef(loop)
   loopRef.current = loop
+  const chordLaneRef = useRef(null)
+  const paletteDragRef = useRef(null)
 
   useEffect(() => {
     setNotes(buildInitialPattern(scale, root))
+    setChordBlocks([])
     historyRef.current = []
     futureRef.current = []
     setSelectedKeys(new Set())
+    setSelectedChordIds(new Set())
   }, [scale?.id, root])
 
   useEffect(() => {
@@ -320,18 +339,26 @@ export default function PianoRoll({
         e.preventDefault()
         playFromStart()
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
-        if (selectedKeys.size > 0) {
+        if (selectedKeys.size > 0 || selectedChordIds.size > 0) {
           e.preventDefault()
           pushHistory()
-          setNotes((prev) => {
-            const next = new Map(prev)
-            for (const k of selectedKeys) next.delete(k)
-            return next
-          })
-          setSelectedKeys(new Set())
+          if (selectedKeys.size > 0) {
+            setNotes((prev) => {
+              const next = new Map(prev)
+              for (const k of selectedKeys) next.delete(k)
+              return next
+            })
+            setSelectedKeys(new Set())
+          }
+          if (selectedChordIds.size > 0) {
+            setChordBlocks((prev) => prev.filter((c) => !selectedChordIds.has(c.id)))
+            setSelectedChordIds(new Set())
+          }
         }
       } else if (e.code === 'Escape') {
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
+        if (selectedChordIds.size > 0) setSelectedChordIds(new Set())
+        if (chordModalOpen) setChordModalOpen(false)
       } else if (e.shiftKey && e.code === 'KeyH') {
         e.preventDefault()
         flipHorizontal()
@@ -354,7 +381,7 @@ export default function PianoRoll({
     return ctx
   }
 
-  const playOneNote = (midi, startAt, duration = 0.22) => {
+  const playOneNote = (midi, startAt, duration = 0.22, peakGain = 0.22) => {
     const ctx = getAudioContext()
     const t = startAt ?? ctx.currentTime
     const freq = 440 * Math.pow(2, (midi - 69) / 12)
@@ -365,7 +392,7 @@ export default function PianoRoll({
     osc.connect(gain)
     gain.connect(ctx.destination)
     gain.gain.setValueAtTime(0, t)
-    gain.gain.linearRampToValueAtTime(0.22, t + 0.015)
+    gain.gain.linearRampToValueAtTime(peakGain, t + 0.015)
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration)
     osc.start(t)
     osc.stop(t + duration + 0.02)
@@ -411,8 +438,22 @@ export default function PianoRoll({
     return clamped
   }
 
+  // History snapshot: both notes + chord blocks together so undo/redo is
+  // atomic across the two layers.
+  const snapshotState = () => ({
+    notes: new Map(notesRef.current),
+    chords: chordsRef.current.map((c) => ({ ...c, offsets: [...c.offsets] })),
+  })
+
+  const restoreSnapshot = (snap) => {
+    setNotes(snap.notes)
+    setChordBlocks(snap.chords)
+    setSelectedKeys(new Set())
+    setSelectedChordIds(new Set())
+  }
+
   const pushHistory = (snapshot) => {
-    historyRef.current.push(snapshot ?? new Map(notesRef.current))
+    historyRef.current.push(snapshot ?? snapshotState())
     if (historyRef.current.length > 200) historyRef.current.shift()
     futureRef.current = []
   }
@@ -420,19 +461,17 @@ export default function PianoRoll({
   const undo = () => {
     if (historyRef.current.length === 0) return
     const prev = historyRef.current.pop()
-    futureRef.current.push(new Map(notesRef.current))
+    futureRef.current.push(snapshotState())
     if (futureRef.current.length > 200) futureRef.current.shift()
-    setNotes(prev)
-    setSelectedKeys(new Set())
+    restoreSnapshot(prev)
   }
 
   const redo = () => {
     if (futureRef.current.length === 0) return
     const next = futureRef.current.pop()
-    historyRef.current.push(new Map(notesRef.current))
+    historyRef.current.push(snapshotState())
     if (historyRef.current.length > 200) historyRef.current.shift()
-    setNotes(next)
-    setSelectedKeys(new Set())
+    restoreSnapshot(next)
   }
 
   const copyNotes = () => {
@@ -517,11 +556,65 @@ export default function PianoRoll({
     setTemplates(templates.filter((t) => t.id !== id))
   }
 
+  // Convert each chord block on the lane to a scale-relative entry. The
+  // chord's quality + intervals are kept by storing offsets + suffix, not
+  // just rootDegree — so the chord stays itself when reapplied to any scale.
+  const captureCurrentChordTemplate = () => {
+    return chordsRef.current.map((c) => ({
+      beat: c.beat,
+      rootDegree: c.rootDegree,
+      offsets: [...c.offsets],
+      suffix: c.suffix,
+      length: c.length,
+    }))
+  }
+
+  const saveCurrentAsChordTemplate = () => {
+    if (!setChordTemplates) return
+    const items = captureCurrentChordTemplate()
+    if (items.length === 0) {
+      setCaptureOpen(false)
+      return
+    }
+    const tpl = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: captureName.trim() || `Chords ${chordTemplates.length + 1}`,
+      capturedFrom: { scaleId: scale.id, root },
+      chords: items,
+    }
+    setChordTemplates([...chordTemplates, tpl])
+    setCaptureOpen(false)
+    setCaptureName('')
+  }
+
+  const applyChordTemplate = (tpl) => {
+    if (!scale || !tpl) return
+    pushHistory()
+    setChordBlocks(
+      tpl.chords.map((c) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        beat: c.beat,
+        rootDegree: c.rootDegree,
+        offsets: [...c.offsets],
+        suffix: c.suffix ?? '',
+        length: c.length ?? 4,
+      }))
+    )
+    setSelectedChordIds(new Set())
+  }
+
+  const deleteChordTemplate = (id) => {
+    if (!setChordTemplates) return
+    setChordTemplates(chordTemplates.filter((t) => t.id !== id))
+  }
+
   // Serialize the current templates as a JS module so it can be pasted back
   // into src/templates.js to ship them as defaults.
   const exportTemplates = async () => {
-    if (templates.length === 0) return
-    const code = `export const templates = ${JSON.stringify(templates, null, 2)}\n`
+    if (templates.length === 0 && chordTemplates.length === 0) return
+    const code =
+      `export const templates = ${JSON.stringify(templates, null, 2)}\n\n` +
+      `export const chordTemplates = ${JSON.stringify(chordTemplates, null, 2)}\n`
     try {
       await navigator.clipboard.writeText(code)
       setExportFeedback('Copied')
@@ -541,6 +634,193 @@ export default function PianoRoll({
       }
     }
     setTimeout(() => setExportFeedback(''), 1600)
+  }
+
+  // ---- chord block interactions ---------------------------------------
+
+  const makeChordId = () =>
+    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+  const placeChord = (shape, beat) => {
+    pushHistory()
+    const block = {
+      id: makeChordId(),
+      beat,
+      rootDegree: shape.rootDegree,
+      offsets: [...shape.offsets],
+      suffix: shape.suffix ?? '',
+      length: 4,
+    }
+    setChordBlocks((prev) => [...prev, block])
+    return block.id
+  }
+
+  const handleChordMouseDown = (e, chord) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const startBeat = chord.beat
+    const isGroup = selectedChordIds.has(chord.id) && selectedChordIds.size > 1
+    const group = isGroup
+      ? chordsRef.current.filter((c) => selectedChordIds.has(c.id))
+      : [chord]
+    const groupStartBeats = group.map((c) => c.beat)
+    let snapshotPushed = false
+    let moved = false
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      if (!moved && Math.abs(dx) < 3) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
+      moved = true
+      let delta = dx / BEAT_WIDTH
+      if (!freeMode) delta = Math.round(delta)
+      const newBeats = group.map((c, i) => {
+        let nb = groupStartBeats[i] + delta
+        nb = Math.max(0, Math.min(totalBeats - c.length, nb))
+        return nb
+      })
+      setChordBlocks((prev) =>
+        prev.map((c) => {
+          const idx = group.findIndex((g) => g.id === c.id)
+          if (idx === -1) return c
+          return { ...c, beat: newBeats[idx] }
+        })
+      )
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+      if (!moved) {
+        // Click without drag → select (and replace selection unless shift held)
+        if (!isGroup) {
+          setSelectedChordIds(new Set([chord.id]))
+        }
+      }
+    }
+    document.body.style.cursor = 'grabbing'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const handleChordResize = (e, chord) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const startLen = chord.length
+    let snapshotPushed = false
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      if (!snapshotPushed && Math.abs(dx) < 2) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
+      let newLen = startLen + dx / BEAT_WIDTH
+      if (!freeMode) newLen = Math.round(newLen)
+      newLen = Math.max(
+        freeMode ? 0.25 : 1,
+        Math.min(totalBeats - chord.beat, newLen)
+      )
+      setChordBlocks((prev) =>
+        prev.map((c) => (c.id === chord.id ? { ...c, length: newLen } : c))
+      )
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const handleChordResizeLeft = (e, chord) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const rightEdge = chord.beat + chord.length
+    const startBeat = chord.beat
+    let snapshotPushed = false
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      if (!snapshotPushed && Math.abs(dx) < 2) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
+      let nb = startBeat + dx / BEAT_WIDTH
+      if (!freeMode) nb = Math.round(nb)
+      const minLen = freeMode ? 0.25 : 1
+      nb = Math.max(0, Math.min(rightEdge - minLen, nb))
+      const newLen = rightEdge - nb
+      setChordBlocks((prev) =>
+        prev.map((c) => (c.id === chord.id ? { ...c, beat: nb, length: newLen } : c))
+      )
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  // Drag-from-palette: start when the user mousedowns on a chord card in
+  // the chord modal. A ghost follows the cursor; on mouseup over the chord
+  // lane we resolve the cursor's beat and create a new chord block.
+  const handlePaletteCardMouseDown = (e, shape) => {
+    e.preventDefault()
+    e.stopPropagation()
+    paletteDragRef.current = { shape, dropBeat: null }
+    setPaletteGhost({ shape, x: e.clientX, y: e.clientY })
+
+    const move = (mv) => {
+      const lane = chordLaneRef.current
+      let dropBeat = null
+      if (lane) {
+        const r = lane.getBoundingClientRect()
+        if (
+          mv.clientX >= r.left &&
+          mv.clientX <= r.right &&
+          mv.clientY >= r.top &&
+          mv.clientY <= r.bottom
+        ) {
+          let b = (mv.clientX - r.left) / BEAT_WIDTH
+          if (!freeMode) b = Math.round(b)
+          b = Math.max(0, Math.min(totalBeats - 1, b))
+          dropBeat = b
+        }
+      }
+      paletteDragRef.current.dropBeat = dropBeat
+      setPaletteGhost({ shape, x: mv.clientX, y: mv.clientY, dropBeat })
+    }
+
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      const drag = paletteDragRef.current
+      paletteDragRef.current = null
+      setPaletteGhost(null)
+      if (drag && drag.dropBeat !== null) {
+        const newId = placeChord(shape, drag.dropBeat)
+        setSelectedChordIds(new Set([newId]))
+      }
+    }
+
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const handleChordLaneMouseDown = (e) => {
+    if (e.target !== e.currentTarget) return
+    setSelectedChordIds(new Set())
   }
 
   // Reverse the order of selected notes in time — the bounding range
@@ -867,6 +1147,56 @@ export default function PianoRoll({
     window.addEventListener('mouseup', up)
   }
 
+  // Resize from the left edge: the right edge of the note stays anchored,
+  // and the start beat + length both change. Honors free mode (continuous)
+  // vs. snapped mode (integer beats).
+  const handleNoteResizeLeft = (e, key, beat, midi, currentLength) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const rightEdge = beat + currentLength
+    let snapshotPushed = false
+    let currentKey = key
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      if (!snapshotPushed && Math.abs(dx) < 2) return
+      if (!snapshotPushed) {
+        pushHistory()
+        snapshotPushed = true
+      }
+      let newBeat = beat + dx / BEAT_WIDTH
+      if (!freeMode) newBeat = Math.round(newBeat)
+      const minLen = freeMode ? 0.25 : 1
+      newBeat = Math.max(0, Math.min(rightEdge - minLen, newBeat))
+      const newLength = rightEdge - newBeat
+      const newKey = `${newBeat}-${midi}`
+      if (newKey === currentKey) return
+      const previousKey = currentKey
+      currentKey = newKey
+      setNotes((prev) => {
+        const next = new Map(prev)
+        next.delete(previousKey)
+        next.set(newKey, newLength)
+        return next
+      })
+      setSelectedKeys((prev) => {
+        if (!prev.has(previousKey)) return prev
+        const ns = new Set(prev)
+        ns.delete(previousKey)
+        ns.add(newKey)
+        return ns
+      })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   const notesByMidi = useMemo(() => {
     const map = new Map()
     for (const [key, length] of notes) {
@@ -893,7 +1223,7 @@ export default function PianoRoll({
   const beatDurForBpm = (b) => 60 / b / 4
 
   const playFromBeat = (startBeat = 0) => {
-    if (notes.size === 0 && !metronome) return
+    if (notes.size === 0 && chordBlocks.length === 0 && !metronome) return
     stopPlayback(false)
     const ctx = getAudioContext()
     const cellDur = beatDurForBpm(bpm)
@@ -922,9 +1252,29 @@ export default function PianoRoll({
       }
     }
 
+    // Chord notes — quieter, scheduled alongside melody so chords play as
+    // accompaniment underneath. Each chord block expands to multiple MIDI
+    // notes via chordToMidiNotes against the active scale + root.
+    for (const c of chordBlocks) {
+      const chordEndBeat = c.beat + c.length
+      if (chordEndBeat > lastBeat) lastBeat = chordEndBeat
+      const scheduleEnd = activeLoop ? activeLoop.end : Infinity
+      if (c.beat >= startBeat && c.beat < scheduleEnd) {
+        const swungNoteStart = applySwingBeat(c.beat, swing)
+        const swungNoteEnd = applySwingBeat(c.beat + c.length, swing)
+        const noteTime = startBase + (swungNoteStart - swungStart) * cellDur
+        const noteDur = Math.max(0.06, (swungNoteEnd - swungNoteStart) * cellDur)
+        const midis = chordToMidiNotes(c, scale, root)
+        for (const m of midis) {
+          if (m < MIDI_LOW || m > MIDI_HIGH + 12) continue
+          playOneNote(m, noteTime, noteDur, 0.13)
+        }
+      }
+    }
+
     const endBeat = activeLoop
       ? activeLoop.end
-      : notes.size > 0
+      : notes.size > 0 || chordBlocks.length > 0
       ? lastBeat
       : totalBeats
 
@@ -1128,6 +1478,15 @@ export default function PianoRoll({
         </button>
         <button
           type="button"
+          className={`mode-toggle ${chordModalOpen ? 'on' : ''}`}
+          onClick={() => setChordModalOpen((v) => !v)}
+          aria-pressed={chordModalOpen}
+          title="Open the chord palette — drag chords onto the chord lane"
+        >
+          Chords
+        </button>
+        <button
+          type="button"
           className={`mode-toggle ${metronome ? 'on' : ''}`}
           onClick={() => setMetronome((v) => !v)}
           aria-pressed={metronome}
@@ -1182,7 +1541,7 @@ export default function PianoRoll({
         <aside className="variation-panel">
           <div className="templates-header">
             <span className="label">Templates</span>
-            {templates.length > 0 && (
+            {(templates.length > 0 || chordTemplates.length > 0) && (
               <button
                 type="button"
                 className="templates-export"
@@ -1193,30 +1552,85 @@ export default function PianoRoll({
               </button>
             )}
           </div>
-          {templates.length === 0 ? (
+          <div className="templates-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={templateTab === 'melody'}
+              className={`templates-tab ${templateTab === 'melody' ? 'on' : ''}`}
+              onClick={() => setTemplateTab('melody')}
+            >
+              Melody
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={templateTab === 'chords'}
+              className={`templates-tab ${templateTab === 'chords' ? 'on' : ''}`}
+              onClick={() => setTemplateTab('chords')}
+            >
+              Chords
+            </button>
+          </div>
+          {templateTab === 'melody' ? (
+            templates.length === 0 ? (
+              <div className="hint">
+                Capture a pattern to reuse on any scale.
+              </div>
+            ) : (
+              <ul className="templates-list">
+                {templates.map((tpl) => (
+                  <li
+                    key={tpl.id}
+                    className="template-row"
+                    onClick={() => applyTemplate(tpl)}
+                    title={`Captured from scale ${padId(
+                      tpl.capturedFrom.scaleId
+                    )} · ${tpl.notes.length} notes`}
+                  >
+                    <span className="template-name">{tpl.name}</span>
+                    <span className="template-meta">
+                      {tpl.notes.length}n
+                      <button
+                        type="button"
+                        className="template-delete"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteTemplate(tpl.id)
+                        }}
+                        aria-label="delete template"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : chordTemplates.length === 0 ? (
             <div className="hint">
-              Capture a pattern to reuse on any scale.
+              Drag chords onto the lane and capture the progression.
             </div>
           ) : (
             <ul className="templates-list">
-              {templates.map((tpl) => (
+              {chordTemplates.map((tpl) => (
                 <li
                   key={tpl.id}
                   className="template-row"
-                  onClick={() => applyTemplate(tpl)}
+                  onClick={() => applyChordTemplate(tpl)}
                   title={`Captured from scale ${padId(
                     tpl.capturedFrom.scaleId
-                  )} · ${tpl.notes.length} notes`}
+                  )} · ${tpl.chords.length} chords`}
                 >
                   <span className="template-name">{tpl.name}</span>
                   <span className="template-meta">
-                    {tpl.notes.length}n
+                    {tpl.chords.length}c
                     <button
                       type="button"
                       className="template-delete"
                       onClick={(e) => {
                         e.stopPropagation()
-                        deleteTemplate(tpl.id)
+                        deleteChordTemplate(tpl.id)
                       }}
                       aria-label="delete template"
                     >
@@ -1261,6 +1675,51 @@ export default function PianoRoll({
                     </div>
                   )
                 })}
+              </div>
+            </div>
+            <div className="chord-lane-row">
+              <div className="chord-lane-corner">chords</div>
+              <div
+                className="chord-lane"
+                ref={chordLaneRef}
+                style={{ width: totalBeats * BEAT_WIDTH }}
+                onMouseDown={handleChordLaneMouseDown}
+              >
+                {paletteGhost && paletteGhost.dropBeat !== null && (
+                  <div
+                    className="chord-drop-indicator"
+                    style={{
+                      left: `${paletteGhost.dropBeat * BEAT_WIDTH}px`,
+                      width: `${4 * BEAT_WIDTH}px`,
+                    }}
+                  />
+                )}
+                {chordBlocks.map((c) => (
+                  <div
+                    key={c.id}
+                    className={`chord-block ${
+                      selectedChordIds.has(c.id) ? 'selected' : ''
+                    }`}
+                    style={{
+                      left: `${c.beat * BEAT_WIDTH}px`,
+                      width: `${c.length * BEAT_WIDTH}px`,
+                    }}
+                    onMouseDown={(e) => handleChordMouseDown(e, c)}
+                    title={chordDisplayName(c, scale, root)}
+                  >
+                    <div
+                      className="chord-block-handle left"
+                      onMouseDown={(e) => handleChordResizeLeft(e, c)}
+                    />
+                    <span className="chord-block-label">
+                      {chordRomanLabel(c, scale)}
+                    </span>
+                    <div
+                      className="chord-block-handle"
+                      onMouseDown={(e) => handleChordResize(e, c)}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
             <div className="roll-content">
@@ -1354,6 +1813,12 @@ export default function PianoRoll({
                             }
                           >
                             <div
+                              className="row-note-handle left"
+                              onMouseDown={(e) =>
+                                handleNoteResizeLeft(e, key, beat, midi, length)
+                              }
+                            />
+                            <div
                               className="row-note-handle"
                               onMouseDown={(e) =>
                                 handleNoteResize(e, key, beat, midi, length)
@@ -1382,44 +1847,107 @@ export default function PianoRoll({
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <h3>Capture template</h3>
+            <h3>
+              Capture {templateTab === 'chords' ? 'chord progression' : 'template'}
+            </h3>
             <p className="modal-sub">
-              Save this pattern by scale degree so you can replay it on any
-              other scale.
-              {(() => {
-                const items = captureCurrentTemplate()
-                return ` ${items.length} of ${notes.size} note${
-                  notes.size === 1 ? '' : 's'
-                } sit on a scale degree.`
-              })()}
+              {templateTab === 'chords'
+                ? `Save this chord progression by scale degree so you can replay it on any other scale. ${chordBlocks.length} chord block${
+                    chordBlocks.length === 1 ? '' : 's'
+                  } on the lane.`
+                : (() => {
+                    const items = captureCurrentTemplate()
+                    return `Save this pattern by scale degree so you can replay it on any other scale. ${items.length} of ${notes.size} note${
+                      notes.size === 1 ? '' : 's'
+                    } sit on a scale degree.`
+                  })()}
             </p>
             <input
               autoFocus
               type="text"
               value={captureName}
               onChange={(e) => setCaptureName(e.target.value)}
-              placeholder="Template name"
+              placeholder={
+                templateTab === 'chords' ? 'Progression name' : 'Template name'
+              }
               onKeyDown={(e) => {
-                if (e.key === 'Enter') saveCurrentAsTemplate()
+                if (e.key === 'Enter') {
+                  if (templateTab === 'chords') saveCurrentAsChordTemplate()
+                  else saveCurrentAsTemplate()
+                }
                 if (e.key === 'Escape') setCaptureOpen(false)
               }}
             />
             <div className="modal-actions">
-              <button
-                type="button"
-                onClick={() => setCaptureOpen(false)}
-              >
+              <button type="button" onClick={() => setCaptureOpen(false)}>
                 Cancel
               </button>
               <button
                 type="button"
                 className="primary"
-                onClick={saveCurrentAsTemplate}
+                onClick={
+                  templateTab === 'chords'
+                    ? saveCurrentAsChordTemplate
+                    : saveCurrentAsTemplate
+                }
               >
                 Save
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {chordModalOpen && (
+        <div className="chord-palette-modal">
+          <div className="chord-palette-header">
+            <span className="label">
+              Chords — {padId(scale.id)} · {NOTE_DISPLAY[root]}
+            </span>
+            <button
+              type="button"
+              className="chord-palette-close"
+              onClick={() => setChordModalOpen(false)}
+              aria-label="close chord palette"
+            >
+              ×
+            </button>
+          </div>
+          <p className="chord-palette-hint">
+            Drag a card onto the chord lane above the grid.
+          </p>
+          <div className="chord-palette-grid">
+            {chordCatalog.map((shape) => {
+              const noteNames = chordToMidiNotes(shape, scale, root)
+                .map((m) => NOTE_DISPLAY[((m % 12) + 12) % 12])
+                .join(' ')
+              return (
+                <div
+                  key={shape.id}
+                  className="chord-card"
+                  onMouseDown={(e) => handlePaletteCardMouseDown(e, shape)}
+                  title={`${chordDisplayName(shape, scale, root)} — ${noteNames}`}
+                >
+                  <span className="chord-card-roman">
+                    {chordRomanLabel(shape, scale)}
+                  </span>
+                  <span className="chord-card-name">
+                    {chordDisplayName(shape, scale, root)}
+                  </span>
+                  <span className="chord-card-notes">{noteNames}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {paletteGhost && (
+        <div
+          className="chord-ghost"
+          style={{ left: paletteGhost.x + 8, top: paletteGhost.y + 8 }}
+        >
+          {chordRomanLabel(paletteGhost.shape, scale)}
         </div>
       )}
     </div>
