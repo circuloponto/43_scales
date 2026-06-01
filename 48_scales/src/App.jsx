@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { scales, PITCH_CLASSES } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
+import { chordPairs } from './chordPairs'
+import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
 import './App.css'
 
@@ -72,7 +74,7 @@ function PlayIcon() {
 }
 
 function cellPulseDelay(scaleId, pitchClass) {
-  return ((scaleId * 0.07 + pitchClass * 0.12) % 4).toFixed(2)
+  return ((scaleId * 0.07 + pitchClass * 0.12) % 2.4).toFixed(2)
 }
 
 function App() {
@@ -142,10 +144,9 @@ function App() {
         ) : (
         <>
         <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
-          {visibleScales.map((s, idx) => {
+          {visibleScales.map((s) => {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
-            const onLeft = idx % 2 === 0
             return (
               <div
                 key={s.id}
@@ -159,14 +160,10 @@ function App() {
                 onMouseLeave={() => setHoverRow(null)}
               >
                 <div className="glyph-zone left">
-                  {onLeft && (
-                    <>
-                      <div className="glyph-slot">
-                        <GlyphRow rowIndex={s.id - 1} accent={accent} />
-                      </div>
-                      <div className="connector" />
-                    </>
-                  )}
+                  <div className="glyph-slot">
+                    <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                  </div>
+                  <div className="connector" />
                 </div>
                 <div className="row-number">{padId(s.id)}</div>
                 <div
@@ -188,16 +185,6 @@ function App() {
                     )
                   })}
                 </div>
-                <div className="glyph-zone right">
-                  {!onLeft && (
-                    <>
-                      <div className="connector" />
-                      <div className="glyph-slot">
-                        <GlyphRow rowIndex={s.id - 1} accent={accent} />
-                      </div>
-                    </>
-                  )}
-                </div>
               </div>
             )
           })}
@@ -213,7 +200,7 @@ function App() {
               {Array.from({ length: 12 }, (_, c) => {
                 const pc = (root + c) % 12
                 const isActive = c === 0
-                const inScale = !scale || scale.notes.includes(c)
+                const inScale = !scale || scale.notes.includes(pc)
                 const dim = !isActive && !inScale
                 return (
                   <button
@@ -232,7 +219,8 @@ function App() {
             <div className="section">
               <div className="pattern">
                 {Array.from({ length: 12 }, (_, c) => {
-                  const inScale = scale.notes.includes(c)
+                  const pc = (root + c) % 12
+                  const inScale = scale.notes.includes(pc)
                   return (
                     <div
                       key={c}
@@ -243,8 +231,8 @@ function App() {
               </div>
               <div className="notes-row">
                 {Array.from({ length: 12 }, (_, c) => {
-                  const inScale = scale.notes.includes(c)
                   const pc = (root + c) % 12
+                  const inScale = scale.notes.includes(pc)
                   return (
                     <div
                       key={c}
@@ -300,7 +288,49 @@ function App() {
               </div>
 
               <div className="section">
-                <div className="label">Chords</div>
+                <div className="label">Chord pair</div>
+                {(() => {
+                  const pair = chordPairs.find((p) => p.scaleId === scale.id)
+                  if (!pair) {
+                    return <div className="hint">No chord-pair entry for this scale.</div>
+                  }
+                  const resolved = resolveChordPair(pair, scale.notes, root)
+                  if (!resolved) {
+                    return (
+                      <div className="chord-pair">
+                        <div className="chord-pair-row">
+                          <span className="chord-pair-name">{pair.left}</span>
+                          <span className="chord-pair-distance">{pair.distance}</span>
+                          <span className="chord-pair-name">{pair.right}</span>
+                        </div>
+                        <div className="hint">Chord shapes don't fit this scale — check src/chordPairs.js.</div>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="chord-pair">
+                      <div className="chord-pair-row">
+                        <div className="chord-pair-side">
+                          <div className="chord-pair-name">
+                            {pcName(resolved.leftRoot)} {pair.left}
+                          </div>
+                          <div className="chord-pair-notes">
+                            {resolved.leftNotes.map((pc) => pcName(pc)).join(' ')}
+                          </div>
+                        </div>
+                        <div className="chord-pair-distance">{pair.distance}</div>
+                        <div className="chord-pair-side">
+                          <div className="chord-pair-name">
+                            {pcName(resolved.rightRoot)} {pair.right}
+                          </div>
+                          <div className="chord-pair-notes">
+                            {resolved.rightNotes.map((pc) => pcName(pc)).join(' ')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             </>
           ) : (
