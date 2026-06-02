@@ -235,6 +235,17 @@
   animation: cellPulse 2.4s var(--ease) infinite;
 }
 
+.cell.is-scale-root {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+  z-index: 1;
+}
+
+.pattern-cell.is-scale-root {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+
 .cell.off {
   background: linear-gradient(
     135deg,

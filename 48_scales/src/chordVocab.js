@@ -64,3 +64,30 @@ export function resolveChordPair(pair, scaleNotes, root) {
 export function pcName(pc) {
   return NOTE_NAMES[((pc % 12) + 12) % 12]
 }
+
+// Step-based resolver: the user-picked `root` is treated as the scale's
+// intrinsic root (the note at scale.notes[rootStep-1] of the unrotated
+// scale). The LEFT chord roots at this pitch; the RIGHT chord sits
+// `distance` semitones above. No search, no scale-fit check — we always
+// return the computed pitches so the chord pair always renders.
+export function resolveChordPairAtStep(pair, scaleNotes, rootStep, root) {
+  const leftShape = CHORD_INTERVALS[pair.left]
+  const rightShape = CHORD_INTERVALS[pair.right]
+  const distance = INTERVAL_SEMITONES[pair.distance]
+  if (!leftShape || !rightShape || distance == null) return null
+  const leftRoot = ((root % 12) + 12) % 12
+  const rightRoot = (leftRoot + distance) % 12
+  return {
+    leftRoot,
+    rightRoot,
+    leftNotes: leftShape.map((o) => (leftRoot + o) % 12),
+    rightNotes: rightShape.map((o) => (rightRoot + o) % 12),
+  }
+}
+
+// Pitch class (relative to scale root) of the scale's intrinsic root, given
+// the scale.notes array and 1-indexed rootStep.
+export function intrinsicRootPc(scaleNotes, rootStep) {
+  if (!rootStep || rootStep < 1 || rootStep > scaleNotes.length) return null
+  return scaleNotes[rootStep - 1]
+}

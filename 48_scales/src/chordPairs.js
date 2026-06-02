@@ -1,23 +1,19 @@
 // Chord-pair breakdown of each 8-note scale, parsed row-by-row from the
-// uploaded "chordsNames_and_distance" SVG table.
+// corrected "chordsNames_and_distance" SVG table.
 //
 // Each entry: { scaleId, left, distance, right }. Edit by hand to correct.
 // The left/right chord ROOT pitch is auto-resolved at render time by trying
 // each scale degree until both chord shapes fit (see resolveChordPair in
 // src/chordVocab.js) — so you don't enter pitches here, only chord names
 // + the interval between the two chord roots.
-//
-// NOTE: the source SVG mis-labeled rows from row 5 onward (jumped from "4"
-// to "6"). The scaleIds below are corrected so each row maps to its actual
-// scale in src/scales.js.
 
 export const chordPairs = [
   { scaleId: 1,  left: 'Diminished', distance: 'Half Step',   right: 'Diminished' },
   { scaleId: 2,  left: 'Diminished', distance: 'Half Step',   right: 'Min7b5' },
   { scaleId: 3,  left: 'Dominant',   distance: 'Maj 3rd',     right: 'Min 7' },
   { scaleId: 4,  left: 'Diminished', distance: 'Half Step',   right: '7b5' },
-  { scaleId: 5,  left: 'Min7b5',     distance: 'Perfect 5th', right: 'Dominant' },
-  { scaleId: 6,  left: 'Min7b5',     distance: 'Tritone',     right: 'Dominant' },
+  { scaleId: 5,  left: 'Min7b5',     distance: 'Tritone',     right: 'Dominant' },
+  { scaleId: 6,  left: 'Min7b5',     distance: 'Perfect 5th', right: 'Dominant' },
   { scaleId: 7,  left: 'Diminished', distance: 'Half Step',   right: 'Min 7' },
   { scaleId: 8,  left: 'Min 7',      distance: 'Maj 3rd',     right: 'Dominant' },
   { scaleId: 9,  left: 'Diminished', distance: 'Half Step',   right: 'Dominant' },
@@ -54,4 +50,5 @@ export const chordPairs = [
   { scaleId: 40, left: 'Dom 9 no 5', distance: 'Half Step',   right: 'Min add 11' },
   { scaleId: 41, left: '7#5',        distance: 'Perfect 5th', right: 'Dom 9 no 5' },
   { scaleId: 42, left: 'Min add 11', distance: 'Whole Step',  right: 'Dom 9 no 5' },
+  { scaleId: 43, left: 'Dom 9 no 5', distance: 'Half Step',   right: 'Dom 9 no 5' },
 ]

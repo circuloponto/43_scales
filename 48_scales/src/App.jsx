@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { scales, PITCH_CLASSES } from './scales'
+import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
 import { chordPairs } from './chordPairs'
-import { resolveChordPair, pcName } from './chordVocab'
+import { resolveChordPairAtStep, intrinsicRootPc, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
 import './App.css'
 
@@ -147,6 +147,8 @@ function App() {
           {visibleScales.map((s) => {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
+            const rs = rootSteps[s.id - 1]
+            const intrinsicPc = rs ? s.notes[rs - 1] : null
             return (
               <div
                 key={s.id}
@@ -172,10 +174,13 @@ function App() {
                 >
                   {Array.from({ length: PITCH_CLASSES }, (_, pc) => {
                     const isOn = set.has(pc)
+                    const isRoot = pc === intrinsicPc
                     return (
                       <div
                         key={pc}
-                        className={`cell ${isOn ? 'on' : 'off'}`}
+                        className={`cell ${isOn ? 'on' : 'off'} ${
+                          isRoot ? 'is-scale-root' : ''
+                        }`}
                         style={
                           isOn
                             ? { animationDelay: `${cellPulseDelay(s.id, pc)}s` }
@@ -195,56 +200,75 @@ function App() {
             <span className="app-mark">8</span>
             <span className="app-name">Fold Way</span>
           </div>
-          <div className="section">
-            <div className="roots">
-              {Array.from({ length: 12 }, (_, c) => {
-                const pc = (root + c) % 12
-                const isActive = c === 0
-                const inScale = !scale || scale.notes.includes(pc)
-                const dim = !isActive && !inScale
-                return (
-                  <button
-                    key={c}
-                    className={`root ${isActive ? 'active' : ''} ${dim ? 'dim' : ''}`}
-                    onClick={() => setRoot(pc)}
-                  >
-                    {NOTE_DISPLAY[pc]}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          {(() => {
+            // Rotate the scale so its intrinsic root (defined by rootSteps)
+            // aligns with the user-picked root. Then the displayed pattern
+            // STARTS on the intrinsic-root note: position 0 of the display
+            // is always the intrinsic root, the rest follow the scale's
+            // intervals from there.
+            const rs = scale ? rootSteps[scale.id - 1] : null
+            const intrinsicPc = scale && rs ? scale.notes[rs - 1] : 0
+            const isInRotatedScale = (c) =>
+              !scale || scale.notes.includes((c + intrinsicPc) % 12)
+            return (
+              <>
+                <div className="section">
+                  <div className="roots">
+                    {Array.from({ length: 12 }, (_, c) => {
+                      const pc = (root + c) % 12
+                      const isActive = c === 0
+                      const inScale = isInRotatedScale(c)
+                      const dim = !isActive && !inScale
+                      return (
+                        <button
+                          key={c}
+                          className={`root ${isActive ? 'active' : ''} ${
+                            dim ? 'dim' : ''
+                          }`}
+                          onClick={() => setRoot(pc)}
+                        >
+                          {NOTE_DISPLAY[pc]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
 
-          {scale && (
-            <div className="section">
-              <div className="pattern">
-                {Array.from({ length: 12 }, (_, c) => {
-                  const pc = (root + c) % 12
-                  const inScale = scale.notes.includes(pc)
-                  return (
-                    <div
-                      key={c}
-                      className={`pattern-cell ${inScale ? 'on' : 'off'}`}
-                    />
-                  )
-                })}
-              </div>
-              <div className="notes-row">
-                {Array.from({ length: 12 }, (_, c) => {
-                  const pc = (root + c) % 12
-                  const inScale = scale.notes.includes(pc)
-                  return (
-                    <div
-                      key={c}
-                      className={`note-slot ${inScale ? 'in' : 'out'}`}
-                    >
-                      {inScale ? NOTE_DISPLAY[pc] : ''}
+                {scale && (
+                  <div className="section">
+                    <div className="pattern">
+                      {Array.from({ length: 12 }, (_, c) => {
+                        const inScale = isInRotatedScale(c)
+                        const isRoot = c === 0
+                        return (
+                          <div
+                            key={c}
+                            className={`pattern-cell ${inScale ? 'on' : 'off'} ${
+                              isRoot ? 'is-scale-root' : ''
+                            }`}
+                          />
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+                    <div className="notes-row">
+                      {Array.from({ length: 12 }, (_, c) => {
+                        const pc = (root + c) % 12
+                        const inScale = isInRotatedScale(c)
+                        return (
+                          <div
+                            key={c}
+                            className={`note-slot ${inScale ? 'in' : 'out'}`}
+                          >
+                            {inScale ? NOTE_DISPLAY[pc] : ''}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {scale ? (
             <>
@@ -294,7 +318,8 @@ function App() {
                   if (!pair) {
                     return <div className="hint">No chord-pair entry for this scale.</div>
                   }
-                  const resolved = resolveChordPair(pair, scale.notes, root)
+                  const rs = rootSteps[scale.id - 1]
+                  const resolved = resolveChordPairAtStep(pair, scale.notes, rs, root)
                   if (!resolved) {
                     return (
                       <div className="chord-pair">
@@ -303,7 +328,7 @@ function App() {
                           <span className="chord-pair-distance">{pair.distance}</span>
                           <span className="chord-pair-name">{pair.right}</span>
                         </div>
-                        <div className="hint">Chord shapes don't fit this scale — check src/chordPairs.js.</div>
+                        <div className="hint">Unknown chord name or interval — check src/chordVocab.js.</div>
                       </div>
                     )
                   }

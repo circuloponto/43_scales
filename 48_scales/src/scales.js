@@ -59,3 +59,15 @@ export const scales = [
 ];
 
 export default scales;
+
+// rootSteps[i] = the scale degree (1-indexed) of scale (i+1) that the
+// chord-pair table treats as the scale's root — i.e., the LEFT chord's
+// root pitch class is scale.notes[rootSteps[i] - 1]. Only 1..43 are filled
+// (scales 44..48 are placeholders).
+export const rootSteps = [
+  1, 5, 3, 3, 3, 2, 5, 5, 3, 3,
+  5, 4, 6, 3, 4, 3, 3, 1, 3, 3,
+  3, 4, 3, 6, 1, 6, 4, 4, 4, 4,
+  4, 7, 4, 1, 1, 5, 1, 5, 1, 2,
+  1, 8, 1,
+];
