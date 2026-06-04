@@ -41,27 +41,33 @@ export const INTERVAL_SEMITONES = {
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
-// Try every pitch class in `scaleNotes` as the left chord's root. Return the
-// first assignment where ALL chord notes (left + right) lie inside the scale.
-// `scaleNotes` is an array of pcs (0..11) of the scale, expressed relative
-// to its scale root (= 0). `root` is the user-selected absolute root in pcs.
-export function resolveChordPair(pair, scaleNotes, root) {
+// Rotation-aware resolver. The scale is first rotated so that `rootStep`
+// (1-indexed scale degree) becomes the new pc 0 — i.e., the scale is
+// re-expressed relative to its intrinsic root. Then every note of the
+// rotated scale is tried as the LEFT chord's root; the first one where
+// both chord shapes' notes lie inside the rotated scale wins. Returned
+// pitches are transposed by the user-picked `root`.
+export function resolveChordPair(pair, scaleNotes, root, rootStep) {
   const leftShape = CHORD_INTERVALS[pair.left]
   const rightShape = CHORD_INTERVALS[pair.right]
   const distance = INTERVAL_SEMITONES[pair.distance]
   if (!leftShape || !rightShape || distance == null) return null
-  const scaleSet = new Set(scaleNotes)
-  for (const candidate of scaleNotes) {
+
+  const intrinsicPc =
+    rootStep && rootStep >= 1 && rootStep <= scaleNotes.length
+      ? scaleNotes[rootStep - 1]
+      : 0
+  const rotated = scaleNotes.map((n) => (n - intrinsicPc + 12) % 12)
+  const scaleSet = new Set(rotated)
+
+  for (const candidate of rotated) {
     const leftNotes = leftShape.map((o) => (candidate + o) % 12)
-    const rightRoot = (candidate + distance) % 12
-    const rightNotes = rightShape.map((o) => (rightRoot + o) % 12)
-    // Subset check: every chord note must lie inside the scale. The two
-    // chords may share notes (overlap is allowed); they don't have to tile
-    // the full 8-note scale.
+    const rightRel = (candidate + distance) % 12
+    const rightNotes = rightShape.map((o) => (rightRel + o) % 12)
     if (![...leftNotes, ...rightNotes].every((pc) => scaleSet.has(pc))) continue
     return {
       leftRoot: (candidate + root) % 12,
-      rightRoot: (rightRoot + root) % 12,
+      rightRoot: (rightRel + root) % 12,
       leftNotes: leftNotes.map((pc) => (pc + root) % 12),
       rightNotes: rightNotes.map((pc) => (pc + root) % 12),
     }
@@ -71,31 +77,4 @@ export function resolveChordPair(pair, scaleNotes, root) {
 
 export function pcName(pc) {
   return NOTE_NAMES[((pc % 12) + 12) % 12]
-}
-
-// Step-based resolver: the user-picked `root` is treated as the scale's
-// intrinsic root (the note at scale.notes[rootStep-1] of the unrotated
-// scale). The LEFT chord roots at this pitch; the RIGHT chord sits
-// `distance` semitones above. No search, no scale-fit check — we always
-// return the computed pitches so the chord pair always renders.
-export function resolveChordPairAtStep(pair, scaleNotes, rootStep, root) {
-  const leftShape = CHORD_INTERVALS[pair.left]
-  const rightShape = CHORD_INTERVALS[pair.right]
-  const distance = INTERVAL_SEMITONES[pair.distance]
-  if (!leftShape || !rightShape || distance == null) return null
-  const leftRoot = ((root % 12) + 12) % 12
-  const rightRoot = (leftRoot + distance) % 12
-  return {
-    leftRoot,
-    rightRoot,
-    leftNotes: leftShape.map((o) => (leftRoot + o) % 12),
-    rightNotes: rightShape.map((o) => (rightRoot + o) % 12),
-  }
-}
-
-// Pitch class (relative to scale root) of the scale's intrinsic root, given
-// the scale.notes array and 1-indexed rootStep.
-export function intrinsicRootPc(scaleNotes, rootStep) {
-  if (!rootStep || rootStep < 1 || rootStep > scaleNotes.length) return null
-  return scaleNotes[rootStep - 1]
 }

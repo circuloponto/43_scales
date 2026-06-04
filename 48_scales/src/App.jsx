@@ -202,7 +202,11 @@ function App() {
           </div>
           {(() => {
             const rs = scale ? rootSteps[scale.id - 1] : null
-            const intrinsicPc = scale && rs ? scale.notes[rs - 1] : null
+            const intrinsicPc = scale && rs ? scale.notes[rs - 1] : 0
+            const rotated = scale
+              ? scale.notes.map((n) => (n - intrinsicPc + 12) % 12)
+              : []
+            const inRotated = (c) => !scale || rotated.includes(c)
             return (
               <>
                 <div className="section">
@@ -210,7 +214,7 @@ function App() {
                     {Array.from({ length: 12 }, (_, c) => {
                       const pc = (root + c) % 12
                       const isActive = c === 0
-                      const inScale = !scale || scale.notes.includes(c)
+                      const inScale = inRotated(c)
                       const dim = !isActive && !inScale
                       return (
                         <button
@@ -231,8 +235,8 @@ function App() {
                   <div className="section">
                     <div className="pattern">
                       {Array.from({ length: 12 }, (_, c) => {
-                        const inScale = scale.notes.includes(c)
-                        const isRoot = c === intrinsicPc
+                        const inScale = inRotated(c)
+                        const isRoot = c === 0
                         return (
                           <div
                             key={c}
@@ -246,7 +250,7 @@ function App() {
                     <div className="notes-row">
                       {Array.from({ length: 12 }, (_, c) => {
                         const pc = (root + c) % 12
-                        const inScale = scale.notes.includes(c)
+                        const inScale = inRotated(c)
                         return (
                           <div
                             key={c}
@@ -311,7 +315,8 @@ function App() {
                   if (!pair) {
                     return <div className="hint">No chord-pair entry for this scale.</div>
                   }
-                  const resolved = resolveChordPair(pair, scale.notes, root)
+                  const rs = rootSteps[scale.id - 1]
+                  const resolved = resolveChordPair(pair, scale.notes, root, rs)
                   if (!resolved) {
                     return (
                       <div className="chord-pair">
