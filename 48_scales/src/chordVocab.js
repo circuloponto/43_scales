@@ -14,6 +14,15 @@ export const CHORD_INTERVALS = {
   'Major 7':      [0, 4, 7, 11],
   'Min add 11':   [0, 3, 5, 7],
   'Dom 9 no 5':   [0, 2, 4, 10],  // whole-tone cluster
+  'Aug7sus2':     [0, 2, 4, 6],   // 0, 2, 3, #4 in scale-degree notation
+  // Short-form aliases for the names used in your source list:
+  'dim7':         [0, 3, 6, 9],
+  'min7':         [0, 3, 7, 10],
+  'min7b5':       [0, 3, 6, 10],
+  'sus2&4':       [0, 2, 5, 7],
+  'Add9':         [0, 2, 4, 7],
+  'MinAdd11':     [0, 3, 5, 7],
+  '7':            [0, 4, 7, 10],
 }
 
 // Distance column → semitones between left and right chord roots.
@@ -46,11 +55,10 @@ export function resolveChordPair(pair, scaleNotes, root) {
     const leftNotes = leftShape.map((o) => (candidate + o) % 12)
     const rightRoot = (candidate + distance) % 12
     const rightNotes = rightShape.map((o) => (rightRoot + o) % 12)
-    const all = new Set([...leftNotes, ...rightNotes])
-    // Both chord shapes must lie inside the scale AND together exactly cover
-    // all 8 scale notes (the scale = leftChord ∪ rightChord, no overlap).
-    if (all.size !== scaleNotes.length) continue
-    if (![...all].every((pc) => scaleSet.has(pc))) continue
+    // Subset check: every chord note must lie inside the scale. The two
+    // chords may share notes (overlap is allowed); they don't have to tile
+    // the full 8-note scale.
+    if (![...leftNotes, ...rightNotes].every((pc) => scaleSet.has(pc))) continue
     return {
       leftRoot: (candidate + root) % 12,
       rightRoot: (rightRoot + root) % 12,
