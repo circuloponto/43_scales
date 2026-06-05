@@ -31,6 +31,7 @@ export const INTERVAL_SEMITONES = {
   'Whole Step':   2,
   'Min 3rd':      3,
   'Maj 3rd':      4,
+  'Perfect 4th':  5,
   'Tritone':      6,
   'Perfect 5th':  7,
   'Maj 6th':      9,
