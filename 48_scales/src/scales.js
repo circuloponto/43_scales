@@ -51,11 +51,6 @@ export const scales = [
   { id: 41, notes: [0,1,2,3,4,5,6,9] },
   { id: 42, notes: [0,1,2,3,4,5,6,10] },
   { id: 43, notes: [0,1,2,3,4,5,6,7] },
-  { id: 44, notes: [] },
-  { id: 45, notes: [] },
-  { id: 46, notes: [] },
-  { id: 47, notes: [] },
-  { id: 48, notes: [] },
 ];
 
 export default scales;
