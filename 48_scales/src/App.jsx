@@ -83,6 +83,9 @@ function App() {
   const [hoverRow, setHoverRow] = useState(null)
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
   const [accent, setAccent] = useState(ORIGINAL_PURPLE)
+  const [chord1Color, setChord1Color] = useState('#e8a87c')
+  const [chord2Color, setChord2Color] = useState('#7891c4')
+  const [electronColor, setElectronColor] = useState('#6b6b70')
   const [view, setView] = useState('matrix')
   const [templates, setTemplates] = useState(defaultTemplates)
   const [chordTemplates, setChordTemplates] = useState(defaultChordTemplates)
@@ -115,7 +118,15 @@ function App() {
   }
 
   return (
-    <div className="app" style={{ '--accent': accent }}>
+    <div
+      className="app"
+      style={{
+        '--accent': accent,
+        '--chord1': chord1Color,
+        '--chord2': chord2Color,
+        '--electron': electronColor,
+      }}
+    >
       <div className="frame">
         <div className="theme-picker" title="accent color">
           <span className="theme-label">Accent</span>
@@ -126,6 +137,33 @@ function App() {
               onChange={(e) => setAccent(e.target.value)}
             />
             <span className="theme-swatch" style={{ background: accent }} />
+          </label>
+          <span className="theme-label">Chord 1</span>
+          <label className="theme-swatch-wrap">
+            <input
+              type="color"
+              value={chord1Color}
+              onChange={(e) => setChord1Color(e.target.value)}
+            />
+            <span className="theme-swatch" style={{ background: chord1Color }} />
+          </label>
+          <span className="theme-label">Chord 2</span>
+          <label className="theme-swatch-wrap">
+            <input
+              type="color"
+              value={chord2Color}
+              onChange={(e) => setChord2Color(e.target.value)}
+            />
+            <span className="theme-swatch" style={{ background: chord2Color }} />
+          </label>
+          <span className="theme-label">Electrons</span>
+          <label className="theme-swatch-wrap">
+            <input
+              type="color"
+              value={electronColor}
+              onChange={(e) => setElectronColor(e.target.value)}
+            />
+            <span className="theme-swatch" style={{ background: electronColor }} />
           </label>
         </div>
 
@@ -207,6 +245,22 @@ function App() {
               ? scale.notes.map((n) => (n - intrinsicPc + 12) % 12)
               : []
             const inRotated = (c) => !scale || rotated.includes(c)
+            const pair = scale
+              ? chordPairs.find((p) => p.scaleId === scale.id)
+              : null
+            const resolved = pair
+              ? resolveChordPair(pair, scale.notes, root, rs)
+              : null
+            const leftSet = new Set(resolved ? resolved.leftNotes : [])
+            const rightSet = new Set(resolved ? resolved.rightNotes : [])
+            const chordClass = (pc) => {
+              const inL = leftSet.has(pc)
+              const inR = rightSet.has(pc)
+              if (inL && inR) return 'chord-both'
+              if (inL) return 'chord-left'
+              if (inR) return 'chord-right'
+              return ''
+            }
             return (
               <>
                 <div className="section">
@@ -235,6 +289,7 @@ function App() {
                   <div className="section">
                     <div className="pattern">
                       {Array.from({ length: 12 }, (_, c) => {
+                        const pc = (root + c) % 12
                         const inScale = inRotated(c)
                         const isRoot = c === 0
                         return (
@@ -242,7 +297,7 @@ function App() {
                             key={c}
                             className={`pattern-cell ${inScale ? 'on' : 'off'} ${
                               isRoot ? 'is-scale-root' : ''
-                            }`}
+                            } ${chordClass(pc)}`}
                           />
                         )
                       })}
@@ -254,7 +309,7 @@ function App() {
                         return (
                           <div
                             key={c}
-                            className={`note-slot ${inScale ? 'in' : 'out'}`}
+                            className={`note-slot ${inScale ? 'in' : 'out'} ${chordClass(pc)}`}
                           >
                             {inScale ? NOTE_DISPLAY[pc] : ''}
                           </div>
@@ -332,7 +387,7 @@ function App() {
                   return (
                     <div className="chord-pair">
                       <div className="chord-pair-row">
-                        <div className="chord-pair-side">
+                        <div className="chord-pair-side chord-left">
                           <div className="chord-pair-name">
                             {pcName(resolved.leftRoot)} {pair.left}
                           </div>
@@ -341,7 +396,7 @@ function App() {
                           </div>
                         </div>
                         <div className="chord-pair-distance">{pair.distance}</div>
-                        <div className="chord-pair-side">
+                        <div className="chord-pair-side chord-right">
                           <div className="chord-pair-name">
                             {pcName(resolved.rightRoot)} {pair.right}
                           </div>

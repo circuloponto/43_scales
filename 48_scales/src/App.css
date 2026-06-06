@@ -327,14 +327,26 @@
 
 .chord-pair-name {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--fg);
   letter-spacing: 0.02em;
 }
 
+.chord-pair-side.chord-left .chord-pair-name,
+.chord-pair-side.chord-left .chord-pair-notes {
+  color: var(--chord1);
+}
+
+.chord-pair-side.chord-right .chord-pair-name,
+.chord-pair-side.chord-right .chord-pair-notes {
+  color: var(--chord2);
+}
+
 .chord-pair-notes {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--mute);
   letter-spacing: 0.04em;
 }
@@ -479,6 +491,45 @@
   );
 }
 
+.pattern-cell.on.chord-left {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord1) 70%, var(--fg) 30%) 0%,
+    var(--chord1) 100%
+  );
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--chord1) 65%, var(--fg) 35%);
+}
+
+.pattern-cell.on.chord-right {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord2) 70%, var(--fg) 30%) 0%,
+    var(--chord2) 100%
+  );
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--chord2) 65%, var(--fg) 35%);
+}
+
+.pattern-cell.on.chord-both {
+  background: linear-gradient(
+    135deg,
+    var(--chord1) 0%,
+    var(--chord1) 50%,
+    var(--chord2) 50%,
+    var(--chord2) 100%
+  );
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--fg) 50%, transparent);
+}
+
+.note-slot.chord-left {
+  color: var(--chord1);
+}
+.note-slot.chord-right {
+  color: var(--chord2);
+}
+.note-slot.chord-both {
+  color: color-mix(in srgb, var(--chord1) 50%, var(--chord2) 50%);
+}
+
 .notes-row {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -505,7 +556,7 @@
   margin-top: 12px;
   font-family: var(--mono);
   font-size: 14px;
-  color: var(--mute);
+  color: var(--electron);
   letter-spacing: 0.04em;
 }
 
