@@ -6,6 +6,9 @@ import {
   chordRomanLabel,
   chordDisplayName,
 } from './chords'
+import { rootSteps } from './scales'
+import { chordPairs } from './chordPairs'
+import { resolveChordPair } from './chordVocab'
 
 const NOTE_DISPLAY = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
@@ -153,7 +156,10 @@ function NumberField({
   }
 
   return (
-    <label className="beats-control">
+    // Use a div, not a <label>, so a mousedown on the draggable span doesn't
+    // implicitly focus the input — which otherwise interrupts the horizontal
+    // scrub gesture as soon as the cursor crosses the input element.
+    <div className="beats-control">
       <span
         className="beats-label draggable"
         onMouseDown={handleLabelDown}
@@ -168,6 +174,7 @@ function NumberField({
         max={max}
         step={step}
         value={draft}
+        aria-label={label}
         onFocus={() => {
           focusedRef.current = true
         }}
@@ -185,7 +192,7 @@ function NumberField({
           }
         }}
       />
-    </label>
+    </div>
   )
 }
 
@@ -255,7 +262,7 @@ function VariationPanel() {
 }
 
 export default function PianoRoll({
-  scale,
+  scale: rawScale,
   root,
   onBack,
   templates = [],
@@ -263,6 +270,18 @@ export default function PianoRoll({
   chordTemplates = [],
   setChordTemplates,
 }) {
+  // Rotate the scale by its rootStep so the displayed scale here matches the
+  // right-panel view in the matrix screen: the intrinsic-root degree sits at
+  // pc 0 of `scale.notes`. Every downstream piece — inScale, nearestScaleMidi,
+  // buildInitialPattern, the chord catalog generator, template apply, the
+  // scale-bar pattern — uses `scale` (this rotated version), so chord-pair
+  // colors align cleanly with the on-cells.
+  const _rsRoll = rawScale ? rootSteps[rawScale.id - 1] : null
+  const _intrinsicPcRoll =
+    rawScale && _rsRoll ? rawScale.notes[_rsRoll - 1] : 0
+  const scale = rawScale
+    ? { ...rawScale, notes: rawScale.notes.map((n) => (n - _intrinsicPcRoll + 12) % 12) }
+    : null
   const [notes, setNotes] = useState(() => buildInitialPattern(scale, root))
   const [chordBlocks, setChordBlocks] = useState(() => [])
   const [totalBeats, setTotalBeats] = useState(DEFAULT_BEATS)
@@ -424,6 +443,28 @@ export default function PianoRoll({
 
   const inScale = (pc) =>
     scale.notes.some((n) => (n + root) % 12 === pc)
+
+  // Chord-pair membership for coloring. Resolved chord notes are absolute pcs
+  // (transposed by `root`); we just need them as Sets so the render code can
+  // tag each piano key, grid row, and note block by which chord it belongs to.
+  // We pass rawScale.notes (unrotated) here because resolveChordPair rotates
+  // internally by rootStep — feeding it the already-rotated set would
+  // double-rotate.
+  const _pair = chordPairs.find((p) => p.scaleId === rawScale.id)
+  const _resolved = _pair
+    ? resolveChordPair(_pair, rawScale.notes, root, _rsRoll)
+    : null
+  const leftChordPcs = new Set(_resolved ? _resolved.leftNotes : [])
+  const rightChordPcs = new Set(_resolved ? _resolved.rightNotes : [])
+  const chordClassFor = (pc) => {
+    const inL = leftChordPcs.has(pc)
+    const inR = rightChordPcs.has(pc)
+    if (inL && inR) return 'chord-both'
+    if (inL) return 'chord-left'
+    if (inR) return 'chord-right'
+    if (!inScale(pc)) return 'chord-electron'
+    return ''
+  }
 
   // Snap a MIDI value to the nearest pitch that belongs to the current scale.
   const nearestScaleMidi = (midi) => {
@@ -1527,7 +1568,7 @@ export default function PianoRoll({
             return (
               <div
                 key={c}
-                className={`roll-scale-cell ${isIn ? 'on' : 'off'}`}
+                className={`roll-scale-cell ${isIn ? 'on' : 'off'} ${chordClassFor(pc)}`}
                 title={NOTE_DISPLAY[pc]}
               >
                 {isIn ? NOTE_DISPLAY[pc] : ''}
@@ -1736,7 +1777,7 @@ export default function PianoRoll({
                       key={midi}
                       className={`piano-key ${pos.white ? 'white' : 'black'} ${
                         isIn ? 'in' : ''
-                      } ${isRoot ? 'is-root' : ''}`}
+                      } ${isRoot ? 'is-root' : ''} ${chordClassFor(pc)}`}
                       style={{ top: `${pos.top}px`, height: `${pos.height}px` }}
                     >
                       {pos.white && (
@@ -1791,7 +1832,7 @@ export default function PianoRoll({
                       key={midi}
                       className={`grid-row ${isWhite ? 'white' : 'black'} ${
                         isOctave ? 'octave' : ''
-                      } ${isIn ? 'in' : ''} ${isRoot ? 'is-root' : ''}`}
+                      } ${isIn ? 'in' : ''} ${isRoot ? 'is-root' : ''} ${chordClassFor(pc)}`}
                     >
                       <div
                         className={`beats-track ${freeMode ? 'free' : ''}`}
@@ -1803,7 +1844,7 @@ export default function PianoRoll({
                             key={key}
                             className={`row-note ${
                               selectedKeys.has(key) ? 'selected' : ''
-                            }`}
+                            } ${chordClassFor(midi % 12)}`}
                             style={{
                               left: `${beat * BEAT_WIDTH}px`,
                               width: `${length * BEAT_WIDTH}px`,

@@ -1740,3 +1740,104 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
+/* ---- Roll: chord/electron coloring -------------------------------- */
+
+/* Row-notes (placed notes) get their fill from the chord they belong to. */
+.row-note.chord-left {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord1) 70%, var(--fg) 30%) 0%,
+    var(--chord1) 100%
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--chord1) 60%, var(--fg) 40%);
+}
+.row-note.chord-right {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord2) 70%, var(--fg) 30%) 0%,
+    var(--chord2) 100%
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--chord2) 60%, var(--fg) 40%);
+}
+.row-note.chord-both {
+  background: linear-gradient(
+    135deg,
+    var(--chord1) 0%,
+    var(--chord1) 50%,
+    var(--chord2) 50%,
+    var(--chord2) 100%
+  );
+}
+.row-note.chord-electron {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--electron) 70%, var(--fg) 30%) 0%,
+    var(--electron) 100%
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--electron) 55%, var(--fg) 45%);
+}
+
+/* Grid rows get a soft tint on the row background so the chord band is
+   visible behind any notes you place there. */
+.grid-row.in.chord-left {
+  background: color-mix(in srgb, var(--chord1) 9%, transparent);
+}
+.grid-row.in.chord-right {
+  background: color-mix(in srgb, var(--chord2) 9%, transparent);
+}
+.grid-row.in.chord-both {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--chord1) 9%, transparent) 0%,
+    color-mix(in srgb, var(--chord2) 9%, transparent) 100%
+  );
+}
+
+/* Piano keys: small accent stripe along the right edge in the chord color. */
+.piano-key.in.chord-left::after,
+.piano-key.in.chord-right::after,
+.piano-key.in.chord-both::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.piano-key.in.chord-left::after { background: var(--chord1); }
+.piano-key.in.chord-right::after { background: var(--chord2); }
+.piano-key.in.chord-both::after {
+  background: linear-gradient(
+    180deg,
+    var(--chord1) 0%,
+    var(--chord1) 50%,
+    var(--chord2) 50%,
+    var(--chord2) 100%
+  );
+}
+
+/* Roll's top scale-bar cells. */
+.roll-scale-cell.on.chord-left {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord1) 70%, var(--fg) 30%) 0%,
+    var(--chord1) 100%
+  );
+}
+.roll-scale-cell.on.chord-right {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord2) 70%, var(--fg) 30%) 0%,
+    var(--chord2) 100%
+  );
+}
+.roll-scale-cell.on.chord-both {
+  background: linear-gradient(
+    135deg,
+    var(--chord1) 0%,
+    var(--chord1) 50%,
+    var(--chord2) 50%,
+    var(--chord2) 100%
+  );
+}
+
