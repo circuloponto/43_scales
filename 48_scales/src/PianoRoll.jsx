@@ -393,6 +393,12 @@ export default function PianoRoll({
       } else if (e.shiftKey && e.code === 'KeyV') {
         e.preventDefault()
         flipVertical()
+      } else if (e.code === 'BracketRight') {
+        e.preventDefault()
+        growSelection()
+      } else if (e.code === 'BracketLeft') {
+        e.preventDefault()
+        shrinkSelection()
       }
     }
     window.addEventListener('keydown', handler)
@@ -964,6 +970,73 @@ export default function PianoRoll({
         const newMidi = nearestScaleMidi(sum - m)
         const newKey = `${beatStr}-${newMidi}`
         next.set(newKey, length)
+        newSel.add(newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
+  }
+
+  // Grow each selected note symmetrically — beat - 1 on the left and
+  // length + 2 on the right — clamped to the timeline. Notes already at
+  // beat 0 only grow rightward; notes whose right edge would pass
+  // totalBeats only grow leftward.
+  const growSelection = () => {
+    if (selectedKeys.size === 0) return
+    pushHistory()
+    const newSel = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const key of selectedKeys) next.delete(key)
+      for (const key of selectedKeys) {
+        const [bStr, midiStr] = key.split('-')
+        const oldBeat = Number(bStr)
+        const oldLength = notesRef.current.get(key) ?? 1
+        const grownLeft = Math.max(0, oldBeat - 1)
+        const grownEnd = Math.min(totalBeats, oldBeat + oldLength + 1)
+        const newKey = `${grownLeft}-${midiStr}`
+        next.set(newKey, grownEnd - grownLeft)
+        newSel.add(newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
+  }
+
+  // Shrink each selected note symmetrically — beat + 1 on the left and
+  // length - 2 on the right. Stops shrinking when the note is at minimum
+  // length so we don't drop it.
+  const shrinkSelection = () => {
+    if (selectedKeys.size === 0) return
+    pushHistory()
+    const newSel = new Set()
+    const minLen = freeMode ? 0.25 : 1
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const key of selectedKeys) next.delete(key)
+      for (const key of selectedKeys) {
+        const [bStr, midiStr] = key.split('-')
+        const oldBeat = Number(bStr)
+        const oldLength = notesRef.current.get(key) ?? 1
+        // If length is already at min, leave the note unchanged. Otherwise
+        // squeeze a cell off each end if there's room; if only one side has
+        // room, squeeze that side.
+        if (oldLength <= minLen) {
+          next.set(`${oldBeat}-${midiStr}`, oldLength)
+          newSel.add(`${oldBeat}-${midiStr}`)
+          continue
+        }
+        let newBeat = oldBeat
+        let newLength = oldLength
+        if (newLength - 2 >= minLen) {
+          newBeat = oldBeat + 1
+          newLength = oldLength - 2
+        } else {
+          // Only one cell to shave off — take it from the right.
+          newLength = oldLength - 1
+        }
+        const newKey = `${newBeat}-${midiStr}`
+        next.set(newKey, newLength)
         newSel.add(newKey)
       }
       return next
