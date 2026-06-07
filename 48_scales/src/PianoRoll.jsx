@@ -1106,10 +1106,16 @@ export default function PianoRoll({
   const handleRowMouseDown = (e, midi) => {
     // Ignore mousedown on a child note — it has its own drag handler.
     if (e.target !== e.currentTarget) return
+    // Right-click on the grid: shift+right starts a delete-marquee; plain
+    // right-click without shift just suppresses the browser context menu
+    // and does nothing.
+    const isRightClick = e.button === 2
+    if (isRightClick) e.preventDefault()
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
     const isInScale = inScale(midi % 12)
-    const additive = e.shiftKey
+    const additive = e.shiftKey && !isRightClick
+    const isDeleteMarquee = isRightClick
     // Snapshot the existing selection so a shift+marquee can union with it
     // even after we re-render.
     const baseSelection = additive ? new Set(selectedKeys) : null
@@ -1146,6 +1152,8 @@ export default function PianoRoll({
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       if (!moved) {
+        // Right-click without drag — do nothing (and never place a note).
+        if (isRightClick) return
         // Shift+click on empty space: preserve the current selection so the
         // user can keep building it across separate gestures.
         if (additive) return
@@ -1165,8 +1173,7 @@ export default function PianoRoll({
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
-        const picked = additive ? new Set(baseSelection) : new Set()
-        for (const [key] of notes) {
+        const inMarquee = (key) => {
           const [beatStr, midiStr] = key.split('-')
           const noteBeat = Number(beatStr)
           const noteMidi = Number(midiStr)
@@ -1174,11 +1181,30 @@ export default function PianoRoll({
           const nx2 = nx1 + BEAT_WIDTH
           const ny1 = (MIDI_HIGH - noteMidi) * ROW_HEIGHT
           const ny2 = ny1 + ROW_HEIGHT
-          if (nx1 < m.x2 && nx2 > m.x1 && ny1 < m.y2 && ny2 > m.y1) {
-            picked.add(key)
-          }
+          return nx1 < m.x2 && nx2 > m.x1 && ny1 < m.y2 && ny2 > m.y1
         }
-        setSelectedKeys(picked)
+        if (isDeleteMarquee) {
+          const victims = []
+          for (const [key] of notes) if (inMarquee(key)) victims.push(key)
+          if (victims.length > 0) {
+            pushHistory()
+            setNotes((prev) => {
+              const next = new Map(prev)
+              for (const k of victims) next.delete(k)
+              return next
+            })
+            setSelectedKeys((prev) => {
+              if (victims.every((k) => !prev.has(k))) return prev
+              const ns = new Set(prev)
+              for (const k of victims) ns.delete(k)
+              return ns
+            })
+          }
+        } else {
+          const picked = additive ? new Set(baseSelection) : new Set()
+          for (const [key] of notes) if (inMarquee(key)) picked.add(key)
+          setSelectedKeys(picked)
+        }
         setMarquee(null)
         marqueeRef.current = null
       }
@@ -1191,6 +1217,25 @@ export default function PianoRoll({
   const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
     e.stopPropagation()
     e.preventDefault()
+
+    // Right-click on a note: delete it immediately. If the note is part of
+    // the active selection, delete the whole selection too.
+    if (e.button === 2) {
+      pushHistory()
+      const victims = selectedKeys.has(key) ? new Set(selectedKeys) : new Set([key])
+      setNotes((prev) => {
+        const next = new Map(prev)
+        for (const k of victims) next.delete(k)
+        return next
+      })
+      setSelectedKeys((prev) => {
+        if (victims.size === 0) return prev
+        const ns = new Set(prev)
+        for (const k of victims) ns.delete(k)
+        return ns
+      })
+      return
+    }
 
     // Shift+click on a note toggles its membership in the selection without
     // dragging or deleting — lets the user build up a selection by clicking
@@ -1631,7 +1676,7 @@ export default function PianoRoll({
   }
 
   return (
-    <div className="roll-view">
+    <div className="roll-view" onContextMenu={(e) => e.preventDefault()}>
       <header className="roll-header">
         <button className="back-btn" onClick={onBack} aria-label="back to matrix">
           <BackIcon />
