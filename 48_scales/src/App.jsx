@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
@@ -89,6 +89,30 @@ function App() {
   const [view, setView] = useState('matrix')
   const [templates, setTemplates] = useState(defaultTemplates)
   const [chordTemplates, setChordTemplates] = useState(defaultChordTemplates)
+  const [scaleNames, setScaleNames] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('eightFold.scaleNames') || '{}')
+    } catch {
+      return {}
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('eightFold.scaleNames', JSON.stringify(scaleNames))
+    } catch {}
+  }, [scaleNames])
+
+  const scaleNameOf = (id) => scaleNames[id] ?? `Scale ${id}`
+  const renameScale = (id, name) => {
+    setScaleNames((prev) => {
+      const trimmed = (name || '').trim()
+      const next = { ...prev }
+      if (!trimmed || trimmed === `Scale ${id}`) delete next[id]
+      else next[id] = trimmed
+      return next
+    })
+  }
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
@@ -326,7 +350,14 @@ function App() {
             <>
               <div className="section">
                 <div className="hero">
-                  <div className="hero-number">{padId(scale.id)}</div>
+                  <input
+                    type="text"
+                    className="hero-number hero-name-input"
+                    value={scaleNameOf(scale.id)}
+                    onChange={(e) => renameScale(scale.id, e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    aria-label={`Name for scale ${scale.id}`}
+                  />
                   <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
                   <div className="hero-actions">
                     <button

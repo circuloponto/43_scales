@@ -356,12 +356,28 @@ export default function PianoRoll({
   const paletteDragRef = useRef(null)
 
   useEffect(() => {
-    setNotes(buildInitialPattern(scale, root))
+    const initial = buildInitialPattern(scale, root)
+    setNotes(initial)
     setChordBlocks([])
     historyRef.current = []
     futureRef.current = []
     setSelectedKeys(new Set())
     setSelectedChordIds(new Set())
+    // Scroll the roll vertically so the initial notes sit roughly in the
+    // middle of the viewport. With the 88-key range this avoids dropping
+    // the user at the top of an empty C8 area.
+    requestAnimationFrame(() => {
+      const sc = scrollRef.current
+      if (!sc) return
+      let avgMidi = 60 + root
+      if (initial.size > 0) {
+        let sum = 0
+        for (const [k] of initial) sum += Number(k.split('-')[1])
+        avgMidi = sum / initial.size
+      }
+      const targetTop = (MIDI_HIGH - avgMidi) * ROW_HEIGHT
+      sc.scrollTop = Math.max(0, targetTop - sc.clientHeight / 2 + ROW_HEIGHT / 2)
+    })
   }, [scale?.id, root])
 
   useEffect(() => {
