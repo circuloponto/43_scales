@@ -279,8 +279,17 @@ export default function PianoRoll({
   const _rsRoll = rawScale ? rootSteps[rawScale.id - 1] : null
   const _intrinsicPcRoll =
     rawScale && _rsRoll ? rawScale.notes[_rsRoll - 1] : 0
+  // Sort the rotated notes ascending so scale.notes[i] is the i-th scale
+  // degree in pitch order. midiToScaleStep relies on this ordering to give
+  // monotone step indices (otherwise stepping across the rotation seam
+  // jumps a full octave).
   const scale = rawScale
-    ? { ...rawScale, notes: rawScale.notes.map((n) => (n - _intrinsicPcRoll + 12) % 12) }
+    ? {
+        ...rawScale,
+        notes: rawScale.notes
+          .map((n) => (n - _intrinsicPcRoll + 12) % 12)
+          .sort((a, b) => a - b),
+      }
     : null
   const [notes, setNotes] = useState(() => buildInitialPattern(scale, root))
   const [chordBlocks, setChordBlocks] = useState(() => [])
@@ -464,6 +473,37 @@ export default function PianoRoll({
     if (inR) return 'chord-right'
     if (!inScale(pc)) return 'chord-electron'
     return ''
+  }
+
+  // Map a MIDI value (assumed to be on-scale) to a global scale-step index
+  // = octave * scale.notes.length + degree. Step indices are monotone in
+  // MIDI within a single root/scale, so subtracting two of them gives the
+  // number of scale steps between the two pitches.
+  const midiToScaleStep = (midi) => {
+    const pc = ((midi % 12) + 12) % 12
+    const n = scale.notes.length
+    for (let s = 0; s < n; s++) {
+      if (((scale.notes[s] + root) % 12 + 12) % 12 === pc) {
+        const total = scale.notes[s] + root
+        const wrap = Math.floor(total / 12)
+        const baseMidi = ((total % 12) + 12) % 12
+        const oct = (midi - baseMidi) / 12 - wrap
+        return oct * n + s
+      }
+    }
+    return null
+  }
+
+  // Inverse of midiToScaleStep. Accepts any integer index (negative or
+  // overflowing) and resolves it to the corresponding MIDI value.
+  const scaleStepToMidi = (idx) => {
+    const n = scale.notes.length
+    const s = ((idx % n) + n) % n
+    const oct = Math.floor((idx - s) / n)
+    const total = scale.notes[s] + root
+    const wrap = Math.floor(total / 12)
+    const baseMidi = ((total % 12) + 12) % 12
+    return baseMidi + (oct + wrap) * 12
   }
 
   // Snap a MIDI value to the nearest pitch that belongs to the current scale.
@@ -967,6 +1007,10 @@ export default function PianoRoll({
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
     const isInScale = inScale(midi % 12)
+    const additive = e.shiftKey
+    // Snapshot the existing selection so a shift+marquee can union with it
+    // even after we re-render.
+    const baseSelection = additive ? new Set(selectedKeys) : null
     const trackRect = e.currentTarget.getBoundingClientRect()
     const rowIdx = MIDI_HIGH - midi
     const startContentX = e.clientX - trackRect.left
@@ -1000,6 +1044,9 @@ export default function PianoRoll({
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       if (!moved) {
+        // Shift+click on empty space: preserve the current selection so the
+        // user can keep building it across separate gestures.
+        if (additive) return
         // single click on empty space → add note (only if row is in scale)
         if (!isInScale) {
           setSelectedKeys(new Set())
@@ -1016,7 +1063,7 @@ export default function PianoRoll({
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
-        const picked = new Set()
+        const picked = additive ? new Set(baseSelection) : new Set()
         for (const [key] of notes) {
           const [beatStr, midiStr] = key.split('-')
           const noteBeat = Number(beatStr)
@@ -1042,6 +1089,19 @@ export default function PianoRoll({
   const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
     e.stopPropagation()
     e.preventDefault()
+
+    // Shift+click on a note toggles its membership in the selection without
+    // dragging or deleting — lets the user build up a selection by clicking
+    // notes one at a time alongside any earlier marquee picks.
+    if (e.shiftKey) {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+      return
+    }
 
     // If the clicked note is part of an active multi-selection, drag the
     // whole group together. Otherwise, drag just this note.
@@ -1090,28 +1150,31 @@ export default function PianoRoll({
       }
       drag.hasMoved = true
 
-      // Compute the anchor's new position; the same delta is applied to the
-      // whole group so relative spacing is preserved.
+      // Same beat + step delta applied to the whole group so the interval
+      // shape is preserved. One row of vertical drag = one scale step.
       let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
       if (!freeMode) newAnchorBeat = Math.round(newAnchorBeat)
       newAnchorBeat = Math.max(0, Math.min(totalBeats - 0.001, newAnchorBeat))
-
-      const midiDeltaRaw = -Math.round(dy / ROW_HEIGHT)
-      let newAnchorMidi = drag.originalMidi + midiDeltaRaw
-      newAnchorMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newAnchorMidi))
-      newAnchorMidi = nearestScaleMidi(newAnchorMidi)
-
       const beatDelta = newAnchorBeat - drag.originalBeat
-      const midiDelta = newAnchorMidi - drag.originalMidi
+
+      const stepDelta = -Math.round(dy / ROW_HEIGHT)
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
         nb = Math.max(0, Math.min(totalBeats - 0.001, nb))
-        let nm = g.originalMidi + midiDelta
+        const gStep = midiToScaleStep(g.originalMidi)
+        let nm =
+          gStep != null
+            ? scaleStepToMidi(gStep + stepDelta)
+            : nearestScaleMidi(g.originalMidi + stepDelta)
         nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
-        nm = nearestScaleMidi(nm)
         return { newBeat: nb, newMidi: nm, newKey: `${nb}-${nm}`, length: g.length }
       })
+
+      const newAnchorMidi =
+        newPositions.find(
+          (np, i) => drag.group[i].originalMidi === drag.originalMidi
+        )?.newMidi ?? drag.originalMidi
 
       const anyChanged = newPositions.some((np, i) => np.newKey !== drag.group[i].currentKey)
       if (!anyChanged) return

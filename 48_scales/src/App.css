@@ -1402,7 +1402,9 @@
 }
 
 .row-note.selected {
-  box-shadow: 0 0 0 1.5px var(--fg), 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent);
+  outline: 1.5px solid var(--fg);
+  outline-offset: 0;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 60%, transparent));
   z-index: 3;
 }
 
