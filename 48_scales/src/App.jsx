@@ -380,21 +380,6 @@ function App() {
               </div>
 
               <div className="section">
-                <div className="label">Electrons</div>
-                <div className="electrons">
-                  {Array.from({ length: 12 }, (_, c) => {
-                    if (scale.notes.includes(c)) return null
-                    const pc = (root + c) % 12
-                    return (
-                      <span key={c} className="electron-note">
-                        {NOTE_DISPLAY[pc]}
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="section">
                 <div className="label">Chord pair</div>
                 {(() => {
                   const pair = chordPairs.find((p) => p.scaleId === scale.id)
@@ -439,6 +424,21 @@ function App() {
                     </div>
                   )
                 })()}
+              </div>
+
+              <div className="section">
+                <div className="label">Electrons</div>
+                <div className="electrons">
+                  {Array.from({ length: 12 }, (_, c) => {
+                    if (scale.notes.includes(c)) return null
+                    const pc = (root + c) % 12
+                    return (
+                      <span key={c} className="electron-note">
+                        {NOTE_DISPLAY[pc]}
+                      </span>
+                    )
+                  })}
+                </div>
               </div>
             </>
           ) : (

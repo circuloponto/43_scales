@@ -1401,6 +1401,8 @@
   top: 1px;
   bottom: 1px;
   border-radius: 2px;
+  /* Touch: capture the gesture so browser scroll/zoom doesn't steal it. */
+  touch-action: none;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--accent) 65%, var(--fg) 35%) 0%,
@@ -1861,4 +1863,288 @@
     var(--chord2) 100%
   );
 }
+
+/* ============================================================
+   Touch input: claim the drag gesture on small interactive
+   elements so the browser's scroll/zoom doesn't steal pointer
+   events mid-drag. Applies to every breakpoint.
+   ============================================================ */
+.row-note-handle,
+.chord-block,
+.chord-block-handle,
+.chord-card,
+.beats-label.draggable,
+.timeline-bar,
+.theme-swatch-wrap input[type='color'] {
+  touch-action: none;
+}
+
+/* Desktop: hamburger hidden; toolbar sub-wrapper renders its children
+   inline in the flex header. Mobile overrides both rules. */
+.roll-toolbar-toggle {
+  display: none;
+}
+.roll-toolbar-sub {
+  display: contents;
+}
+
+/* ============================================================
+   Mobile portrait (≤480px). Single optimised breakpoint.
+   ============================================================ */
+@media (max-width: 480px) {
+
+  /* ----- Matrix / home screen ----- */
+  .app {
+    padding: 12px 12px 16px 12px;
+  }
+  .frame {
+    flex-direction: column;
+    gap: 18px;
+    padding: 12px 14px 18px 14px;
+    border-radius: 10px;
+  }
+  .matrix {
+    --cell: 22px;
+    max-height: none;
+    overflow-y: visible;
+    overflow-x: auto;
+    padding-right: 0;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .row {
+    padding-left: 4px;
+    gap: 6px;
+  }
+  .row-number {
+    width: 22px;
+    font-size: 10px;
+  }
+  .glyph-zone {
+    width: calc(var(--cell) * 2.4);
+  }
+  .glyph-slot {
+    width: calc(var(--cell) * 1.8);
+    height: calc(var(--cell) * 1);
+  }
+
+  /* Theme picker becomes a static wrapping row at the top of the panel. */
+  .theme-picker {
+    position: static;
+    top: auto;
+    right: auto;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 4px 0 12px 0;
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 12px;
+  }
+  .theme-label {
+    font-size: 9px;
+  }
+  .theme-swatch-wrap,
+  .theme-swatch {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Right panel stacks; shrink internal gaps. */
+  .panel {
+    padding-top: 4px;
+    padding-right: 0;
+    max-height: none;
+    overflow-y: visible;
+  }
+  .app-masthead {
+    margin-bottom: 16px;
+  }
+  .app-mark {
+    font-size: 24px;
+  }
+  .app-name {
+    font-size: 11px;
+    letter-spacing: 0.26em;
+  }
+  .section {
+    padding-top: 18px;
+    margin-top: 18px;
+  }
+
+  /* Root buttons + scale-pattern: keep 12-col but give them height. */
+  .roots {
+    gap: 2px;
+  }
+  .root {
+    min-height: 40px;
+    padding: 8px 2px;
+    font-size: 12px;
+  }
+  .pattern {
+    gap: 3px;
+  }
+  .pattern-cell {
+    height: 24px;
+  }
+  .notes-row {
+    gap: 3px;
+    margin-top: 8px;
+  }
+  .note-slot {
+    font-size: 11px;
+  }
+
+  /* Chord pair stacks vertically so each chord gets its full width. */
+  .chord-pair-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    text-align: center;
+  }
+  .chord-pair-distance {
+    justify-self: center;
+  }
+  .chord-pair-name {
+    font-size: 14px;
+  }
+  .chord-pair-notes {
+    font-size: 12px;
+  }
+
+  /* Hero stays a column; actions row hugs. */
+  .hero {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+  .hero-number,
+  .hero-name-input {
+    font-size: 26px;
+  }
+  .hero-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+  }
+  .open-roll {
+    flex: 1;
+    min-height: 40px;
+  }
+  .play {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ----- Piano roll ----- */
+  .roll-view {
+    padding: 8px;
+  }
+  .roll-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-right: 0;
+  }
+  .roll-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .roll-name {
+    display: none;
+  }
+  /* Hide secondary toolbar items unless menu is open. */
+  .roll-header .roll-toolbar-sub {
+    display: none;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--hairline);
+  }
+  .roll-header.menu-open .roll-toolbar-sub {
+    display: flex;
+  }
+  .roll-toolbar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .roll-toolbar-toggle.on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Templates / variation panel becomes a slide-in drawer. */
+  .roll-body {
+    grid-template-columns: 1fr;
+  }
+  .variation-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(85vw, 320px);
+    z-index: 1800;
+    background: var(--frame);
+    border-right: 1px solid var(--hairline);
+    transform: translateX(-100%);
+    transition: transform 0.18s var(--ease);
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .variation-panel.open {
+    transform: translateX(0);
+  }
+  .variation-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1799;
+  }
+
+  /* Roll grid: shrink the keyboard column so the grid has more room. */
+  .kbd-column {
+    width: 64px;
+  }
+  .timeline-corner,
+  .chord-lane-corner {
+    width: 64px;
+  }
+  .key-label {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+  .roll-scale-pattern {
+    grid-template-columns: repeat(12, 22px);
+  }
+
+  /* Larger touch targets for the resize handles. */
+  .row-note-handle,
+  .chord-block-handle {
+    width: 14px;
+  }
+
+  /* Modals: become full-screen sheets. */
+  .modal {
+    width: calc(100% - 20px);
+    max-width: 380px;
+    padding: 18px;
+  }
+  .chord-palette-modal {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 75vh;
+    border-radius: 12px 12px 0 0;
+  }
+  .chord-palette-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 

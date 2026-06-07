@@ -174,13 +174,15 @@ function NumberField({
       if (next !== value) onCommit(next)
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
     }
     document.body.style.cursor = 'ew-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   return (
@@ -190,7 +192,7 @@ function NumberField({
     <div className="beats-control">
       <span
         className="beats-label draggable"
-        onMouseDown={handleLabelDown}
+        onPointerDown={handleLabelDown}
         title="Drag horizontally to change"
       >
         {label}
@@ -337,6 +339,9 @@ export default function PianoRoll({
   const [chordModalOpen, setChordModalOpen] = useState(false)
   const [templateTab, setTemplateTab] = useState('melody')
   const [paletteGhost, setPaletteGhost] = useState(null)
+  // Mobile-only UI state. Desktop ignores these via CSS.
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
@@ -805,9 +810,37 @@ export default function PianoRoll({
     const groupStartBeats = group.map((c) => c.beat)
     let snapshotPushed = false
     let moved = false
+    let cancelled = false
+
+    // Long-press delete on touch: hold the chord for 500 ms without moving
+    // to remove it (mirrors right-click delete on desktop).
+    let longPressTimer = null
+    if (e.pointerType !== 'mouse') {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null
+        if (moved) return
+        cancelled = true
+        pushHistory()
+        const victims = selectedChordIds.has(chord.id) && selectedChordIds.size > 0
+          ? new Set(selectedChordIds)
+          : new Set([chord.id])
+        setChordBlocks((prev) => prev.filter((c) => !victims.has(c.id)))
+        setSelectedChordIds((prev) => {
+          const ns = new Set(prev)
+          for (const id of victims) ns.delete(id)
+          return ns
+        })
+      }, 500)
+    }
+
     const move = (mv) => {
+      if (cancelled) return
       const dx = mv.clientX - startX
       if (!moved && Math.abs(dx) < 3) return
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
       if (!snapshotPushed) {
         pushHistory()
         snapshotPushed = true
@@ -829,9 +862,15 @@ export default function PianoRoll({
       )
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
+      if (cancelled) return
       if (!moved) {
         // Click without drag → select (and replace selection unless shift held)
         if (!isGroup) {
@@ -840,8 +879,9 @@ export default function PianoRoll({
       }
     }
     document.body.style.cursor = 'grabbing'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const handleChordResize = (e, chord) => {
@@ -868,13 +908,15 @@ export default function PianoRoll({
       )
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
     }
     document.body.style.cursor = 'ew-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const handleChordResizeLeft = (e, chord) => {
@@ -901,13 +943,15 @@ export default function PianoRoll({
       )
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
     }
     document.body.style.cursor = 'ew-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   // Drag-from-palette: start when the user mousedowns on a chord card in
@@ -941,8 +985,9 @@ export default function PianoRoll({
     }
 
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       const drag = paletteDragRef.current
       paletteDragRef.current = null
       setPaletteGhost(null)
@@ -952,8 +997,9 @@ export default function PianoRoll({
       }
     }
 
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const handleChordLaneMouseDown = (e) => {
@@ -1131,7 +1177,7 @@ export default function PianoRoll({
     // Right-click on the grid: shift+right starts a delete-marquee; plain
     // right-click without shift just suppresses the browser context menu
     // and does nothing.
-    const isRightClick = e.button === 2
+    const isRightClick = e.pointerType === 'mouse' && e.button === 2
     if (isRightClick) e.preventDefault()
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
@@ -1171,8 +1217,9 @@ export default function PianoRoll({
     }
 
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       if (!moved) {
         // Right-click without drag — do nothing (and never place a note).
         if (isRightClick) return
@@ -1232,17 +1279,19 @@ export default function PianoRoll({
       }
     }
 
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
     e.stopPropagation()
     e.preventDefault()
 
-    // Right-click on a note: delete it immediately. If the note is part of
-    // the active selection, delete the whole selection too.
-    if (e.button === 2) {
+    // Right-click on a note (mouse only): delete it immediately. If the note
+    // is part of the active selection, delete the whole selection too. Touch
+    // delete uses long-press handled below.
+    if (e.pointerType === 'mouse' && e.button === 2) {
       pushHistory()
       const victims = selectedKeys.has(key) ? new Set(selectedKeys) : new Set([key])
       setNotes((prev) => {
@@ -1310,15 +1359,45 @@ export default function PianoRoll({
       // dragged group moves on.
       snapshot: new Map(notesRef.current),
       originalKeys: group.map((g) => `${g.originalBeat}-${g.originalMidi}`),
+      cancelled: false,
     }
     dragRef.current = drag
 
+    // Long-press delete (touch only). On a non-mouse pointer, if the finger
+    // doesn't move >3 px within 500 ms we delete the note(s), mirroring the
+    // right-click delete on desktop.
+    let longPressTimer = null
+    if (e.pointerType !== 'mouse') {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null
+        if (drag.hasMoved) return
+        drag.cancelled = true
+        pushHistory()
+        const victims = selectedKeys.has(key) ? new Set(selectedKeys) : new Set([key])
+        setNotes((prev) => {
+          const next = new Map(prev)
+          for (const k of victims) next.delete(k)
+          return next
+        })
+        setSelectedKeys((prev) => {
+          const ns = new Set(prev)
+          for (const k of victims) ns.delete(k)
+          return ns
+        })
+      }, 500)
+    }
+
     let snapshotPushed = false
     const move = (mv) => {
-      if (!dragRef.current) return
+      if (!dragRef.current || drag.cancelled) return
       const dx = mv.clientX - drag.startX
       const dy = mv.clientY - drag.startY
       if (!drag.hasMoved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+      // The user is dragging — cancel any pending long-press.
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
       if (!snapshotPushed) {
         pushHistory()
         snapshotPushed = true
@@ -1379,11 +1458,22 @@ export default function PianoRoll({
     }
 
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
+      // If the long-press fired (drag.cancelled) the note is already gone —
+      // don't re-select or audition.
+      if (drag.cancelled) {
+        dragRef.current = null
+        return
+      }
       // Click without drag (and not part of a multi-selection drag) → select
-      // and audition the note. Deletion is handled by right-click now.
+      // and audition the note. Deletion is handled by right-click / long-press.
       if (!drag.hasMoved && !drag.isGroup) {
         setSelectedKeys(new Set([drag.group[0].currentKey]))
         playOneNote(midi, undefined, 0.3)
@@ -1392,8 +1482,9 @@ export default function PianoRoll({
     }
 
     document.body.style.cursor = 'grabbing'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const handleNoteResize = (e, key, beat, midi, currentLength) => {
@@ -1421,13 +1512,15 @@ export default function PianoRoll({
       })
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
     }
     document.body.style.cursor = 'ew-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   // Resize from the left edge: the right edge of the note stays anchored,
@@ -1471,13 +1564,15 @@ export default function PianoRoll({
       })
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
     }
     document.body.style.cursor = 'ew-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const notesByMidi = useMemo(() => {
@@ -1685,8 +1780,9 @@ export default function PianoRoll({
     }
 
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       if (!moved) {
         // Single click on a loop body — inside OR outside — clears it.
         // Then seek to the clicked position (or restart playback there).
@@ -1703,13 +1799,14 @@ export default function PianoRoll({
       }
     }
 
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   return (
     <div className="roll-view" onContextMenu={(e) => e.preventDefault()}>
-      <header className="roll-header">
+      <header className={`roll-header ${mobileMenuOpen ? 'menu-open' : ''}`}>
         <button className="back-btn" onClick={onBack} aria-label="back to matrix">
           <BackIcon />
           <span>back</span>
@@ -1719,6 +1816,18 @@ export default function PianoRoll({
           <span className="roll-divider">·</span>
           <span className="roll-name">rooted in {NOTE_DISPLAY[root]}</span>
         </div>
+        <button
+          type="button"
+          className={`roll-toolbar-toggle ${mobileMenuOpen ? 'on' : ''}`}
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          aria-pressed={mobileMenuOpen}
+          aria-label="toggle toolbar"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+        <div className="roll-toolbar-sub">
         <NumberField
           label="Tempo"
           value={bpm}
@@ -1797,6 +1906,7 @@ export default function PianoRoll({
         >
           <Magnet size={14} strokeWidth={2} />
         </button>
+        </div>
         <button
           className="play roll-play"
           onClick={togglePlay}
@@ -1938,7 +2048,7 @@ export default function PianoRoll({
               <div
                 className="timeline-bar"
                 style={{ width: totalBeats * BEAT_WIDTH }}
-                onMouseDown={handleTimelineMouseDown}
+                onPointerDown={handleTimelineMouseDown}
               >
                 {loop && (
                   <div
@@ -1972,7 +2082,7 @@ export default function PianoRoll({
                 className="chord-lane"
                 ref={chordLaneRef}
                 style={{ width: totalBeats * BEAT_WIDTH }}
-                onMouseDown={handleChordLaneMouseDown}
+                onPointerDown={handleChordLaneMouseDown}
               >
                 {paletteGhost && paletteGhost.dropBeat !== null && (
                   <div
@@ -1993,19 +2103,19 @@ export default function PianoRoll({
                       left: `${c.beat * BEAT_WIDTH}px`,
                       width: `${c.length * BEAT_WIDTH}px`,
                     }}
-                    onMouseDown={(e) => handleChordMouseDown(e, c)}
+                    onPointerDown={(e) => handleChordMouseDown(e, c)}
                     title={chordDisplayName(c, scale, root)}
                   >
                     <div
                       className="chord-block-handle left"
-                      onMouseDown={(e) => handleChordResizeLeft(e, c)}
+                      onPointerDown={(e) => handleChordResizeLeft(e, c)}
                     />
                     <span className="chord-block-label">
                       {chordRomanLabel(c, scale)}
                     </span>
                     <div
                       className="chord-block-handle"
-                      onMouseDown={(e) => handleChordResize(e, c)}
+                      onPointerDown={(e) => handleChordResize(e, c)}
                     />
                   </div>
                 ))}
@@ -2085,7 +2195,7 @@ export default function PianoRoll({
                       <div
                         className={`beats-track ${freeMode ? 'free' : ''}`}
                         style={{ width: totalBeats * BEAT_WIDTH }}
-                        onMouseDown={(e) => handleRowMouseDown(e, midi)}
+                        onPointerDown={(e) => handleRowMouseDown(e, midi)}
                       >
                         {rowNotes.map(({ key, beat, length }) => (
                           <div
@@ -2097,19 +2207,19 @@ export default function PianoRoll({
                               left: `${beat * BEAT_WIDTH}px`,
                               width: `${length * BEAT_WIDTH}px`,
                             }}
-                            onMouseDown={(e) =>
+                            onPointerDown={(e) =>
                               handleNoteMouseDown(e, key, beat, midi, length)
                             }
                           >
                             <div
                               className="row-note-handle left"
-                              onMouseDown={(e) =>
+                              onPointerDown={(e) =>
                                 handleNoteResizeLeft(e, key, beat, midi, length)
                               }
                             />
                             <div
                               className="row-note-handle"
-                              onMouseDown={(e) =>
+                              onPointerDown={(e) =>
                                 handleNoteResize(e, key, beat, midi, length)
                               }
                             />
@@ -2129,12 +2239,12 @@ export default function PianoRoll({
         <div
           className="modal-backdrop"
           onClick={() => setCaptureOpen(false)}
-          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           <div
             className="modal"
             onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <h3>
               Capture {templateTab === 'chords' ? 'chord progression' : 'template'}
@@ -2214,7 +2324,7 @@ export default function PianoRoll({
                 <div
                   key={shape.id}
                   className="chord-card"
-                  onMouseDown={(e) => handlePaletteCardMouseDown(e, shape)}
+                  onPointerDown={(e) => handlePaletteCardMouseDown(e, shape)}
                   title={`${chordDisplayName(shape, scale, root)} — ${noteNames}`}
                 >
                   <span className="chord-card-roman">
