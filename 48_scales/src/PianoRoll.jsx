@@ -376,10 +376,16 @@ export default function PianoRoll({
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
       const meta = e.ctrlKey || e.metaKey
-      if (meta && e.code === 'KeyZ') {
+      const k = (e.key || '').toLowerCase()
+      // Ctrl/Cmd + Shift + Z → redo. Plain Ctrl/Cmd + Z → undo.
+      if (meta && (e.code === 'KeyZ' || k === 'z')) {
         e.preventDefault()
-        undo()
-      } else if (meta && e.code === 'KeyX') {
+        if (e.shiftKey) redo()
+        else undo()
+      } else if (
+        meta &&
+        (e.code === 'KeyY' || e.code === 'KeyX' || k === 'y' || k === 'x')
+      ) {
         e.preventDefault()
         redo()
       } else if (meta && e.code === 'KeyC') {
@@ -1282,6 +1288,12 @@ export default function PianoRoll({
       startX: e.clientX,
       startY: e.clientY,
       hasMoved: false,
+      // Snapshot the notes at drag start. Each move recomputes the live
+      // map from this snapshot so stationary notes the dragged group
+      // passes over are temporarily covered but reappear when the
+      // dragged group moves on.
+      snapshot: new Map(notesRef.current),
+      originalKeys: group.map((g) => `${g.originalBeat}-${g.originalMidi}`),
     }
     dragRef.current = drag
 
@@ -1326,17 +1338,19 @@ export default function PianoRoll({
       const anyChanged = newPositions.some((np, i) => np.newKey !== drag.group[i].currentKey)
       if (!anyChanged) return
 
-      const previousKeys = drag.group.map((g) => g.currentKey)
       newPositions.forEach((np, i) => {
         drag.group[i].currentKey = np.newKey
       })
 
-      setNotes((prev) => {
-        const next = new Map(prev)
-        for (const pk of previousKeys) next.delete(pk)
-        for (const np of newPositions) next.set(np.newKey, np.length)
-        return next
-      })
+      // Recompute live notes from the drag-start snapshot. The dragged
+      // group's original keys are removed; the new positions are placed
+      // on top. Notes the dragged group covers temporarily appear gone,
+      // but they're still in `drag.snapshot`, so the next move iteration
+      // (or release) restores them once the cursor moves past.
+      const next = new Map(drag.snapshot)
+      for (const ok of drag.originalKeys) next.delete(ok)
+      for (const np of newPositions) next.set(np.newKey, np.length)
+      setNotes(next)
 
       if (drag.isGroup) {
         setSelectedKeys(new Set(newPositions.map((np) => np.newKey)))
@@ -1352,9 +1366,11 @@ export default function PianoRoll({
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       document.body.style.cursor = ''
+      // Click without drag (and not part of a multi-selection drag) → select
+      // and audition the note. Deletion is handled by right-click now.
       if (!drag.hasMoved && !drag.isGroup) {
-        pushHistory()
-        removeNote(drag.group[0].currentKey)
+        setSelectedKeys(new Set([drag.group[0].currentKey]))
+        playOneNote(midi, undefined, 0.3)
       }
       dragRef.current = null
     }
