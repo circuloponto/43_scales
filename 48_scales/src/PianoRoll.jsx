@@ -27,10 +27,10 @@ const BLACK_HEIGHT = 24
 const OCTAVE_KBD_HEIGHT = WHITE_HEIGHT * 7
 const BEAT_WIDTH = 28
 
-// MIDI range
-const MIDI_LOW = 36 // C2
-const MIDI_HIGH = 83 // B5
-const TOP_OCTAVE = Math.floor(MIDI_HIGH / 12) - 1 // 5
+// MIDI range — full 88-key piano: A0 to C8.
+const MIDI_LOW = 21 // A0
+const MIDI_HIGH = 108 // C8
+const TOP_OCTAVE = Math.floor(MIDI_HIGH / 12) - 1 // 8
 
 const DEFAULT_BEATS = 64
 const MIN_BEATS = 8
@@ -84,13 +84,41 @@ function midiToOctave(midi) {
   return Math.floor(midi / 12) - 1
 }
 
+// Pixels of empty white-key slots above MIDI_HIGH in the natural octave-
+// block layout. We subtract this in kbdPosition so the top key (e.g. C8)
+// sits at y=0 instead of mid-way down its octave block.
+const TOP_KBD_TRIM = (() => {
+  const pc = MIDI_HIGH % 12
+  const oct = midiToOctave(MIDI_HIGH)
+  const octaveOffset = (TOP_OCTAVE - oct) * OCTAVE_KBD_HEIGHT
+  if (WHITE_PCS.has(pc)) return octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT
+  const aboveIdx = BLACK_PC_TO_ABOVE_WHITE_IDX[pc]
+  const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
+  return boundary - BLACK_HEIGHT / 2
+})()
+
+// Total height the keyboard column needs to render every key from
+// MIDI_HIGH down to MIDI_LOW after the trim. Used to set the column's
+// explicit height so the grid + keyboard scroll as one unit.
+const KBD_COLUMN_HEIGHT = (() => {
+  const pc = MIDI_LOW % 12
+  const oct = midiToOctave(MIDI_LOW)
+  const octaveOffset = (TOP_OCTAVE - oct) * OCTAVE_KBD_HEIGHT
+  if (WHITE_PCS.has(pc)) {
+    return octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT + WHITE_HEIGHT - TOP_KBD_TRIM
+  }
+  const aboveIdx = BLACK_PC_TO_ABOVE_WHITE_IDX[pc]
+  const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
+  return boundary - BLACK_HEIGHT / 2 + BLACK_HEIGHT - TOP_KBD_TRIM
+})()
+
 function kbdPosition(midi) {
   const pc = midi % 12
   const octaveOffset = (TOP_OCTAVE - midiToOctave(midi)) * OCTAVE_KBD_HEIGHT
   if (WHITE_PCS.has(pc)) {
     return {
       white: true,
-      top: octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT,
+      top: octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT - TOP_KBD_TRIM,
       height: WHITE_HEIGHT,
     }
   }
@@ -98,7 +126,7 @@ function kbdPosition(midi) {
   const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
   return {
     white: false,
-    top: boundary - BLACK_HEIGHT / 2,
+    top: boundary - BLACK_HEIGHT / 2 - TOP_KBD_TRIM,
     height: BLACK_HEIGHT,
   }
 }
@@ -1900,7 +1928,7 @@ export default function PianoRoll({
               </div>
             </div>
             <div className="roll-content">
-              <div className="kbd-column">
+              <div className="kbd-column" style={{ height: KBD_COLUMN_HEIGHT }}>
                 {pitches.map((midi) => {
                   const pc = midi % 12
                   const octave = midiToOctave(midi)
