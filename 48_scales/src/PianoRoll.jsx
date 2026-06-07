@@ -415,6 +415,7 @@ export default function PianoRoll({
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (selectedChordIds.size > 0) setSelectedChordIds(new Set())
         if (chordModalOpen) setChordModalOpen(false)
+        if (loop) setLoop(null)
       } else if (e.shiftKey && e.code === 'KeyH') {
         e.preventDefault()
         flipHorizontal()
@@ -1610,13 +1611,9 @@ export default function PianoRoll({
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       if (!moved) {
-        // single click → seek; if click landed outside an existing loop body,
-        // also clear the loop
-        const inside =
-          currentLoop &&
-          startX > currentLoop.start * BEAT_WIDTH &&
-          startX < currentLoop.end * BEAT_WIDTH
-        if (currentLoop && !inside) setLoop(null)
+        // Single click on a loop body — inside OR outside — clears it.
+        // Then seek to the clicked position (or restart playback there).
+        if (currentLoop) setLoop(null)
         if (playStateRef.current) {
           playFromBeat(initialBeat)
         } else {
@@ -1698,6 +1695,16 @@ export default function PianoRoll({
           title="Metronome click on every quarter note (straight, ignores swing)"
         >
           Click
+        </button>
+        <button
+          type="button"
+          className={`mode-toggle ${loop ? 'on' : ''}`}
+          onClick={() => setLoop(null)}
+          disabled={!loop}
+          aria-pressed={!!loop}
+          title="Loop — click to clear the active loop region"
+        >
+          Loop
         </button>
         <button
           type="button"
