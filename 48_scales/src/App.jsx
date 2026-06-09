@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
@@ -102,6 +102,18 @@ function App() {
       localStorage.setItem('eightFold.scaleNames', JSON.stringify(scaleNames))
     } catch {}
   }, [scaleNames])
+
+  // On mobile portrait the right panel stacks below the matrix; when the
+  // user picks a scale we scroll the panel into view so they see the chord
+  // pair / chromatic / hero info update. No-op on desktop (panel is already
+  // in the viewport).
+  const panelRef = useRef(null)
+  useEffect(() => {
+    if (selectedId === null) return
+    if (window.matchMedia('(max-width: 480px)').matches && panelRef.current) {
+      panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedId])
 
   const scaleNameOf = (id) => scaleNames[id] ?? `Scale ${id}`
   const renameScale = (id, name) => {
@@ -257,7 +269,7 @@ function App() {
           })}
         </div>
 
-        <aside className="panel">
+        <aside className="panel" ref={panelRef}>
           <div className="app-masthead">
             <span className="app-mark">8</span>
             <span className="app-name">Fold Way</span>

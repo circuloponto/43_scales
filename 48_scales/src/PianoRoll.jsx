@@ -415,6 +415,9 @@ export default function PianoRoll({
       } else if (meta && e.code === 'KeyV') {
         e.preventDefault()
         pasteNotes()
+      } else if (meta && (e.code === 'KeyA' || k === 'a')) {
+        e.preventDefault()
+        setSelectedKeys(new Set(notesRef.current.keys()))
       } else if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
