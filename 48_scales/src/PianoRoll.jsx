@@ -458,6 +458,18 @@ export default function PianoRoll({
       } else if (e.code === 'BracketLeft') {
         e.preventDefault()
         shrinkSelection()
+      } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
+        e.preventDefault()
+        nudgeSelection(0, 1)
+      } else if (e.code === 'ArrowDown' && selectedKeys.size > 0) {
+        e.preventDefault()
+        nudgeSelection(0, -1)
+      } else if (e.code === 'ArrowRight' && selectedKeys.size > 0) {
+        e.preventDefault()
+        nudgeSelection(1, 0)
+      } else if (e.code === 'ArrowLeft' && selectedKeys.size > 0) {
+        e.preventDefault()
+        nudgeSelection(-1, 0)
       }
     }
     window.addEventListener('keydown', handler)
@@ -1081,6 +1093,45 @@ export default function PianoRoll({
   // length + 2 on the right — clamped to the timeline. Notes already at
   // beat 0 only grow rightward; notes whose right edge would pass
   // totalBeats only grow leftward.
+  // Keyboard nudge for the selection. `beatDelta` shifts horizontally on
+  // the grid; `stepDelta` shifts vertically by scale steps. Both clamp to
+  // the timeline + MIDI bounds. Notes that aren't on a scale step (free
+  // mode) fall back to ±1 semitone for stepDelta so they still move.
+  const nudgeSelection = (beatDelta, stepDelta) => {
+    if (selectedKeys.size === 0) return
+    pushHistory()
+    const newSel = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      const moves = []
+      for (const k of selectedKeys) {
+        const [bStr, midiStr] = k.split('-')
+        const oldBeat = Number(bStr)
+        const oldMidi = Number(midiStr)
+        const len = prev.get(k) ?? 1
+        let newBeat = oldBeat + beatDelta
+        newBeat = Math.max(0, Math.min(totalBeats - len, newBeat))
+        let newMidi = oldMidi
+        if (stepDelta !== 0) {
+          const gStep = midiToScaleStep(oldMidi)
+          newMidi =
+            gStep != null
+              ? scaleStepToMidi(gStep + stepDelta)
+              : nearestScaleMidi(oldMidi + stepDelta)
+        }
+        newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
+        moves.push({ oldKey: k, newKey: `${newBeat}-${newMidi}`, length: len })
+      }
+      for (const m of moves) next.delete(m.oldKey)
+      for (const m of moves) {
+        next.set(m.newKey, m.length)
+        newSel.add(m.newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
+  }
+
   const growSelection = () => {
     if (selectedKeys.size === 0) return
     pushHistory()
