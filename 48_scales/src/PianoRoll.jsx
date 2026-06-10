@@ -359,6 +359,9 @@ export default function PianoRoll({
   loopRef.current = loop
   const chordLaneRef = useRef(null)
   const paletteDragRef = useRef(null)
+  // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
+  // selection's pitches instead of nudging them by a scale step.
+  const tHeldRef = useRef(false)
 
   useEffect(() => {
     const initial = buildInitialPattern(scale, root)
@@ -458,12 +461,16 @@ export default function PianoRoll({
       } else if (e.code === 'BracketLeft') {
         e.preventDefault()
         shrinkSelection()
+      } else if (e.code === 'KeyT') {
+        tHeldRef.current = true
       } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
         e.preventDefault()
-        nudgeSelection(0, 1)
+        if (tHeldRef.current) rotateSelection(1)
+        else nudgeSelection(0, 1)
       } else if (e.code === 'ArrowDown' && selectedKeys.size > 0) {
         e.preventDefault()
-        nudgeSelection(0, -1)
+        if (tHeldRef.current) rotateSelection(-1)
+        else nudgeSelection(0, -1)
       } else if (e.code === 'ArrowRight' && selectedKeys.size > 0) {
         e.preventDefault()
         nudgeSelection(1, 0)
@@ -472,8 +479,15 @@ export default function PianoRoll({
         nudgeSelection(-1, 0)
       }
     }
+    const upHandler = (e) => {
+      if (e.code === 'KeyT') tHeldRef.current = false
+    }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('keyup', upHandler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('keyup', upHandler)
+    }
   })
 
   const getAudioContext = () => {
@@ -1093,6 +1107,56 @@ export default function PianoRoll({
   // length + 2 on the right — clamped to the timeline. Notes already at
   // beat 0 only grow rightward; notes whose right edge would pass
   // totalBeats only grow leftward.
+  // Rotate the pitches of the selected sequence one slot, keeping the
+  // beat slots fixed. T+Up: the note at the lowest beat is transposed +1
+  // octave and becomes the latest pitch — every other pitch shifts one
+  // beat-slot earlier. T+Down: mirror — the latest-beat note drops -1
+  // octave and becomes the earliest. Lengths follow their pitch so the
+  // shape of the rotated sequence stays intact.
+  const rotateSelection = (direction) => {
+    if (selectedKeys.size < 2) return
+    const sorted = [...selectedKeys]
+      .map((k) => {
+        const [bStr, mStr] = k.split('-')
+        return {
+          key: k,
+          beat: Number(bStr),
+          midi: Number(mStr),
+          length: notesRef.current.get(k) ?? 1,
+        }
+      })
+      .sort((a, b) => a.beat - b.beat || a.midi - b.midi)
+    const n = sorted.length
+    const beats = sorted.map((s) => s.beat)
+    const midis = sorted.map((s) => s.midi)
+    const lengths = sorted.map((s) => s.length)
+    let newMidis, newLengths
+    if (direction === 1) {
+      // Lowest-beat pitch goes up an octave and becomes the latest pitch.
+      newMidis = [...midis.slice(1), midis[0] + 12]
+      newLengths = [...lengths.slice(1), lengths[0]]
+    } else {
+      // Latest-beat pitch goes down an octave and becomes the earliest.
+      newMidis = [midis[n - 1] - 12, ...midis.slice(0, n - 1)]
+      newLengths = [lengths[n - 1], ...lengths.slice(0, n - 1)]
+    }
+    // Bail out if any rotated pitch would leave the keyboard range.
+    if (newMidis.some((m) => m < MIDI_LOW || m > MIDI_HIGH)) return
+    pushHistory()
+    const newSel = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const s of sorted) next.delete(s.key)
+      for (let i = 0; i < n; i++) {
+        const newKey = `${beats[i]}-${newMidis[i]}`
+        next.set(newKey, newLengths[i])
+        newSel.add(newKey)
+      }
+      return next
+    })
+    setSelectedKeys(newSel)
+  }
+
   // Keyboard nudge for the selection. `beatDelta` shifts horizontally on
   // the grid; `stepDelta` shifts vertically by scale steps. Both clamp to
   // the timeline + MIDI bounds. Notes that aren't on a scale step (free
