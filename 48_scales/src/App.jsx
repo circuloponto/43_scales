@@ -126,6 +126,34 @@ function App() {
     })
   }
 
+  // Scale finder: the user toggles pitch classes in `finderPcs`; we list
+  // every (scaleId, root) pair where those pcs are a subset of the scale.
+  const [finderPcs, setFinderPcs] = useState(() => new Set())
+  const toggleFinderPc = (pc) => {
+    setFinderPcs((prev) => {
+      const next = new Set(prev)
+      if (next.has(pc)) next.delete(pc)
+      else next.add(pc)
+      return next
+    })
+  }
+  const clearFinder = () => setFinderPcs(new Set())
+  const finderMatches = (() => {
+    if (finderPcs.size === 0) return []
+    const arr = [...finderPcs]
+    const out = []
+    for (const s of scales) {
+      if (!s.notes || s.notes.length === 0) continue
+      for (let r = 0; r < 12; r++) {
+        const set = new Set(s.notes.map((n) => (n + r) % 12))
+        if (arr.every((pc) => set.has(pc))) {
+          out.push({ scaleId: s.id, root: r })
+        }
+      }
+    }
+    return out
+  })()
+
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
   const visibleScales = scales.filter((s) => s.notes.length > 0)
@@ -274,6 +302,68 @@ function App() {
             <span className="app-mark">8</span>
             <span className="app-name">Fold Way</span>
           </div>
+
+          <div className="section finder">
+            <div className="finder-header">
+              <span className="label">Scale finder</span>
+              {finderPcs.size > 0 && (
+                <button
+                  type="button"
+                  className="finder-clear"
+                  onClick={clearFinder}
+                  title="Clear all selected notes"
+                >
+                  clear
+                </button>
+              )}
+            </div>
+            <div className="finder-row">
+              {Array.from({ length: 12 }, (_, pc) => {
+                const isOn = finderPcs.has(pc)
+                return (
+                  <button
+                    key={pc}
+                    type="button"
+                    className={`finder-cell ${isOn ? 'on' : 'off'}`}
+                    onClick={() => toggleFinderPc(pc)}
+                  >
+                    {NOTE_DISPLAY[pc]}
+                  </button>
+                )
+              })}
+            </div>
+            {finderPcs.size === 0 ? (
+              <div className="hint">Tap notes to find every scale + root they fit.</div>
+            ) : finderMatches.length === 0 ? (
+              <div className="hint">No scale contains all of these notes.</div>
+            ) : (
+              <div className="finder-results">
+                <div className="finder-count">
+                  {finderMatches.length} match{finderMatches.length === 1 ? '' : 'es'}
+                </div>
+                <ul className="finder-list">
+                  {finderMatches.map(({ scaleId, root: r }) => (
+                    <li
+                      key={`${scaleId}-${r}`}
+                      className="finder-match"
+                      onClick={() => {
+                        setSelectedId(scaleId)
+                        setRoot(r)
+                      }}
+                    >
+                      <span className="finder-match-name">
+                        {scaleNameOf(scaleId)}
+                      </span>
+                      <span className="finder-match-root">
+                        rooted in {NOTE_DISPLAY[r]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
           {(() => {
             const rs = scale ? rootSteps[scale.id - 1] : null
             const intrinsicPc = scale && rs ? scale.notes[rs - 1] : 0

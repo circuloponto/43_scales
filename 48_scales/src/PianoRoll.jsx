@@ -342,6 +342,9 @@ export default function PianoRoll({
   // Mobile-only UI state. Desktop ignores these via CSS.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  // Visible badge that lights up while T is held so the user can see that
+  // ArrowUp/Down do a pitch rotation instead of the regular step nudge.
+  const [tHeld, setTHeld] = useState(false)
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
@@ -449,6 +452,10 @@ export default function PianoRoll({
         if (selectedChordIds.size > 0) setSelectedChordIds(new Set())
         if (chordModalOpen) setChordModalOpen(false)
         if (loop) setLoop(null)
+        if (tHeldRef.current) {
+          tHeldRef.current = false
+          setTHeld(false)
+        }
       } else if (e.shiftKey && e.code === 'KeyH') {
         e.preventDefault()
         flipHorizontal()
@@ -462,7 +469,12 @@ export default function PianoRoll({
         e.preventDefault()
         shrinkSelection()
       } else if (e.code === 'KeyT') {
-        tHeldRef.current = true
+        // Toggle: press T to enter Rotate mode (badge stays lit, arrow
+        // keys rotate the selection's pitches). Press T again to exit.
+        if (!e.repeat) {
+          tHeldRef.current = !tHeldRef.current
+          setTHeld(tHeldRef.current)
+        }
       } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
         e.preventDefault()
         if (tHeldRef.current) rotateSelection(1)
@@ -479,14 +491,9 @@ export default function PianoRoll({
         nudgeSelection(-1, 0)
       }
     }
-    const upHandler = (e) => {
-      if (e.code === 'KeyT') tHeldRef.current = false
-    }
     window.addEventListener('keydown', handler)
-    window.addEventListener('keyup', upHandler)
     return () => {
       window.removeEventListener('keydown', handler)
-      window.removeEventListener('keyup', upHandler)
     }
   })
 
@@ -1933,6 +1940,14 @@ export default function PianoRoll({
           <span className="roll-number">{padId(scale.id)}</span>
           <span className="roll-divider">·</span>
           <span className="roll-name">rooted in {NOTE_DISPLAY[root]}</span>
+          {tHeld && (
+            <span
+              className="hotkey-badge"
+              title="Rotate mode on — ArrowUp/Down rotates the selection's pitches. Press T (or Esc) to exit."
+            >
+              T · ROTATE
+            </span>
+          )}
         </div>
         <button
           type="button"
