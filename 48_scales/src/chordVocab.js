@@ -23,6 +23,7 @@ export const CHORD_INTERVALS = {
   'Add9':         [0, 2, 4, 7],
   'MinAdd11':     [0, 3, 5, 7],
   '7':            [0, 4, 7, 10],
+  'dom7':         [0, 4, 7, 10],
 }
 
 // Distance column → semitones between left and right chord roots.
