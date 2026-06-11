@@ -31,7 +31,7 @@ export const chordPairs = [
   { scaleId: 21, left: 'Min 7',      distance: 'Half Step',   right: 'Dominant' },
   { scaleId: 22, left: 'Min 7',      distance: 'Maj 6th',     right: 'Sus 2&4' },
   { scaleId: 23, left: 'Dominant',   distance: 'Half Step',   right: 'Dominant' },
-  { scaleId: 24, left: 'Min7b5',     distance: 'Major7',      right: 'Add 9' },
+  { scaleId: 24, left: 'Min7b5',     distance: 'Maj 6th',      right: 'Add 9' },
   { scaleId: 25, left: 'Add 9',      distance: 'Half Step',   right: 'Sus 2&4' },
   { scaleId: 26, left: 'Add 9',      distance: 'Min 3rd',     right: 'Min 7' },
   { scaleId: 27, left: 'Min7b5',     distance: 'Half Step',   right: '7#5' },
