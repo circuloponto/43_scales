@@ -1861,7 +1861,12 @@ export default function PianoRoll({
   const handleTimelineMouseDown = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const startX = e.clientX - rect.left
-    const initialBeat = Math.max(0, Math.min(totalBeats, startX / BEAT_WIDTH))
+    // Snap beats to whole numbers when grid-snap is on, free otherwise.
+    const snapBeat = (b) => (freeMode ? b : Math.round(b))
+    const initialBeat = Math.max(
+      0,
+      Math.min(totalBeats, snapBeat(startX / BEAT_WIDTH))
+    )
 
     const currentLoop = loopRef.current
     const EDGE_PX = 6
@@ -1882,7 +1887,7 @@ export default function PianoRoll({
       const dx = x - startX
       if (!moved && Math.abs(dx) < 3) return
       moved = true
-      const beat = Math.max(0, Math.min(totalBeats, x / BEAT_WIDTH))
+      const beat = Math.max(0, Math.min(totalBeats, snapBeat(x / BEAT_WIDTH)))
 
       if (mode === 'create') {
         const a = Math.min(initialBeat, beat)
@@ -1890,15 +1895,17 @@ export default function PianoRoll({
         setLoop({ start: a, end: b })
       } else if (mode === 'resize-start') {
         const end = initialLoopSnap.end
+        const minStart = freeMode ? end - 0.25 : end - 1
         setLoop({
-          start: Math.min(beat, end - 0.25),
+          start: Math.min(beat, minStart),
           end,
         })
       } else if (mode === 'resize-end') {
         const start = initialLoopSnap.start
+        const minEnd = freeMode ? start + 0.25 : start + 1
         setLoop({
           start,
-          end: Math.max(beat, start + 0.25),
+          end: Math.max(beat, minEnd),
         })
       } else if (mode === 'move-loop') {
         const len = initialLoopSnap.end - initialLoopSnap.start

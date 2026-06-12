@@ -129,6 +129,18 @@ function App() {
   // Scale finder: the user toggles pitch classes in `finderPcs`; we list
   // every (scaleId, root) pair where those pcs are a subset of the scale.
   const [finderPcs, setFinderPcs] = useState(() => new Set())
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteRef = useRef(null)
+  useEffect(() => {
+    if (!paletteOpen) return
+    const onDocDown = (e) => {
+      if (paletteRef.current && !paletteRef.current.contains(e.target)) {
+        setPaletteOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onDocDown)
+    return () => document.removeEventListener('pointerdown', onDocDown)
+  }, [paletteOpen])
   const toggleFinderPc = (pc) => {
     setFinderPcs((prev) => {
       const next = new Set(prev)
@@ -192,7 +204,7 @@ function App() {
       }}
     >
       <div className="frame">
-        <div className="theme-picker" title="accent color">
+        <div className="theme-picker" title="accent color" ref={paletteRef}>
           <span className="theme-label">Accent</span>
           <label className="theme-swatch-wrap">
             <input
@@ -202,33 +214,55 @@ function App() {
             />
             <span className="theme-swatch" style={{ background: accent }} />
           </label>
-          <span className="theme-label">Chord 1</span>
-          <label className="theme-swatch-wrap">
-            <input
-              type="color"
-              value={chord1Color}
-              onChange={(e) => setChord1Color(e.target.value)}
-            />
-            <span className="theme-swatch" style={{ background: chord1Color }} />
-          </label>
-          <span className="theme-label">Chord 2</span>
-          <label className="theme-swatch-wrap">
-            <input
-              type="color"
-              value={chord2Color}
-              onChange={(e) => setChord2Color(e.target.value)}
-            />
-            <span className="theme-swatch" style={{ background: chord2Color }} />
-          </label>
-          <span className="theme-label">Electrons</span>
-          <label className="theme-swatch-wrap">
-            <input
-              type="color"
-              value={electronColor}
-              onChange={(e) => setElectronColor(e.target.value)}
-            />
-            <span className="theme-swatch" style={{ background: electronColor }} />
-          </label>
+          <button
+            type="button"
+            className={`theme-more ${paletteOpen ? 'on' : ''}`}
+            onClick={() => setPaletteOpen((v) => !v)}
+            aria-label="more palette options"
+            aria-expanded={paletteOpen}
+            title="Chord & electron colors"
+          >
+            <span className="theme-more-dot" style={{ background: chord1Color }} />
+            <span className="theme-more-dot" style={{ background: chord2Color }} />
+            <span className="theme-more-dot" style={{ background: electronColor }} />
+          </button>
+          {paletteOpen && (
+            <div className="theme-palette" role="dialog">
+              <div className="theme-palette-row">
+                <span className="theme-label">Chord 1</span>
+                <label className="theme-swatch-wrap">
+                  <input
+                    type="color"
+                    value={chord1Color}
+                    onChange={(e) => setChord1Color(e.target.value)}
+                  />
+                  <span className="theme-swatch" style={{ background: chord1Color }} />
+                </label>
+              </div>
+              <div className="theme-palette-row">
+                <span className="theme-label">Chord 2</span>
+                <label className="theme-swatch-wrap">
+                  <input
+                    type="color"
+                    value={chord2Color}
+                    onChange={(e) => setChord2Color(e.target.value)}
+                  />
+                  <span className="theme-swatch" style={{ background: chord2Color }} />
+                </label>
+              </div>
+              <div className="theme-palette-row">
+                <span className="theme-label">Electrons</span>
+                <label className="theme-swatch-wrap">
+                  <input
+                    type="color"
+                    value={electronColor}
+                    onChange={(e) => setElectronColor(e.target.value)}
+                  />
+                  <span className="theme-swatch" style={{ background: electronColor }} />
+                </label>
+              </div>
+            </div>
+          )}
         </div>
 
         {view === 'roll' && scale ? (
