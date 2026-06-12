@@ -73,6 +73,14 @@ function PlayIcon() {
   )
 }
 
+function StopIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <rect x="2" y="2" width="8" height="8" fill="currentColor" />
+    </svg>
+  )
+}
+
 function cellPulseDelay(scaleId, pitchClass) {
   return ((scaleId * 0.07 + pitchClass * 0.12) % 2.4).toFixed(2)
 }
@@ -211,16 +219,56 @@ function App() {
   const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
   const visibleScales = scales.filter((s) => s.notes.length > 0)
 
+  const playbackRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const stopScale = () => {
+    const pb = playbackRef.current
+    if (!pb) return
+    playbackRef.current = null
+    if (pb.endTimer) clearTimeout(pb.endTimer)
+    const now = pb.ctx.currentTime
+    for (const { osc, gain } of pb.voices) {
+      try {
+        gain.gain.cancelScheduledValues(now)
+        gain.gain.setValueAtTime(gain.gain.value, now)
+        gain.gain.linearRampToValueAtTime(0, now + 0.02)
+      } catch {}
+      try { osc.stop(now + 0.03) } catch {}
+      try { osc.disconnect() } catch {}
+      try { gain.disconnect() } catch {}
+    }
+    try { pb.ctx.close() } catch {}
+    setIsPlaying(false)
+  }
+
+  useEffect(() => {
+    return () => {
+      const pb = playbackRef.current
+      if (!pb) return
+      playbackRef.current = null
+      if (pb.endTimer) clearTimeout(pb.endTimer)
+      for (const { osc, gain } of pb.voices) {
+        try { osc.stop() } catch {}
+        try { osc.disconnect() } catch {}
+        try { gain.disconnect() } catch {}
+      }
+      try { pb.ctx.close() } catch {}
+    }
+  }, [selectedId, root])
+
   const playScale = () => {
+    if (playbackRef.current) {
+      stopScale()
+      return
+    }
     if (!scale || scale.notes.length === 0) return
     const Ctx = window.AudioContext || window.webkitAudioContext
     const ctx = new Ctx()
     const dur = 0.28
-    // Ascend through the scale's notes in pitch order, then resolve on the
-    // root one octave above so the line lands somewhere — 9 notes total
-    // for an 8-note scale.
     const sorted = [...scale.notes].sort((a, b) => a - b)
     const sequence = [...sorted, sorted[0] + 12]
+    const voices = []
     sequence.forEach((n, i) => {
       const midi = 60 + root + n
       const osc = ctx.createOscillator()
@@ -236,7 +284,18 @@ function App() {
       gain.gain.exponentialRampToValueAtTime(0.001, end)
       osc.start(start)
       osc.stop(end + 0.02)
+      voices.push({ osc, gain })
     })
+    const totalMs = sequence.length * dur * 1000 + 60
+    const endTimer = setTimeout(() => {
+      if (playbackRef.current && playbackRef.current.ctx === ctx) {
+        playbackRef.current = null
+        try { ctx.close() } catch {}
+        setIsPlaying(false)
+      }
+    }, totalMs)
+    playbackRef.current = { ctx, endTimer, voices }
+    setIsPlaying(true)
   }
 
   return (
@@ -560,12 +619,12 @@ function App() {
                       open roll
                     </button>
                     <button
-                      className="play"
+                      className={`play${isPlaying ? ' is-playing' : ''}`}
                       onClick={playScale}
                       disabled={concrete.length === 0}
-                      aria-label="play scale"
+                      aria-label={isPlaying ? 'stop scale' : 'play scale'}
                     >
-                      <PlayIcon />
+                      {isPlaying ? <StopIcon /> : <PlayIcon />}
                     </button>
                   </div>
                 </div>

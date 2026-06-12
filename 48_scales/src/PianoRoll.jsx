@@ -326,6 +326,7 @@ export default function PianoRoll({
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
+  const scheduledVoicesRef = useRef([])
   const scrollRef = useRef(null)
   const dragRef = useRef(null)
   const marqueeRef = useRef(null)
@@ -500,6 +501,7 @@ export default function PianoRoll({
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration)
     osc.start(t)
     osc.stop(t + duration + 0.02)
+    scheduledVoicesRef.current.push({ osc, gain })
   }
 
   const playClick = (startAt, accent = false) => {
@@ -516,6 +518,25 @@ export default function PianoRoll({
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05)
     osc.start(t)
     osc.stop(t + 0.07)
+    scheduledVoicesRef.current.push({ osc, gain })
+  }
+
+  const killScheduledVoices = () => {
+    const voices = scheduledVoicesRef.current
+    scheduledVoicesRef.current = []
+    const ctx = audioCtxRef.current
+    if (!ctx) return
+    const now = ctx.currentTime
+    for (const { osc, gain } of voices) {
+      try {
+        gain.gain.cancelScheduledValues(now)
+        gain.gain.setValueAtTime(gain.gain.value, now)
+        gain.gain.linearRampToValueAtTime(0, now + 0.02)
+      } catch {}
+      try { osc.stop(now + 0.03) } catch {}
+      try { osc.disconnect() } catch {}
+      try { gain.disconnect() } catch {}
+    }
   }
 
   const pitches = useMemo(() => {
@@ -1702,6 +1723,7 @@ export default function PianoRoll({
       rafRef.current = null
     }
     playStateRef.current = null
+    killScheduledVoices()
     if (clearPlayhead) setPlayheadBeat(null)
   }
 
