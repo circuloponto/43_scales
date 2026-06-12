@@ -90,10 +90,26 @@ function App() {
   const [selectedId, setSelectedId] = useState(null)
   const [hoverRow, setHoverRow] = useState(null)
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
-  const [accent, setAccent] = useState(ORIGINAL_PURPLE)
-  const [chord1Color, setChord1Color] = useState('#e8a87c')
-  const [chord2Color, setChord2Color] = useState('#7891c4')
-  const [electronColor, setElectronColor] = useState('#6b6b70')
+  const loadColor = (key, fallback) => {
+    try {
+      const v = localStorage.getItem(key)
+      return v && /^#[0-9a-f]{6}$/i.test(v) ? v : fallback
+    } catch {
+      return fallback
+    }
+  }
+  const [accent, setAccent] = useState(() =>
+    loadColor('eightFold.accent', ORIGINAL_PURPLE)
+  )
+  const [chord1Color, setChord1Color] = useState(() =>
+    loadColor('eightFold.chord1', '#e8a87c')
+  )
+  const [chord2Color, setChord2Color] = useState(() =>
+    loadColor('eightFold.chord2', '#7891c4')
+  )
+  const [electronColor, setElectronColor] = useState(() =>
+    loadColor('eightFold.electron', '#6b6b70')
+  )
   const [view, setView] = useState('matrix')
   const [templates, setTemplates] = useState(defaultTemplates)
   const [chordTemplates, setChordTemplates] = useState(defaultChordTemplates)
@@ -110,6 +126,19 @@ function App() {
       localStorage.setItem('eightFold.scaleNames', JSON.stringify(scaleNames))
     } catch {}
   }, [scaleNames])
+
+  useEffect(() => {
+    try { localStorage.setItem('eightFold.accent', accent) } catch {}
+  }, [accent])
+  useEffect(() => {
+    try { localStorage.setItem('eightFold.chord1', chord1Color) } catch {}
+  }, [chord1Color])
+  useEffect(() => {
+    try { localStorage.setItem('eightFold.chord2', chord2Color) } catch {}
+  }, [chord2Color])
+  useEffect(() => {
+    try { localStorage.setItem('eightFold.electron', electronColor) } catch {}
+  }, [electronColor])
 
   // On mobile portrait the right panel stacks below the matrix; when the
   // user picks a scale we scroll the panel into view so they see the chord
