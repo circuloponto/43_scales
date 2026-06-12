@@ -236,9 +236,10 @@
 }
 
 .cell.is-scale-root {
-  outline: 1.5px solid var(--accent);
-  outline-offset: -1.5px;
-  z-index: 1;
+  outline: 2.25px solid var(--accent);
+  outline-offset: -2.25px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  z-index: 2;
 }
 
 .pattern-cell.is-scale-root {
