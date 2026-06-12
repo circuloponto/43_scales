@@ -1536,7 +1536,12 @@ export default function PianoRoll({
       newAnchorBeat = Math.max(0, Math.min(totalBeats - 0.001, newAnchorBeat))
       const beatDelta = newAnchorBeat - drag.originalBeat
 
-      const stepDelta = -Math.round(dy / ROW_HEIGHT)
+      // One scale step averages 12 / scale.notes.length semitones, so the
+      // step threshold matches that many visual rows. Without this scale,
+      // notes shot ahead of the cursor on scales whose steps span 2
+      // semitones (1.5 average for 8-note scales).
+      const rowsPerStep = scale.notes.length > 0 ? 12 / scale.notes.length : 1
+      const stepDelta = -Math.round(dy / (ROW_HEIGHT * rowsPerStep))
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
