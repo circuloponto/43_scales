@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Magnet } from 'lucide-react'
+import { Magnet, Camera, Repeat, AudioWaveform } from 'lucide-react'
 import {
   chords as chordCatalog,
   chordToMidiNotes,
@@ -1988,14 +1988,15 @@ export default function PianoRoll({
         />
         <button
           type="button"
-          className="mode-toggle"
+          className="mode-toggle icon-toggle"
           onClick={() => {
             setCaptureName('')
             setCaptureOpen(true)
           }}
+          aria-label="capture template"
           title="Save current pattern as a scale-degree template"
         >
-          Capture
+          <Camera size={16} strokeWidth={1.8} />
         </button>
         <button
           type="button"
@@ -2008,22 +2009,24 @@ export default function PianoRoll({
         </button>
         <button
           type="button"
-          className={`mode-toggle ${metronome ? 'on' : ''}`}
+          className={`mode-toggle icon-toggle ${metronome ? 'on' : ''}`}
           onClick={() => setMetronome((v) => !v)}
           aria-pressed={metronome}
+          aria-label="metronome"
           title="Metronome click on every quarter note (straight, ignores swing)"
         >
-          Click
+          <AudioWaveform size={16} strokeWidth={1.8} />
         </button>
         <button
           type="button"
-          className={`mode-toggle ${loop ? 'on' : ''}`}
+          className={`mode-toggle icon-toggle ${loop ? 'on' : ''}`}
           onClick={() => setLoop(null)}
           disabled={!loop}
           aria-pressed={!!loop}
+          aria-label="clear loop"
           title="Loop — click to clear the active loop region"
         >
-          Loop
+          <Repeat size={16} strokeWidth={1.8} />
         </button>
         <button
           type="button"
