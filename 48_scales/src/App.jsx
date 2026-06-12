@@ -115,15 +115,42 @@ function App() {
     }
   }, [selectedId])
 
-  // Esc clears the current scale selection from the matrix view. Skips when
-  // focus is on an editable element (e.g. the scale-name input).
+  // Keep the selected matrix row visible when navigating with arrow keys.
+  useEffect(() => {
+    if (selectedId === null) return
+    const row = document.querySelector(`[data-scale-id="${selectedId}"]`)
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedId])
+
+  // Matrix-view keyboard navigation. Arrow keys step through the scales,
+  // Home/End jump to the first / last, Esc clears. Skips when focus is on
+  // an editable element so renaming a scale doesn't hijack the keys.
   useEffect(() => {
     if (view !== 'matrix') return
     const onKey = (e) => {
-      if (e.code !== 'Escape') return
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
-      if (selectedId !== null) setSelectedId(null)
+      const visible = scales.filter((s) => s.notes && s.notes.length > 0)
+      if (visible.length === 0) return
+      if (e.code === 'Escape') {
+        if (selectedId !== null) setSelectedId(null)
+      } else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') {
+        e.preventDefault()
+        const idx = visible.findIndex((s) => s.id === selectedId)
+        const next = idx === -1 ? visible[0] : visible[Math.min(idx + 1, visible.length - 1)]
+        setSelectedId(next.id)
+      } else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') {
+        e.preventDefault()
+        const idx = visible.findIndex((s) => s.id === selectedId)
+        const next = idx === -1 ? visible[visible.length - 1] : visible[Math.max(idx - 1, 0)]
+        setSelectedId(next.id)
+      } else if (e.code === 'Home') {
+        e.preventDefault()
+        setSelectedId(visible[0].id)
+      } else if (e.code === 'End') {
+        e.preventDefault()
+        setSelectedId(visible[visible.length - 1].id)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -304,6 +331,7 @@ function App() {
                 key={s.id}
                 className={`row ${isSel ? 'selected' : ''}`}
                 onClick={() => setSelectedId((cur) => (cur === s.id ? null : s.id))}
+                data-scale-id={s.id}
                 onMouseEnter={(e) => {
                   const r = e.currentTarget.getBoundingClientRect()
                   setHoverRow(s.id - 1)
