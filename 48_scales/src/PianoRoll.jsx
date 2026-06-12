@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Camera, Repeat, AudioWaveform } from 'lucide-react'
+import { Magnet, Camera, Repeat, Metronome } from 'lucide-react'
 import {
   chords as chordCatalog,
   chordToMidiNotes,
@@ -2015,7 +2015,7 @@ export default function PianoRoll({
           aria-label="metronome"
           title="Metronome click on every quarter note (straight, ignores swing)"
         >
-          <AudioWaveform size={16} strokeWidth={1.8} />
+          <Metronome size={16} strokeWidth={1.8} />
         </button>
         <button
           type="button"
