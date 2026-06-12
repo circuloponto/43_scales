@@ -115,6 +115,20 @@ function App() {
     }
   }, [selectedId])
 
+  // Esc clears the current scale selection from the matrix view. Skips when
+  // focus is on an editable element (e.g. the scale-name input).
+  useEffect(() => {
+    if (view !== 'matrix') return
+    const onKey = (e) => {
+      if (e.code !== 'Escape') return
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      if (selectedId !== null) setSelectedId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view, selectedId])
+
   const scaleNameOf = (id) => scaleNames[id] ?? `Scale ${id}`
   const renameScale = (id, name) => {
     setScaleNames((prev) => {
@@ -289,7 +303,7 @@ function App() {
               <div
                 key={s.id}
                 className={`row ${isSel ? 'selected' : ''}`}
-                onClick={() => setSelectedId(s.id)}
+                onClick={() => setSelectedId((cur) => (cur === s.id ? null : s.id))}
                 onMouseEnter={(e) => {
                   const r = e.currentTarget.getBoundingClientRect()
                   setHoverRow(s.id - 1)
@@ -299,7 +313,7 @@ function App() {
               >
                 <div className="glyph-zone left">
                   <div className="glyph-slot">
-                    <GlyphRow rowIndex={s.id - 1} accent={accent} />
+                    <GlyphRow rowIndex={s.id - 1} accent={electronColor} />
                   </div>
                   <div className="connector" />
                 </div>
@@ -494,6 +508,15 @@ function App() {
                     onFocus={(e) => e.target.select()}
                     aria-label={`Name for scale ${scale.id}`}
                   />
+                  <button
+                    type="button"
+                    className="hero-clear"
+                    onClick={() => setSelectedId(null)}
+                    aria-label="clear scale selection"
+                    title="Clear selection (Esc)"
+                  >
+                    ×
+                  </button>
                   <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
                   <div className="hero-actions">
                     <button
@@ -592,7 +615,7 @@ function App() {
           className="glyph-popup"
           style={{ left: hoverPos.x, top: hoverPos.y }}
         >
-          <GlyphRow rowIndex={hoverRow} accent={accent} />
+          <GlyphRow rowIndex={hoverRow} accent={electronColor} />
           <div className="glyph-popup-caption">Scale {padId(hoverRow + 1)}</div>
         </div>
       )}

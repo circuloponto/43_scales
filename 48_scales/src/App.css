@@ -661,6 +661,25 @@
   transition: border-color 0.12s var(--ease);
 }
 
+.hero-clear {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--mute);
+  cursor: pointer;
+  justify-self: end;
+  align-self: start;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.hero-clear:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
 .hero-name-input:hover {
   border-bottom-color: var(--hairline);
 }
