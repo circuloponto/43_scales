@@ -1394,9 +1394,9 @@
   left: 0;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 8px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.03em;
   user-select: none;
   box-sizing: border-box;
@@ -1406,12 +1406,18 @@
   width: 100%;
   background: #efece4;
   color: #1a1816;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.22);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
   z-index: 1;
 }
 
+/* Stronger border at semitones that border a black key — gives a subtle
+   piano-look without overlapping the black key into adjacent slots. */
+.piano-key.white.has-black-above {
+  border-top: 1px solid rgba(0, 0, 0, 0.18);
+}
+
 .piano-key.black {
-  width: 62%;
+  width: 58%;
   background: linear-gradient(180deg, #161616 0%, #232323 100%);
   border: 1px solid rgba(0, 0, 0, 0.7);
   border-radius: 0 3px 3px 0;
@@ -1854,6 +1860,21 @@
   letter-spacing: 0.04em;
   text-align: center;
   line-height: 1.2;
+}
+
+.note-pitch-tip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2000;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--ink);
+  border: 1px solid var(--hairline);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .chord-ghost {

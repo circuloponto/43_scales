@@ -216,7 +216,12 @@ function App() {
     const Ctx = window.AudioContext || window.webkitAudioContext
     const ctx = new Ctx()
     const dur = 0.28
-    scale.notes.forEach((n, i) => {
+    // Ascend through the scale's notes in pitch order, then resolve on the
+    // root one octave above so the line lands somewhere — 9 notes total
+    // for an 8-note scale.
+    const sorted = [...scale.notes].sort((a, b) => a - b)
+    const sequence = [...sorted, sorted[0] + 12]
+    sequence.forEach((n, i) => {
       const midi = 60 + root + n
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()

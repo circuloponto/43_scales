@@ -84,51 +84,28 @@ function midiToOctave(midi) {
   return Math.floor(midi / 12) - 1
 }
 
-// Pixels of empty white-key slots above MIDI_HIGH in the natural octave-
-// block layout. We subtract this in kbdPosition so the top key (e.g. C8)
-// sits at y=0 instead of mid-way down its octave block.
-const TOP_KBD_TRIM = (() => {
-  const pc = MIDI_HIGH % 12
-  const oct = midiToOctave(MIDI_HIGH)
-  const octaveOffset = (TOP_OCTAVE - oct) * OCTAVE_KBD_HEIGHT
-  if (WHITE_PCS.has(pc)) return octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT
-  const aboveIdx = BLACK_PC_TO_ABOVE_WHITE_IDX[pc]
-  const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
-  return boundary - BLACK_HEIGHT / 2
-})()
-
-// Total height the keyboard column needs to render every key from
-// MIDI_HIGH down to MIDI_LOW after the trim. Used to set the column's
-// explicit height so the grid + keyboard scroll as one unit.
-const KBD_COLUMN_HEIGHT = (() => {
-  const pc = MIDI_LOW % 12
-  const oct = midiToOctave(MIDI_LOW)
-  const octaveOffset = (TOP_OCTAVE - oct) * OCTAVE_KBD_HEIGHT
-  if (WHITE_PCS.has(pc)) {
-    return octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT + WHITE_HEIGHT - TOP_KBD_TRIM
-  }
-  const aboveIdx = BLACK_PC_TO_ABOVE_WHITE_IDX[pc]
-  const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
-  return boundary - BLACK_HEIGHT / 2 + BLACK_HEIGHT - TOP_KBD_TRIM
-})()
+// Each MIDI row in the keyboard column occupies exactly one ROW_HEIGHT, so
+// the keyboard and the grid are pixel-perfectly aligned at every semitone.
+// White keys fill the column's full width; black keys are narrower and
+// right-aligned, so the layout still reads as a piano without the visual
+// overlap drift that came from mixing white-key spacing with semitone rows.
+const KBD_COLUMN_HEIGHT = (MIDI_HIGH - MIDI_LOW + 1) * ROW_HEIGHT
 
 function kbdPosition(midi) {
   const pc = midi % 12
-  const octaveOffset = (TOP_OCTAVE - midiToOctave(midi)) * OCTAVE_KBD_HEIGHT
-  if (WHITE_PCS.has(pc)) {
-    return {
-      white: true,
-      top: octaveOffset + PC_TO_WHITE_IDX[pc] * WHITE_HEIGHT - TOP_KBD_TRIM,
-      height: WHITE_HEIGHT,
-    }
-  }
-  const aboveIdx = BLACK_PC_TO_ABOVE_WHITE_IDX[pc]
-  const boundary = octaveOffset + (aboveIdx + 1) * WHITE_HEIGHT
   return {
-    white: false,
-    top: boundary - BLACK_HEIGHT / 2 - TOP_KBD_TRIM,
-    height: BLACK_HEIGHT,
+    white: WHITE_PCS.has(pc),
+    top: (MIDI_HIGH - midi) * ROW_HEIGHT,
+    height: ROW_HEIGHT,
   }
+}
+
+// Pretty pitch label: "C4", "F♯7", etc. Uses scientific octave numbering
+// (MIDI 60 = C4) so it matches the popup users expect from any DAW.
+function midiPitchLabel(midi) {
+  const pc = ((midi % 12) + 12) % 12
+  const octave = Math.floor(midi / 12) - 1
+  return NOTE_DISPLAY[pc] + octave
 }
 
 function NumberField({
@@ -257,13 +234,12 @@ function buildInitialPattern(scale, root) {
   if (!scale || scale.notes.length === 0) return notes
   const sorted = [...scale.notes].sort((a, b) => a - b)
   const baseRoot = 60 + root // C4 + root
-  const n = sorted.length
-  for (let b = 0; b < 16; b++) {
-    const idx = b < n ? b : 2 * n - 2 - b
-    if (idx < 0 || idx >= n) continue
-    const midi = baseRoot + sorted[idx]
-    notes.set(`${b}-${midi}`, 1)
-  }
+  // Ascend through the scale and resolve on the root one octave up
+  // (8 scale notes + the upper root = 9 notes for an 8-note scale).
+  const sequence = [...sorted, sorted[0] + 12]
+  sequence.forEach((offset, b) => {
+    notes.set(`${b}-${baseRoot + offset}`, 1)
+  })
   return notes
 }
 
@@ -339,6 +315,8 @@ export default function PianoRoll({
   const [chordModalOpen, setChordModalOpen] = useState(false)
   const [templateTab, setTemplateTab] = useState('melody')
   const [paletteGhost, setPaletteGhost] = useState(null)
+  // Floating pitch label that follows the cursor while hovering a row-note.
+  const [notePitchTip, setNotePitchTip] = useState(null)
   // Mobile-only UI state. Desktop ignores these via CSS.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
@@ -2358,6 +2336,21 @@ export default function PianoRoll({
                             onPointerDown={(e) =>
                               handleNoteMouseDown(e, key, beat, midi, length)
                             }
+                            onMouseEnter={(e) =>
+                              setNotePitchTip({
+                                label: midiPitchLabel(midi),
+                                x: e.clientX,
+                                y: e.clientY,
+                              })
+                            }
+                            onMouseMove={(e) =>
+                              setNotePitchTip({
+                                label: midiPitchLabel(midi),
+                                x: e.clientX,
+                                y: e.clientY,
+                              })
+                            }
+                            onMouseLeave={() => setNotePitchTip(null)}
                           >
                             <div
                               className="row-note-handle left"
@@ -2495,6 +2488,15 @@ export default function PianoRoll({
           style={{ left: paletteGhost.x + 8, top: paletteGhost.y + 8 }}
         >
           {chordRomanLabel(paletteGhost.shape, scale)}
+        </div>
+      )}
+
+      {notePitchTip && (
+        <div
+          className="note-pitch-tip"
+          style={{ left: notePitchTip.x + 12, top: notePitchTip.y + 16 }}
+        >
+          {notePitchTip.label}
         </div>
       )}
     </div>
