@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
-import { templates as defaultTemplates, chordTemplates as defaultChordTemplates } from './templates'
+import { templates as defaultTemplates } from './templates'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
@@ -112,7 +112,6 @@ function App() {
   )
   const [view, setView] = useState('matrix')
   const [templates, setTemplates] = useState(defaultTemplates)
-  const [chordTemplates, setChordTemplates] = useState(defaultChordTemplates)
   const [scaleNames, setScaleNames] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('eightFold.scaleNames') || '{}')
@@ -408,8 +407,6 @@ function App() {
             onPlay={playScale}
             templates={templates}
             setTemplates={setTemplates}
-            chordTemplates={chordTemplates}
-            setChordTemplates={setChordTemplates}
           />
         ) : (
         <>

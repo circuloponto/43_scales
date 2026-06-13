@@ -2121,35 +2121,60 @@
   /* ----- Matrix / home screen ----- */
   .app {
     padding: 12px 12px 16px 12px;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    width: 100%;
   }
   .frame {
     flex-direction: column;
     gap: 18px;
     padding: 12px 14px 18px 14px;
     border-radius: 10px;
+    height: auto;
+    min-height: calc(100dvh - 28px);
+  }
+  /* Roll view: keep the viewport fixed so its internal scroll containers
+     (keyboard + grid pan) have proper bounds. */
+  .app:has(.roll-view) {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .app:has(.roll-view) .frame {
+    height: 100%;
+    min-height: 0;
   }
   .matrix {
-    --cell: 22px;
+    /* Fit the whole row inside the viewport.
+       Row width = row-pad(4) + glyph(2c) + gap(4) + row-num(18) + gap(4) + 12c + 11*cell-gap(3)
+                 = 14c + 63
+       Available = 100vw − app-pad(24) − frame-pad(28) = 100vw − 52
+       Solve 14c + 63 ≤ 100vw − 52 → c ≤ (100vw − 115)/14
+       Min floor keeps cells tappable on the narrowest phones. */
+    --cell: max(14px, calc((100vw - 115px) / 14));
     max-height: none;
+    overflow-x: hidden;
     overflow-y: visible;
-    overflow-x: auto;
     padding-right: 0;
     padding-top: 4px;
     padding-bottom: 4px;
   }
   .row {
     padding-left: 4px;
-    gap: 6px;
+    gap: 4px;
+  }
+  .row-cells {
+    gap: 3px;
   }
   .row-number {
-    width: 22px;
+    width: 18px;
     font-size: 10px;
   }
   .glyph-zone {
-    width: calc(var(--cell) * 2.4);
+    width: calc(var(--cell) * 2);
   }
   .glyph-slot {
-    width: calc(var(--cell) * 1.8);
+    width: calc(var(--cell) * 1.6);
     height: calc(var(--cell) * 1);
   }
 
