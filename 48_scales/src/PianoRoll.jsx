@@ -1676,12 +1676,12 @@ export default function PianoRoll({
       setPlayheadBeat(current)
       const sc = scrollRef.current
       if (sc) {
-        const playheadX = current * BEAT_WIDTH + 86
+        const playheadX = current * BEAT_WIDTH + 52
         const margin = 80
         if (playheadX > sc.scrollLeft + sc.clientWidth - margin) {
           sc.scrollLeft = playheadX - sc.clientWidth + margin * 2
-        } else if (playheadX < sc.scrollLeft + 86 + 4) {
-          sc.scrollLeft = Math.max(0, playheadX - 86 - 4)
+        } else if (playheadX < sc.scrollLeft + 52 + 4) {
+          sc.scrollLeft = Math.max(0, playheadX - 52 - 4)
         }
       }
       rafRef.current = requestAnimationFrame(tick)
@@ -1879,8 +1879,15 @@ export default function PianoRoll({
           type="button"
           className={`mode-toggle icon-toggle ${loop ? 'on' : ''}`}
           onClick={() => {
-            if (loop) setLoop(null)
-            else if (lastLoopRef.current) setLoop(lastLoopRef.current)
+            if (loop) {
+              setLoop(null)
+              // If we're mid-playback inside a loop, halt it — the user just
+              // asked for the loop to stop, so the already-queued next
+              // iteration shouldn't keep wrapping in the audio.
+              if (playStateRef.current?.mode === 'loop') stopPlayback(false)
+            } else if (lastLoopRef.current) {
+              setLoop(lastLoopRef.current)
+            }
           }}
           disabled={!loop && !lastLoopRef.current}
           aria-pressed={!!loop}
@@ -2041,13 +2048,11 @@ export default function PianoRoll({
                       } ${isRoot ? 'is-root' : ''} ${chordClassFor(pc)}`}
                       style={{ top: `${pos.top}px`, height: `${pos.height}px` }}
                     >
-                      {pos.white && (
-                        <span className="key-label">
-                          {showOctaveLabel
-                            ? `C${octave}`
-                            : NOTE_DISPLAY[pc]}
-                        </span>
-                      )}
+                      <span className="key-label">
+                        {showOctaveLabel
+                          ? `C${octave}`
+                          : NOTE_DISPLAY[pc]}
+                      </span>
                     </div>
                   )
                 })}

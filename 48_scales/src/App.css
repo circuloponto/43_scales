@@ -1324,7 +1324,7 @@
 .timeline-corner {
   position: sticky;
   left: 0;
-  width: 86px;
+  width: 52px;
   flex-shrink: 0;
   background: var(--frame);
   z-index: 5;
@@ -1382,13 +1382,13 @@
   min-width: max-content;
 }
 
-/* Keyboard column: sticky on the left. Keys are absolutely positioned within
-   so black keys can sit offset between two whites — like a real piano. */
+/* Keyboard column: sticky on the left. One row per MIDI note, equal-width
+   black/white cells stacked straight down — no piano-style offset. */
 .kbd-column {
   position: sticky;
   left: 0;
   z-index: 3;
-  width: 86px;
+  width: 52px;
   flex-shrink: 0;
   background: #efece4;
   border-right: 1px solid #0a0a0b;
@@ -1399,10 +1399,10 @@
   left: 0;
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 5px;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.03em;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
   user-select: none;
   box-sizing: border-box;
 }
@@ -1415,18 +1415,12 @@
   z-index: 1;
 }
 
-/* Stronger border at semitones that border a black key — gives a subtle
-   piano-look without overlapping the black key into adjacent slots. */
-.piano-key.white.has-black-above {
-  border-top: 1px solid rgba(0, 0, 0, 0.18);
-}
-
 .piano-key.black {
-  width: 58%;
+  width: 100%;
   background: linear-gradient(180deg, #161616 0%, #232323 100%);
-  border: 1px solid rgba(0, 0, 0, 0.7);
-  border-radius: 0 3px 3px 0;
-  z-index: 2;
+  color: #d8d4cc;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+  z-index: 1;
 }
 
 /* Keys stay pure black/white — scale + root are indicated on the grid rows
