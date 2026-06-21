@@ -205,7 +205,18 @@ function App() {
 
   // Scale finder: the user toggles pitch classes in `finderPcs`; we list
   // every (scaleId, root) pair where those pcs are a subset of the scale.
+  // Finder lives behind a button in the panel — opens as a modal on demand
+  // so it doesn't crowd the right panel by default.
   const [finderPcs, setFinderPcs] = useState(() => new Set())
+  const [finderOpen, setFinderOpen] = useState(false)
+  useEffect(() => {
+    if (!finderOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setFinderOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [finderOpen])
   // Mode override (1-indexed scale degree). null = use the scale's default
   // intrinsic root from rootSteps. Resets when the user picks a new scale.
   const [modeStep, setModeStep] = useState(null)
@@ -479,65 +490,21 @@ function App() {
             <span className="app-name">Fold Way</span>
           </div>
 
-          <div className="section finder">
-            <div className="finder-header">
-              <span className="label">Scale finder</span>
-              {finderPcs.size > 0 && (
-                <button
-                  type="button"
-                  className="finder-clear"
-                  onClick={clearFinder}
-                  title="Clear all selected notes"
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            <div className="finder-row">
-              {Array.from({ length: 12 }, (_, pc) => {
-                const isOn = finderPcs.has(pc)
-                return (
-                  <button
-                    key={pc}
-                    type="button"
-                    className={`finder-cell ${isOn ? 'on' : 'off'}`}
-                    onClick={() => toggleFinderPc(pc)}
-                  >
-                    {NOTE_DISPLAY[pc]}
-                  </button>
-                )
-              })}
-            </div>
-            {finderPcs.size === 0 ? (
-              <div className="hint">Tap notes to find every scale + root they fit.</div>
-            ) : finderMatches.length === 0 ? (
-              <div className="hint">No scale contains all of these notes.</div>
-            ) : (
-              <div className="finder-results">
-                <div className="finder-count">
-                  {finderMatches.length} match{finderMatches.length === 1 ? '' : 'es'}
-                </div>
-                <ul className="finder-list">
-                  {finderMatches.map(({ scaleId, root: r }) => (
-                    <li
-                      key={`${scaleId}-${r}`}
-                      className="finder-match"
-                      onClick={() => {
-                        setSelectedId(scaleId)
-                        setRoot(r)
-                      }}
-                    >
-                      <span className="finder-match-name">
-                        {scaleNameOf(scaleId)}
-                      </span>
-                      <span className="finder-match-root">
-                        rooted in {NOTE_DISPLAY[r]}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          <div className="section finder-trigger-section">
+            <button
+              type="button"
+              className="finder-trigger"
+              onClick={() => setFinderOpen(true)}
+            >
+              <span className="finder-trigger-label">Scale finder</span>
+              <span className="finder-trigger-sub">
+                {finderPcs.size === 0
+                  ? 'find scales by notes'
+                  : `${finderPcs.size} note${finderPcs.size === 1 ? '' : 's'} · ${finderMatches.length} match${
+                      finderMatches.length === 1 ? '' : 'es'
+                    }`}
+              </span>
+            </button>
           </div>
 
           {(() => {
@@ -748,6 +715,90 @@ function App() {
         >
           <GlyphRow rowIndex={hoverRow} accent={electronColor} />
           <div className="glyph-popup-caption">Scale {padId(hoverRow + 1)}</div>
+        </div>
+      )}
+
+      {finderOpen && (
+        <div className="modal-backdrop" onClick={() => setFinderOpen(false)}>
+          <div
+            className="modal finder-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="finder-modal-header">
+              <h3>Scale finder</h3>
+              <button
+                type="button"
+                className="finder-modal-close"
+                onClick={() => setFinderOpen(false)}
+                aria-label="close scale finder"
+              >
+                ×
+              </button>
+            </div>
+            <p className="modal-sub">
+              Tap notes to find every scale + root they fit.
+            </p>
+            <div className="finder-row">
+              {Array.from({ length: 12 }, (_, pc) => {
+                const isOn = finderPcs.has(pc)
+                return (
+                  <button
+                    key={pc}
+                    type="button"
+                    className={`finder-cell ${isOn ? 'on' : 'off'}`}
+                    onClick={() => toggleFinderPc(pc)}
+                  >
+                    {NOTE_DISPLAY[pc]}
+                  </button>
+                )
+              })}
+            </div>
+            {finderPcs.size === 0 ? (
+              <div className="hint">No notes selected yet.</div>
+            ) : finderMatches.length === 0 ? (
+              <div className="hint">No scale contains all of these notes.</div>
+            ) : (
+              <div className="finder-results">
+                <div className="finder-count">
+                  {finderMatches.length} match{finderMatches.length === 1 ? '' : 'es'}
+                </div>
+                <ul className="finder-list">
+                  {finderMatches.map(({ scaleId, root: r }) => (
+                    <li
+                      key={`${scaleId}-${r}`}
+                      className="finder-match"
+                      onClick={() => {
+                        setSelectedId(scaleId)
+                        setRoot(r)
+                        setFinderOpen(false)
+                      }}
+                    >
+                      <span className="finder-match-name">
+                        {scaleNameOf(scaleId)}
+                      </span>
+                      <span className="finder-match-root">
+                        rooted in {NOTE_DISPLAY[r]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {finderPcs.size > 0 && (
+              <div className="modal-actions">
+                <button type="button" onClick={clearFinder}>
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => setFinderOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
