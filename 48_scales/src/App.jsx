@@ -423,9 +423,12 @@ function App() {
                 onClick={() => setSelectedId((cur) => (cur === s.id ? null : s.id))}
                 data-scale-id={s.id}
                 onMouseEnter={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect()
+                  // Pin the zoom popup to the left edge of the viewport so it
+                  // doesn't overlay the row's scale-pattern cells.
+                  const glyph = e.currentTarget.querySelector('.glyph-slot')
+                  const r = (glyph ?? e.currentTarget).getBoundingClientRect()
                   setHoverRow(s.id - 1)
-                  setHoverPos({ x: r.right + 16, y: r.top + r.height / 2 })
+                  setHoverPos({ x: 0, y: r.bottom + 8 })
                 }}
                 onMouseLeave={() => setHoverRow(null)}
               >
