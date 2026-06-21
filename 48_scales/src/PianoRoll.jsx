@@ -331,6 +331,10 @@ export default function PianoRoll({
     if (loop) lastLoopRef.current = loop
   }, [loop])
   const gridAreaRef = useRef(null)
+  // Last length the user set on a note (via resize). Newly-placed notes
+  // inherit it so the user can pick a duration once and keep adding notes
+  // at that length without re-resizing each one.
+  const defaultNoteLengthRef = useRef(1)
   // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
   // selection's pitches instead of nudging them by a scale step.
   const tHeldRef = useRef(false)
@@ -1114,9 +1118,10 @@ export default function PianoRoll({
         }
         const key = `${beat}-${midi}`
         pushHistory()
+        const newLength = defaultNoteLengthRef.current
         setNotes((prev) => {
           const next = new Map(prev)
-          next.set(key, 1)
+          next.set(key, newLength)
           return next
         })
         playOneNote(midi, undefined, 0.3)
@@ -1393,6 +1398,7 @@ export default function PianoRoll({
         })
       : [{ key, beat, midi, originalLength: currentLength }]
     let snapshotPushed = false
+    let lastDraggedLength = currentLength
     const move = (mv) => {
       const dx = mv.clientX - startX
       if (!snapshotPushed && Math.abs(dx) < 2) return
@@ -1411,6 +1417,7 @@ export default function PianoRoll({
             Math.min(totalBeats - g.beat, newLength)
           )
           next.set(g.key, newLength)
+          if (g.key === key) lastDraggedLength = newLength
         }
         return next
       })
@@ -1420,6 +1427,7 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
+      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
@@ -1451,6 +1459,7 @@ export default function PianoRoll({
         })
       : [{ currentKey: key, originalBeat: beat, midi, rightEdge: beat + currentLength }]
     let snapshotPushed = false
+    let lastDraggedLength = currentLength
     const move = (mv) => {
       const dx = mv.clientX - startX
       if (!snapshotPushed && Math.abs(dx) < 2) return
@@ -1470,6 +1479,8 @@ export default function PianoRoll({
         (np, i) => np.newKey !== group[i].currentKey
       )
       if (!anyChanged) return
+      const draggedIdx = group.findIndex((g) => g.midi === midi && g.rightEdge === beat + currentLength)
+      if (draggedIdx !== -1) lastDraggedLength = newPositions[draggedIdx].newLength
       setNotes((prev) => {
         const next = new Map(prev)
         for (const g of group) next.delete(g.currentKey)
@@ -1497,6 +1508,7 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
+      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
