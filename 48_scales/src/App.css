@@ -1575,8 +1575,8 @@
   top: 0;
   bottom: 0;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
-  border-left: 1.5px solid var(--accent);
-  border-right: 1.5px solid var(--accent);
+  border-left: 2.5px solid var(--accent);
+  border-right: 2.5px solid var(--accent);
   pointer-events: none;
   z-index: 2;
   cursor: move;

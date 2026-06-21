@@ -323,6 +323,13 @@ export default function PianoRoll({
   notesRef.current = notes
   const loopRef = useRef(loop)
   loopRef.current = loop
+  // Last non-null loop the user had. Stashed every time `loop` is set to
+  // a valid region, so the toolbar Loop button can re-toggle it back on
+  // after the user clears it.
+  const lastLoopRef = useRef(null)
+  useEffect(() => {
+    if (loop) lastLoopRef.current = loop
+  }, [loop])
   const gridAreaRef = useRef(null)
   // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
   // selection's pitches instead of nudging them by a scale step.
@@ -1664,7 +1671,7 @@ export default function PianoRoll({
     )
 
     const currentLoop = loopRef.current
-    const EDGE_PX = 6
+    const EDGE_PX = 10
     let mode = 'create'
     let initialLoopSnap = null
     if (currentLoop) {
@@ -1690,9 +1697,9 @@ export default function PianoRoll({
         setLoop({ start: a, end: b })
       } else if (mode === 'resize-start') {
         const end = initialLoopSnap.end
-        const minStart = freeMode ? end - 0.25 : end - 1
+        const maxStart = freeMode ? end - 0.25 : end - 1
         setLoop({
-          start: Math.min(beat, minStart),
+          start: Math.max(0, Math.min(beat, maxStart)),
           end,
         })
       } else if (mode === 'resize-end') {
@@ -1700,7 +1707,7 @@ export default function PianoRoll({
         const minEnd = freeMode ? start + 0.25 : start + 1
         setLoop({
           start,
-          end: Math.max(beat, minEnd),
+          end: Math.min(totalBeats, Math.max(beat, minEnd)),
         })
       } else if (mode === 'move-loop') {
         const len = initialLoopSnap.end - initialLoopSnap.start
@@ -1716,16 +1723,17 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       if (!moved) {
-        // Single click on a loop body — inside OR outside — clears it.
-        // Then seek to the clicked position (or restart playback there).
-        if (currentLoop) setLoop(null)
+        // A no-drag click only clears the loop if it landed OUTSIDE the
+        // loop body (mode === 'create'). Clicks on the loop edges or its
+        // body are intent-to-resize / intent-to-move and must preserve
+        // the loop so the user can try again. Then seek to the click.
+        if (currentLoop && mode === 'create') setLoop(null)
         if (playStateRef.current) {
           playFromBeat(initialBeat)
         } else {
           setPlayheadBeat(initialBeat)
         }
       } else {
-        // discard zero-or-tiny loops
         const final = loopRef.current
         if (final && final.end - final.start < 0.5) setLoop(null)
       }
@@ -1827,11 +1835,20 @@ export default function PianoRoll({
         <button
           type="button"
           className={`mode-toggle icon-toggle ${loop ? 'on' : ''}`}
-          onClick={() => setLoop(null)}
-          disabled={!loop}
+          onClick={() => {
+            if (loop) setLoop(null)
+            else if (lastLoopRef.current) setLoop(lastLoopRef.current)
+          }}
+          disabled={!loop && !lastLoopRef.current}
           aria-pressed={!!loop}
-          aria-label="clear loop"
-          title="Loop — click to clear the active loop region"
+          aria-label={loop ? 'clear loop' : 'restore previous loop'}
+          title={
+            loop
+              ? 'Loop — click to clear. Drag on the timeline to create a new region.'
+              : lastLoopRef.current
+              ? 'Loop — click to restore the previous region.'
+              : 'Drag on the timeline to create a loop region.'
+          }
         >
           <Repeat size={16} strokeWidth={1.8} />
         </button>
