@@ -478,8 +478,79 @@
   gap: 4px;
 }
 
-.root {
-  position: relative;
+/* Small mute-text label that sits above the row of top dots and below the
+   row of bottom dots, naming what each row of dots picks. */
+.roots-hint {
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 4px;
+}
+
+.roots-hint.bottom {
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+/* Composite cell: top dot (root selector) + note label + bottom dot (mode
+   selector). Each cell is a flex column so the dots flank the label. */
+.root-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px 0;
+  border-radius: 4px;
+  transition: opacity 0.15s var(--ease);
+}
+
+.root-cell.dim {
+  opacity: 0.4;
+}
+
+.root-cell.dim:hover {
+  opacity: 0.7;
+}
+
+.root-dot {
+  align-self: center;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--mute);
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease),
+    transform 0.12s var(--ease);
+}
+
+.root-dot:hover:not(:disabled) {
+  border-color: var(--fg);
+  transform: scale(1.1);
+}
+
+.root-dot.top.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.root-dot.bottom.on {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+
+.root-dot:disabled {
+  opacity: 0.15;
+  cursor: default;
+}
+
+.root-label {
+  display: block;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--accent) 60%, var(--off-lift) 40%) 0%,
@@ -488,29 +559,20 @@
   color: var(--fg);
   border: none;
   border-radius: 3px;
-  padding: 12px 4px;
+  padding: 10px 4px;
   cursor: pointer;
   font-family: var(--mono);
   font-size: 15px;
   font-weight: 500;
   text-align: center;
-  transition: filter 0.15s var(--ease), background 0.15s var(--ease),
-    opacity 0.15s var(--ease);
+  transition: filter 0.15s var(--ease), background 0.15s var(--ease);
 }
 
-.root:hover {
+.root-label:hover {
   filter: brightness(1.15);
 }
 
-.root.dim {
-  opacity: 0.32;
-}
-
-.root.dim:hover {
-  opacity: 0.55;
-}
-
-.root.active {
+.root-label.active {
   background: linear-gradient(
     135deg,
     var(--accent) 0%,
@@ -518,16 +580,28 @@
   );
 }
 
-.root.active::before {
-  content: '';
-  position: absolute;
-  top: -10px;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  transform: translateX(-50%);
+/* Chord colors overlay on in-scale cells. The same chord1/chord2/electron
+   variables used by the matrix tint the label backgrounds here. */
+.root-cell.in.chord-left .root-label {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord1) 65%, var(--off-lift) 35%) 0%,
+    color-mix(in srgb, var(--chord1) 85%, var(--off-lift) 15%) 100%
+  );
+}
+.root-cell.in.chord-right .root-label {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--chord2) 65%, var(--off-lift) 35%) 0%,
+    color-mix(in srgb, var(--chord2) 85%, var(--off-lift) 15%) 100%
+  );
+}
+.root-cell.in.chord-both .root-label {
+  background: linear-gradient(
+    135deg,
+    var(--chord1) 0%,
+    var(--chord2) 100%
+  );
 }
 
 /* ---------- Pattern ---------- */

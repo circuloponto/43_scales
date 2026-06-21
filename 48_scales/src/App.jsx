@@ -206,6 +206,12 @@ function App() {
   // Scale finder: the user toggles pitch classes in `finderPcs`; we list
   // every (scaleId, root) pair where those pcs are a subset of the scale.
   const [finderPcs, setFinderPcs] = useState(() => new Set())
+  // Mode override (1-indexed scale degree). null = use the scale's default
+  // intrinsic root from rootSteps. Resets when the user picks a new scale.
+  const [modeStep, setModeStep] = useState(null)
+  useEffect(() => {
+    setModeStep(null)
+  }, [selectedId])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const paletteRef = useRef(null)
   useEffect(() => {
@@ -407,6 +413,7 @@ function App() {
             onPlay={playScale}
             templates={templates}
             setTemplates={setTemplates}
+            modeStep={modeStep}
           />
         ) : (
         <>
@@ -534,12 +541,19 @@ function App() {
           </div>
 
           {(() => {
-            const rs = scale ? rootSteps[scale.id - 1] : null
+            const defaultRs = scale ? rootSteps[scale.id - 1] : null
+            const rs = scale ? modeStep ?? defaultRs : null
             const intrinsicPc = scale && rs ? scale.notes[rs - 1] : 0
             const rotated = scale
               ? scale.notes.map((n) => (n - intrinsicPc + 12) % 12)
               : []
             const inRotated = (c) => !scale || rotated.includes(c)
+            // For a chromatic offset c (0..11) relative to root, return its
+            // 1-indexed scale degree, or 0 if it's not in the rotated scale.
+            const degreeOf = (c) => {
+              const idx = rotated.indexOf(c)
+              return idx === -1 ? 0 : idx + 1
+            }
             const pair = scale
               ? chordPairs.find((p) => p.scaleId === scale.id)
               : null
@@ -557,63 +571,59 @@ function App() {
               return ''
             }
             return (
-              <>
-                <div className="section">
-                  <div className="roots">
-                    {Array.from({ length: 12 }, (_, c) => {
-                      const pc = (root + c) % 12
-                      const isActive = c === 0
-                      const inScale = inRotated(c)
-                      const dim = !isActive && !inScale
-                      return (
+              <div className="section">
+                <div className="roots-hint top">pick root</div>
+                <div className="roots">
+                  {Array.from({ length: 12 }, (_, c) => {
+                    const pc = (root + c) % 12
+                    const isRootActive = c === 0
+                    const inScale = inRotated(c)
+                    const degree = degreeOf(c)
+                    const isModeActive = degree !== 0 && degree === rs
+                    const dim = !isRootActive && !inScale
+                    return (
+                      <div
+                        key={c}
+                        className={`root-cell ${inScale ? 'in' : 'out'} ${
+                          dim ? 'dim' : ''
+                        } ${chordClass(pc)}`}
+                      >
                         <button
-                          key={c}
-                          className={`root ${isActive ? 'active' : ''} ${
-                            dim ? 'dim' : ''
-                          }`}
+                          type="button"
+                          className={`root-dot top ${isRootActive ? 'on' : ''}`}
+                          onClick={() => setRoot(pc)}
+                          aria-label={`Set root to ${NOTE_DISPLAY[pc]}`}
+                          title={`Set root to ${NOTE_DISPLAY[pc]}`}
+                        />
+                        <button
+                          type="button"
+                          className={`root-label ${isRootActive ? 'active' : ''}`}
                           onClick={() => setRoot(pc)}
                         >
                           {NOTE_DISPLAY[pc]}
                         </button>
-                      )
-                    })}
-                  </div>
+                        <button
+                          type="button"
+                          className={`root-dot bottom ${isModeActive ? 'on' : ''}`}
+                          onClick={inScale ? () => setModeStep(degree) : undefined}
+                          disabled={!inScale}
+                          aria-label={
+                            inScale
+                              ? `Start scale on degree ${degree} (${NOTE_DISPLAY[pc]})`
+                              : ''
+                          }
+                          title={
+                            inScale
+                              ? `Start scale on degree ${degree}`
+                              : ''
+                          }
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
-
-                {scale && (
-                  <div className="section">
-                    <div className="pattern">
-                      {Array.from({ length: 12 }, (_, c) => {
-                        const pc = (root + c) % 12
-                        const inScale = inRotated(c)
-                        const isRoot = c === 0
-                        return (
-                          <div
-                            key={c}
-                            className={`pattern-cell ${inScale ? 'on' : 'off'} ${
-                              isRoot ? 'is-scale-root' : ''
-                            } ${chordClass(pc)}`}
-                          />
-                        )
-                      })}
-                    </div>
-                    <div className="notes-row">
-                      {Array.from({ length: 12 }, (_, c) => {
-                        const pc = (root + c) % 12
-                        const inScale = inRotated(c)
-                        return (
-                          <div
-                            key={c}
-                            className={`note-slot ${inScale ? 'in' : 'out'} ${chordClass(pc)}`}
-                          >
-                            {inScale ? NOTE_DISPLAY[pc] : ''}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
+                <div className="roots-hint bottom">pick mode</div>
+              </div>
             )
           })()}
 

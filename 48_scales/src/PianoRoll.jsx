@@ -265,6 +265,7 @@ export default function PianoRoll({
   onBack,
   templates = [],
   setTemplates,
+  modeStep = null,
 }) {
   // Rotate the scale by its rootStep so the displayed scale here matches the
   // right-panel view in the matrix screen: the intrinsic-root degree sits at
@@ -272,7 +273,7 @@ export default function PianoRoll({
   // buildInitialPattern, the chord catalog generator, template apply, the
   // scale-bar pattern — uses `scale` (this rotated version), so chord-pair
   // colors align cleanly with the on-cells.
-  const _rsRoll = rawScale ? rootSteps[rawScale.id - 1] : null
+  const _rsRoll = rawScale ? modeStep ?? rootSteps[rawScale.id - 1] : null
   const _intrinsicPcRoll =
     rawScale && _rsRoll ? rawScale.notes[_rsRoll - 1] : 0
   // Sort the rotated notes ascending so scale.notes[i] is the i-th scale
