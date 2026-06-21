@@ -1373,10 +1373,25 @@ export default function PianoRoll({
     window.addEventListener('pointercancel', up)
   }
 
+  // Right-edge resize. If the dragged note is part of a multi-selection,
+  // the same length delta is applied to every selected note (each clamped
+  // independently to its own bounds). Otherwise just resize this note.
   const handleNoteResize = (e, key, beat, midi, currentLength) => {
     e.stopPropagation()
     e.preventDefault()
     const startX = e.clientX
+    const isGroup = selectedKeys.has(key) && selectedKeys.size > 1
+    const group = isGroup
+      ? Array.from(selectedKeys).map((k) => {
+          const [bStr, mStr] = k.split('-')
+          return {
+            key: k,
+            beat: Number(bStr),
+            midi: Number(mStr),
+            originalLength: notesRef.current.get(k) ?? 1,
+          }
+        })
+      : [{ key, beat, midi, originalLength: currentLength }]
     let snapshotPushed = false
     const move = (mv) => {
       const dx = mv.clientX - startX
@@ -1385,15 +1400,18 @@ export default function PianoRoll({
         pushHistory()
         snapshotPushed = true
       }
-      let newLength = currentLength + dx / BEAT_WIDTH
-      if (!freeMode) newLength = Math.round(newLength)
-      newLength = Math.max(
-        freeMode ? 0.25 : 1,
-        Math.min(totalBeats - beat, newLength)
-      )
+      let lengthDelta = dx / BEAT_WIDTH
+      if (!freeMode) lengthDelta = Math.round(lengthDelta)
       setNotes((prev) => {
         const next = new Map(prev)
-        next.set(key, newLength)
+        for (const g of group) {
+          let newLength = g.originalLength + lengthDelta
+          newLength = Math.max(
+            freeMode ? 0.25 : 1,
+            Math.min(totalBeats - g.beat, newLength)
+          )
+          next.set(g.key, newLength)
+        }
         return next
       })
     }
@@ -1409,16 +1427,30 @@ export default function PianoRoll({
     window.addEventListener('pointercancel', up)
   }
 
-  // Resize from the left edge: the right edge of the note stays anchored,
-  // and the start beat + length both change. Honors free mode (continuous)
-  // vs. snapped mode (integer beats).
+  // Left-edge resize: each note's right edge stays anchored, start beat and
+  // length both change. With a multi-selection, the same beat delta moves
+  // every selected note's start (clamped per-note). Notes' keys change as
+  // their beat changes, so we track currentKey per group entry.
   const handleNoteResizeLeft = (e, key, beat, midi, currentLength) => {
     e.stopPropagation()
     e.preventDefault()
     const startX = e.clientX
-    const rightEdge = beat + currentLength
+    const isGroup = selectedKeys.has(key) && selectedKeys.size > 1
+    const group = isGroup
+      ? Array.from(selectedKeys).map((k) => {
+          const [bStr, mStr] = k.split('-')
+          const b = Number(bStr)
+          const m = Number(mStr)
+          const len = notesRef.current.get(k) ?? 1
+          return {
+            currentKey: k,
+            originalBeat: b,
+            midi: m,
+            rightEdge: b + len,
+          }
+        })
+      : [{ currentKey: key, originalBeat: beat, midi, rightEdge: beat + currentLength }]
     let snapshotPushed = false
-    let currentKey = key
     const move = (mv) => {
       const dx = mv.clientX - startX
       if (!snapshotPushed && Math.abs(dx) < 2) return
@@ -1426,27 +1458,38 @@ export default function PianoRoll({
         pushHistory()
         snapshotPushed = true
       }
-      let newBeat = beat + dx / BEAT_WIDTH
-      if (!freeMode) newBeat = Math.round(newBeat)
+      let beatDelta = dx / BEAT_WIDTH
+      if (!freeMode) beatDelta = Math.round(beatDelta)
       const minLen = freeMode ? 0.25 : 1
-      newBeat = Math.max(0, Math.min(rightEdge - minLen, newBeat))
-      const newLength = rightEdge - newBeat
-      const newKey = `${newBeat}-${midi}`
-      if (newKey === currentKey) return
-      const previousKey = currentKey
-      currentKey = newKey
+      const newPositions = group.map((g) => {
+        let nb = g.originalBeat + beatDelta
+        nb = Math.max(0, Math.min(g.rightEdge - minLen, nb))
+        return { ...g, newBeat: nb, newLength: g.rightEdge - nb, newKey: `${nb}-${g.midi}` }
+      })
+      const anyChanged = newPositions.some(
+        (np, i) => np.newKey !== group[i].currentKey
+      )
+      if (!anyChanged) return
       setNotes((prev) => {
         const next = new Map(prev)
-        next.delete(previousKey)
-        next.set(newKey, newLength)
+        for (const g of group) next.delete(g.currentKey)
+        for (const np of newPositions) next.set(np.newKey, np.newLength)
         return next
       })
-      setSelectedKeys((prev) => {
-        if (!prev.has(previousKey)) return prev
-        const ns = new Set(prev)
-        ns.delete(previousKey)
-        ns.add(newKey)
-        return ns
+      if (isGroup) {
+        setSelectedKeys(new Set(newPositions.map((np) => np.newKey)))
+      } else {
+        setSelectedKeys((prev) => {
+          const np = newPositions[0]
+          if (!prev.has(group[0].currentKey)) return prev
+          const ns = new Set(prev)
+          ns.delete(group[0].currentKey)
+          ns.add(np.newKey)
+          return ns
+        })
+      }
+      newPositions.forEach((np, i) => {
+        group[i].currentKey = np.newKey
       })
     }
     const up = () => {
