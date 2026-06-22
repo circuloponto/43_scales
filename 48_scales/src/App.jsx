@@ -434,6 +434,36 @@ function App() {
             const isSel = s.id === selectedId
             const rs = rootSteps[s.id - 1]
             const intrinsicPc = rs ? s.notes[rs - 1] : null
+            // For the selected row, compute the chord-pair pcs in this row's
+            // unrotated scale-pc space so we can tint each cell by which
+            // chord it belongs to. Off-rows stay neutral.
+            let rowLeftSet = null
+            let rowRightSet = null
+            if (isSel) {
+              const rsActive = modeStep ?? rs
+              const intrinsicPcActive = rsActive ? s.notes[rsActive - 1] : 0
+              const pair = chordPairs.find((p) => p.scaleId === s.id)
+              const resolved = pair
+                ? resolveChordPair(pair, s.notes, 0, rsActive)
+                : null
+              if (resolved) {
+                rowLeftSet = new Set(
+                  resolved.leftNotes.map((p) => (p + intrinsicPcActive) % 12)
+                )
+                rowRightSet = new Set(
+                  resolved.rightNotes.map((p) => (p + intrinsicPcActive) % 12)
+                )
+              }
+            }
+            const rowChordClass = (pc) => {
+              if (!isSel) return ''
+              const inL = rowLeftSet && rowLeftSet.has(pc)
+              const inR = rowRightSet && rowRightSet.has(pc)
+              if (inL && inR) return 'chord-both'
+              if (inL) return 'chord-left'
+              if (inR) return 'chord-right'
+              return ''
+            }
             return (
               <div
                 key={s.id}
@@ -469,7 +499,7 @@ function App() {
                         key={pc}
                         className={`cell ${isOn ? 'on' : 'off'} ${
                           isRoot ? 'is-scale-root' : ''
-                        }`}
+                        } ${rowChordClass(pc)}`}
                         style={
                           isOn
                             ? { animationDelay: `${cellPulseDelay(s.id, pc)}s` }

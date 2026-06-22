@@ -321,6 +321,21 @@
   );
 }
 
+/* When a scale is selected, tint its in-scale (on) cells with a flat
+   solid color matching which chord they belong to. */
+.cell.on.chord-left {
+  background: var(--chord1);
+  box-shadow: none;
+}
+.cell.on.chord-right {
+  background: var(--chord2);
+  box-shadow: none;
+}
+.cell.on.chord-both {
+  background: color-mix(in srgb, var(--chord1) 50%, var(--chord2) 50%);
+  box-shadow: none;
+}
+
 @keyframes cellPulse {
   0%, 100% {
     filter: brightness(0.78);
