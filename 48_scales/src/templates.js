@@ -22,7 +22,232 @@
 // the clipboard and paste it back here to ship them as defaults.
 
 export const templates = [
-    
+  {
+    "id": "1782163712933-6b3m3i",
+    "name": "Chord up",
+    "capturedFrom": {
+      "scaleId": 4,
+      "root": 2
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 2,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 4,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 6,
+        "octave": 1,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "id": "1782163779958-pafp9t",
+    "name": "Scale Up",
+    "capturedFrom": {
+      "scaleId": 4,
+      "root": 2
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 1,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 2,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 3,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 4,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 5,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 6,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 7,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 8,
+        "degree": 0,
+        "octave": 2,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "id": "1782163839275-ftf3yd",
+    "name": "Scale & surround",
+    "capturedFrom": {
+      "scaleId": 4,
+      "root": 2
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 1,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 2,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 3,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 4,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 5,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 6,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 0,
+        "octave": 2,
+        "length": 1
+      },
+      {
+        "beat": 8,
+        "degree": 7,
+        "octave": 1,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "id": "1782163917945-t61qn6",
+    "name": "Chord up, Scale Down",
+    "capturedFrom": {
+      "scaleId": 4,
+      "root": 2
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 2,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 4,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 6,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 5,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 4,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 3,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 2,
+        "octave": 1,
+        "length": 1
+      },
+      {
+        "beat": 8,
+        "degree": 1,
+        "octave": 1,
+        "length": 1
+      }
+    ]
+  }
    
       
   ]
