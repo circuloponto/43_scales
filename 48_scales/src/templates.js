@@ -23,124 +23,125 @@
 
 export const templates = [
     
-    {
-      "id": "1779528744038-wyrt3d",
-      "name": "start-end alternation",
-      "capturedFrom": {
-        "scaleId": 11,
-        "root": 2
-      },
-      "notes": [
-        {
-          "beat": 0,
-          "degree": 0,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 1,
-          "degree": 7,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 3,
-          "degree": 6,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 2,
-          "degree": 1,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 4,
-          "degree": 2,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 5,
-          "degree": 3,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 6,
-          "degree": 5,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 7,
-          "degree": 4,
-          "octave": 0,
-          "length": 1
-        }
-      ]
-    },
-    {
-      "id": "1779529008257-dukieg",
-      "name": "step-reverse alternation",
-      "capturedFrom": {
-        "scaleId": 20,
-        "root": 1
-      },
-      "notes": [
-        {
-          "beat": 0,
-          "degree": 0,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 3,
-          "degree": 6,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 4,
-          "degree": 2,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 5,
-          "degree": 3,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 6,
-          "degree": 5,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 7,
-          "degree": 4,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 1,
-          "degree": 1,
-          "octave": 0,
-          "length": 1
-        },
-        {
-          "beat": 2,
-          "degree": 7,
-          "octave": 0,
-          "length": 1
-        }
-      ]
-    }
+   
+      
   ]
-
+  
+   /* {"id": "1779528744038-wyrt3d",
+    "name": "start-end alternation",
+    "capturedFrom": {
+      "scaleId": 11,
+      "root": 2
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 2,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 3,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 4,
+        "octave": 0,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "id": "1779529008257-dukieg",
+    "name": "step-reverse alternation",
+    "capturedFrom": {
+      "scaleId": 20,
+      "root": 1
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 2,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 3,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 4,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 7,
+        "octave": 0,
+        "length": 1
+      }
+    ]
+  }*/
 // Chord progression templates. Same scale-degree-relative idea as templates
 // above. Each block carries the chord shape (offsets + suffix) so the chord
 // quality and intervals come from the original entry in src/chords.js, not

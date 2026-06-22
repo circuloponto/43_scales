@@ -541,9 +541,31 @@
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
+/* Every bottom dot under an in-scale note is solid-filled with the colour
+   of the note label above, regardless of whether it's the active mode. */
+.root-cell.in .root-dot.bottom {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.root-cell.in.chord-left .root-dot.bottom {
+  background: var(--chord1);
+  border-color: var(--chord1);
+}
+.root-cell.in.chord-right .root-dot.bottom {
+  background: var(--chord2);
+  border-color: var(--chord2);
+}
+.root-cell.in.chord-both .root-dot.bottom {
+  background: linear-gradient(135deg, var(--chord1) 0%, var(--chord2) 100%);
+  border-color: var(--chord2);
+}
+/* Active mode dot: ring + glow on top of the solid fill so the user can
+   still see which step is the current root. */
 .root-dot.bottom.on {
-  background: var(--fg);
-  border-color: var(--fg);
+  box-shadow:
+    0 0 0 2px var(--frame),
+    0 0 0 3px var(--fg),
+    0 0 8px color-mix(in srgb, var(--fg) 50%, transparent);
 }
 
 .root-dot:disabled {
