@@ -390,7 +390,9 @@ export default function PianoRoll({
       } else if (meta && e.code === 'KeyC') {
         e.preventDefault()
         copyNotes()
-      } else if (meta && e.code === 'KeyV') {
+      } else if (meta && !e.shiftKey && e.code === 'KeyV') {
+        // Ctrl/Cmd+V → paste. With Shift held this branch is skipped so the
+        // gesture can fall through to the flipVertical handler below.
         e.preventDefault()
         pasteNotes()
       } else if (meta && (e.code === 'KeyA' || k === 'a')) {
@@ -678,6 +680,7 @@ export default function PianoRoll({
   const copyNotes = () => {
     if (selectedKeys.size === 0) return
     let minBeat = Infinity
+    let maxEndBeat = -Infinity
     const items = []
     for (const key of selectedKeys) {
       const [beatStr, midiStr] = key.split('-')
@@ -685,12 +688,17 @@ export default function PianoRoll({
       const length = notes.get(key) ?? 1
       items.push({ beat: b, midi: Number(midiStr), length })
       if (b < minBeat) minBeat = b
+      if (b + length > maxEndBeat) maxEndBeat = b + length
     }
-    clipboardRef.current = items.map((it) => ({
-      relBeat: it.beat - minBeat,
-      midi: it.midi,
-      length: it.length,
-    }))
+    clipboardRef.current = {
+      items: items.map((it) => ({
+        relBeat: it.beat - minBeat,
+        midi: it.midi,
+        length: it.length,
+      })),
+      sourceMinBeat: minBeat,
+      sourceWidth: maxEndBeat - minBeat,
+    }
   }
 
   // Convert each note in the roll to a { beat, degree, octave } record,
@@ -843,27 +851,46 @@ export default function PianoRoll({
   // still lives on the scale.
   const flipVertical = () => {
     if (selectedKeys.size === 0) return
+    // Compute each note's scale-step index. Inverting by step (rather than
+    // by raw MIDI + nearest-snap) is bijective — every distinct input step
+    // maps to a distinct output step, so notes can never collapse onto the
+    // same pitch. Off-scale notes (step === null) fall back to chromatic
+    // mirror via nearestScaleMidi as a best-effort.
+    const records = []
+    let minStep = Infinity
+    let maxStep = -Infinity
     let minMidi = Infinity
     let maxMidi = -Infinity
     for (const key of selectedKeys) {
-      const [, midiStr] = key.split('-')
+      const [beatStr, midiStr] = key.split('-')
       const m = Number(midiStr)
+      const length = notesRef.current.get(key) ?? 1
+      const step = midiToScaleStep(m)
+      records.push({ key, beatStr, midi: m, length, step })
       if (m < minMidi) minMidi = m
       if (m > maxMidi) maxMidi = m
+      if (step != null) {
+        if (step < minStep) minStep = step
+        if (step > maxStep) maxStep = step
+      }
     }
-    const sum = minMidi + maxMidi
+    const haveSteps = minStep !== Infinity
+    const stepSum = haveSteps ? minStep + maxStep : 0
+    const midiSum = minMidi + maxMidi
     pushHistory()
     const newSel = new Set()
     setNotes((prev) => {
       const next = new Map(prev)
-      for (const key of selectedKeys) next.delete(key)
-      for (const key of selectedKeys) {
-        const [beatStr, midiStr] = key.split('-')
-        const m = Number(midiStr)
-        const length = notesRef.current.get(key) ?? 1
-        const newMidi = nearestScaleMidi(sum - m)
-        const newKey = `${beatStr}-${newMidi}`
-        next.set(newKey, length)
+      for (const r of records) next.delete(r.key)
+      for (const r of records) {
+        let newMidi
+        if (r.step != null && haveSteps) {
+          newMidi = scaleStepToMidi(stepSum - r.step)
+        } else {
+          newMidi = nearestScaleMidi(midiSum - r.midi)
+        }
+        const newKey = `${r.beatStr}-${newMidi}`
+        next.set(newKey, r.length)
         newSel.add(newKey)
       }
       return next
@@ -1029,13 +1056,22 @@ export default function PianoRoll({
 
   const pasteNotes = () => {
     const clip = clipboardRef.current
-    if (!clip || clip.length === 0) return
-    const target = playheadBeat ?? 0
+    if (!clip || !clip.items || clip.items.length === 0) return
+    // Paste at the playhead if it's set AND different from the source's
+    // start; otherwise drop the paste right after the source so a plain
+    // Ctrl+C → Ctrl+V duplicates the selection to the immediate right
+    // instead of stacking it on top of the original.
+    let target
+    if (playheadBeat != null && playheadBeat !== clip.sourceMinBeat) {
+      target = playheadBeat
+    } else {
+      target = clip.sourceMinBeat + clip.sourceWidth
+    }
     pushHistory()
     const newSelection = new Set()
     setNotes((prev) => {
       const next = new Map(prev)
-      for (const item of clip) {
+      for (const item of clip.items) {
         let beat = target + item.relBeat
         if (!freeMode) beat = Math.round(beat)
         if (beat < 0 || beat >= totalBeats) continue
