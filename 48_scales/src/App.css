@@ -288,7 +288,11 @@
   height: var(--cell);
   border-radius: 3px;
   overflow: hidden;
-  transition: filter 0.12s var(--ease);
+  /* Promote each cell to its own compositor layer so the pulse animates
+     purely on the GPU. transform + opacity are the only properties the
+     compositor can animate without re-painting. */
+  transform: translateZ(0);
+  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
 }
 
 .cell.on {
@@ -299,6 +303,7 @@
   );
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--fg) 60%, var(--accent) 40%);
   animation: cellPulse 2.4s var(--ease) infinite;
+  will-change: opacity, transform;
 }
 
 .cell.is-scale-root {
@@ -336,25 +341,31 @@
   box-shadow: none;
 }
 
+/* Opacity + tiny scale instead of filter: brightness — both are GPU-only
+   compositor properties (no repaint per frame). Visual feel is the same:
+   a dim → bright → settle pulse. */
 @keyframes cellPulse {
   0%, 100% {
-    filter: brightness(0.78);
+    opacity: 0.66;
+    transform: translateZ(0) scale(0.985);
   }
   12% {
-    filter: brightness(1.25);
+    opacity: 1;
+    transform: translateZ(0) scale(1.015);
   }
   55% {
-    filter: brightness(0.92);
+    opacity: 0.85;
+    transform: translateZ(0) scale(1);
   }
 }
 
 .row:hover .cell.on {
-  filter: brightness(1.05) saturate(1.05);
+  opacity: 1;
   animation: none;
 }
 
 .row:hover .cell.off {
-  filter: brightness(1.12);
+  opacity: 0.9;
 }
 
 @media (prefers-reduced-motion: reduce) {
