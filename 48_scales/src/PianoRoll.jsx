@@ -266,7 +266,9 @@ export default function PianoRoll({
   templates = [],
   setTemplates,
   modeStep = null,
+  settings = {},
 }) {
+  const allowOutOfScale = !!settings.allowOutOfScale
   // Rotate the scale by its rootStep so the displayed scale here matches the
   // right-panel view in the matrix screen: the intrinsic-root degree sits at
   // pc 0 of `scale.notes`. Every downstream piece — inScale, nearestScaleMidi,
@@ -1148,8 +1150,9 @@ export default function PianoRoll({
         // Shift+click on empty space: preserve the current selection so the
         // user can keep building it across separate gestures.
         if (additive) return
-        // single click on empty space → add note (only if row is in scale)
-        if (!isInScale) {
+        // Click on empty space → add note. By default only on in-scale rows;
+        // the Settings toggle "Allow notes outside the scale" lifts that gate.
+        if (!isInScale && !allowOutOfScale) {
           setSelectedKeys(new Set())
           return
         }
@@ -1837,7 +1840,10 @@ export default function PianoRoll({
   }
 
   return (
-    <div className="roll-view" onContextMenu={(e) => e.preventDefault()}>
+    <div
+      className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''}`}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <header className={`roll-header ${mobileMenuOpen ? 'menu-open' : ''}`}>
         <button className="back-btn" onClick={onBack} aria-label="back to matrix">
           <BackIcon />

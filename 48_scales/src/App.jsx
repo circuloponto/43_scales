@@ -98,6 +98,33 @@ function App() {
       return fallback
     }
   }
+  const DEFAULT_SETTINGS = { allowOutOfScale: false }
+  const loadSettings = () => {
+    try {
+      const v = localStorage.getItem('eightFold.settings')
+      if (!v) return DEFAULT_SETTINGS
+      const parsed = JSON.parse(v)
+      return { ...DEFAULT_SETTINGS, ...parsed }
+    } catch {
+      return DEFAULT_SETTINGS
+    }
+  }
+  const [settings, setSettings] = useState(loadSettings)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  useEffect(() => {
+    try {
+      localStorage.setItem('eightFold.settings', JSON.stringify(settings))
+    } catch {}
+  }, [settings])
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSettingsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [settingsOpen])
+
   const [accent, setAccent] = useState(() =>
     loadColor('eightFold.accent', ORIGINAL_PURPLE)
   )
@@ -354,6 +381,18 @@ function App() {
       }}
     >
       <div className="frame">
+        <button
+          type="button"
+          className="settings-trigger"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="open settings"
+          title="Settings"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
         <div className="theme-picker" title="accent color" ref={paletteRef}>
           <span className="theme-label">Accent</span>
           <label className="theme-swatch-wrap">
@@ -425,6 +464,7 @@ function App() {
             templates={templates}
             setTemplates={setTemplates}
             modeStep={modeStep}
+            settings={settings}
           />
         ) : (
         <>
@@ -828,6 +868,54 @@ function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
+          <div
+            className="modal settings-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="settings-modal-header">
+              <h3>Settings</h3>
+              <button
+                type="button"
+                className="finder-modal-close"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="close settings"
+              >
+                ×
+              </button>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <div className="settings-row-label">
+                  Allow notes outside the scale
+                </div>
+                <div className="settings-row-sub">
+                  Place notes on any pitch in the piano roll, not just
+                  in-scale rows. Useful for chromatic passing tones.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.allowOutOfScale}
+                className={`settings-switch ${
+                  settings.allowOutOfScale ? 'on' : ''
+                }`}
+                onClick={() =>
+                  setSettings((s) => ({
+                    ...s,
+                    allowOutOfScale: !s.allowOutOfScale,
+                  }))
+                }
+              >
+                <span className="settings-switch-knob" />
+              </button>
+            </div>
           </div>
         </div>
       )}
