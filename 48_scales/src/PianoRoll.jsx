@@ -4,7 +4,8 @@ import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 
-const NOTE_DISPLAY = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
 
 // PC → "white index from top of octave" (0 = B, 1 = A, ..., 6 = C)
@@ -94,12 +95,16 @@ function kbdPosition(midi) {
   }
 }
 
-// Pretty pitch label: "C4", "F♯7", etc. Uses scientific octave numbering
-// (MIDI 60 = C4) so it matches the popup users expect from any DAW.
-function midiPitchLabel(midi) {
-  const pc = ((midi % 12) + 12) % 12
-  const octave = Math.floor(midi / 12) - 1
-  return NOTE_DISPLAY[pc] + octave
+// Pretty pitch label factory: returns a function that prints "C4", "F♯7",
+// etc. using scientific octave numbering. Sharps vs. flats picked from the
+// useFlats flag so the popup follows the global setting.
+function makeMidiPitchLabel(useFlats) {
+  const names = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP
+  return (midi) => {
+    const pc = ((midi % 12) + 12) % 12
+    const octave = Math.floor(midi / 12) - 1
+    return names[pc] + octave
+  }
 }
 
 function NumberField({
@@ -269,6 +274,13 @@ export default function PianoRoll({
   settings = {},
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
+  const useFlats = !!settings.useFlats
+  // Note-label arrays follow the global accidental setting so every label
+  // (keyboard column, pattern row, hover tooltip, chord card, etc.) flips
+  // between sharps and flats together.
+  const NOTE_DISPLAY = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP
+  const midiPitchLabel = makeMidiPitchLabel(useFlats)
+  const noteName = (pc) => pcName(pc, useFlats)
   // Rotate the scale by its rootStep so the displayed scale here matches the
   // right-panel view in the matrix screen: the intrinsic-root degree sits at
   // pc 0 of `scale.notes`. Every downstream piece — inScale, nearestScaleMidi,
@@ -593,8 +605,8 @@ export default function PianoRoll({
           inversion: inv,
           midis,
           chordLabel,
-          rootName: pcName(rootPc),
-          bassName: pcName(bassPc),
+          rootName: pcName(rootPc, useFlats),
+          bassName: pcName(bassPc, useFlats),
         }
       })
     }
@@ -602,7 +614,7 @@ export default function PianoRoll({
       ...side('left', _pair.left, _resolved.leftNotes, _resolved.leftRoot),
       ...side('right', _pair.right, _resolved.rightNotes, _resolved.rightRoot),
     ]
-  }, [_resolved, _pair])
+  }, [_resolved, _pair, useFlats])
 
   // Map a MIDI value (assumed to be on-scale) to a global scale-step index
   // = octave * scale.notes.length + degree. Step indices are monotone in
@@ -847,22 +859,20 @@ export default function PianoRoll({
     setSelectedKeys(newSel)
   }
 
-  // Flip the selected notes around the midpoint of their MIDI range. The
-  // pitch axis is reflected: highest note becomes lowest and vice-versa.
-  // Each flipped note is snapped to the nearest in-scale row so the result
-  // still lives on the scale.
+  // Flip the selected notes around the midpoint of their pitch range.
+  // Pure-scale selections invert by scale-step (bijection that stays on
+  // the scale). Selections containing any off-scale note invert
+  // chromatically (newMidi = midiSum - oldMidi) — also bijective, but
+  // preserves the chromatic positions rather than snapping anything to
+  // the scale and risking collisions.
   const flipVertical = () => {
     if (selectedKeys.size === 0) return
-    // Compute each note's scale-step index. Inverting by step (rather than
-    // by raw MIDI + nearest-snap) is bijective — every distinct input step
-    // maps to a distinct output step, so notes can never collapse onto the
-    // same pitch. Off-scale notes (step === null) fall back to chromatic
-    // mirror via nearestScaleMidi as a best-effort.
     const records = []
     let minStep = Infinity
     let maxStep = -Infinity
     let minMidi = Infinity
     let maxMidi = -Infinity
+    let anyOffScale = false
     for (const key of selectedKeys) {
       const [beatStr, midiStr] = key.split('-')
       const m = Number(midiStr)
@@ -874,10 +884,12 @@ export default function PianoRoll({
       if (step != null) {
         if (step < minStep) minStep = step
         if (step > maxStep) maxStep = step
+      } else {
+        anyOffScale = true
       }
     }
-    const haveSteps = minStep !== Infinity
-    const stepSum = haveSteps ? minStep + maxStep : 0
+    const useChromatic = anyOffScale || minStep === Infinity
+    const stepSum = !useChromatic ? minStep + maxStep : 0
     const midiSum = minMidi + maxMidi
     pushHistory()
     const newSel = new Set()
@@ -886,10 +898,10 @@ export default function PianoRoll({
       for (const r of records) next.delete(r.key)
       for (const r of records) {
         let newMidi
-        if (r.step != null && haveSteps) {
+        if (!useChromatic) {
           newMidi = scaleStepToMidi(stepSum - r.step)
         } else {
-          newMidi = nearestScaleMidi(midiSum - r.midi)
+          newMidi = midiSum - r.midi
         }
         const newKey = `${r.beatStr}-${newMidi}`
         next.set(newKey, r.length)

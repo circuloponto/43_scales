@@ -41,7 +41,8 @@ export const INTERVAL_SEMITONES = {
   'Major7':       11,
 }
 
-const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 
 // Rotation-aware resolver. The scale is first rotated so that `rootStep`
 // (1-indexed scale degree) becomes the new pc 0 — i.e., the scale is
@@ -77,6 +78,7 @@ export function resolveChordPair(pair, scaleNotes, root, rootStep) {
   return null
 }
 
-export function pcName(pc) {
-  return NOTE_NAMES[((pc % 12) + 12) % 12]
+export function pcName(pc, useFlats = false) {
+  const idx = ((pc % 12) + 12) % 12
+  return (useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP)[idx]
 }

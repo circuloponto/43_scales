@@ -9,8 +9,23 @@ import './App.css'
 
 const ORIGINAL_PURPLE = '#9c36b5'
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-const NOTE_DISPLAY = NOTE_NAMES.map((n) => n.replace('#', '♯'))
+const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
+
+// Ten 4-of-8 chord shape patterns. Each is a list of 1-indexed scale-degree
+// positions inside an 8-note scale.
+const CHORD_SHAPES = [
+  [1, 2, 3, 4],
+  [1, 2, 3, 5],
+  [1, 2, 3, 6],
+  [1, 2, 3, 7],
+  [1, 2, 4, 5],
+  [1, 2, 4, 6],
+  [1, 2, 5, 7],
+  [1, 2, 5, 7],
+  [1, 2, 4, 7],
+  [1, 3, 5, 7],
+]
 
 function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12)
@@ -98,7 +113,7 @@ function App() {
       return fallback
     }
   }
-  const DEFAULT_SETTINGS = { allowOutOfScale: false }
+  const DEFAULT_SETTINGS = { allowOutOfScale: false, useFlats: false }
   const loadSettings = () => {
     try {
       const v = localStorage.getItem('eightFold.settings')
@@ -111,6 +126,12 @@ function App() {
   }
   const [settings, setSettings] = useState(loadSettings)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Per-component note name array + helper, derived from the active accidental
+  // preference. All places that used the old module-level NOTE_DISPLAY[pc] or
+  // pcName(pc) now go through these so the toggle flips every note label in
+  // the panel instantly.
+  const NOTE_DISPLAY = settings.useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP
+  const noteName = (pc) => pcName(pc, settings.useFlats)
   useEffect(() => {
     try {
       localStorage.setItem('eightFold.settings', JSON.stringify(settings))
@@ -250,6 +271,13 @@ function App() {
   useEffect(() => {
     setModeStep(null)
   }, [selectedId])
+  // Chord-shapes section: false → show the original 4 filled positions of
+  // each pattern; true → show the inverse (the 4 unfilled positions).
+  const [chordsInverted, setChordsInverted] = useState(false)
+  // Which chord card is currently hovered, so the left-side dot pattern
+  // can light up that rotation's positions (with note labels above) instead
+  // of the canonical shape.
+  const [hoveredChord, setHoveredChord] = useState(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const paletteRef = useRef(null)
   useEffect(() => {
@@ -732,19 +760,19 @@ function App() {
                       <div className="chord-pair-row">
                         <div className="chord-pair-side chord-left">
                           <div className="chord-pair-name">
-                            {pcName(resolved.leftRoot)} {pair.left}
+                            {noteName(resolved.leftRoot)} {pair.left}
                           </div>
                           <div className="chord-pair-notes">
-                            {resolved.leftNotes.map((pc) => pcName(pc)).join(' ')}
+                            {resolved.leftNotes.map((pc) => noteName(pc)).join(' ')}
                           </div>
                         </div>
                         <div className="chord-pair-distance">{pair.distance}</div>
                         <div className="chord-pair-side chord-right">
                           <div className="chord-pair-name">
-                            {pcName(resolved.rightRoot)} {pair.right}
+                            {noteName(resolved.rightRoot)} {pair.right}
                           </div>
                           <div className="chord-pair-notes">
-                            {resolved.rightNotes.map((pc) => pcName(pc)).join(' ')}
+                            {resolved.rightNotes.map((pc) => noteName(pc)).join(' ')}
                           </div>
                         </div>
                       </div>
@@ -767,6 +795,136 @@ function App() {
                   })}
                 </div>
               </div>
+
+              {(() => {
+                // Sorted rotated scale: degree i (1-indexed) sits at index
+                // i−1, with the intrinsic root at degree 1 / index 0.
+                const rsActive = modeStep ?? rootSteps[scale.id - 1]
+                const intrinsicPc = rsActive ? scale.notes[rsActive - 1] : 0
+                const rotatedScale = scale.notes
+                  .map((n) => (n - intrinsicPc + 12) % 12)
+                  .sort((a, b) => a - b)
+                const invertShape = (shape) => {
+                  const set = new Set(shape)
+                  const out = []
+                  for (let i = 1; i <= 8; i++) if (!set.has(i)) out.push(i)
+                  return out
+                }
+                return (
+                  <div className="section chord-patterns-section">
+                    <div className="chord-patterns-header">
+                      <span className="label">Chords</span>
+                      <button
+                        type="button"
+                        className={`chord-invert ${chordsInverted ? 'on' : ''}`}
+                        onClick={() => setChordsInverted((v) => !v)}
+                        aria-pressed={chordsInverted}
+                        aria-label="Invert chord patterns"
+                        title={
+                          chordsInverted
+                            ? 'Show original chord patterns (the filled notes)'
+                            : 'Show inverse chord patterns (the blank notes)'
+                        }
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M4 7h12" />
+                          <path d="M14 4l3 3-3 3" />
+                          <path d="M20 17H8" />
+                          <path d="M10 20l-3-3 3-3" />
+                        </svg>
+                      </button>
+                    </div>
+                    {CHORD_SHAPES.map((shape, idx) => {
+                      const useShape = chordsInverted
+                        ? invertShape(shape)
+                        : shape
+                      const canonicalSet = new Set(useShape)
+                      // All 8 rotations of the pattern within the 8-note
+                      // scale, deduped by POSITION SET (not chord PCs).
+                      // Only a pattern with internal rotational symmetry —
+                      // like [1,3,5,7] which is invariant under a 2-degree
+                      // shift — collapses below 8 cards; every other shape
+                      // has 8 distinct position sets and thus 8 cards.
+                      const perms = []
+                      const seenPositions = new Set()
+                      for (let r = 0; r < 8; r++) {
+                        const positions = useShape.map(
+                          (p) => ((p - 1 + r) % 8) + 1
+                        )
+                        const posKey = [...positions]
+                          .sort((a, b) => a - b)
+                          .join(',')
+                        if (seenPositions.has(posKey)) continue
+                        seenPositions.add(posKey)
+                        const pcs = positions.map(
+                          (p) => (rotatedScale[p - 1] + root) % 12
+                        )
+                        perms.push({ positions, pcs })
+                      }
+                      // If a chord card in this row is hovered, the dot
+                      // pattern follows that rotation. Otherwise it shows
+                      // the canonical pattern from the image.
+                      const hovered =
+                        hoveredChord && hoveredChord.rowIdx === idx
+                          ? perms[hoveredChord.permIdx]
+                          : null
+                      const activeSet = hovered
+                        ? new Set(hovered.positions)
+                        : canonicalSet
+                      const hoveredSpelling = hovered
+                        ? hovered.pcs.map((pc) => noteName(pc)).join(' ')
+                        : ''
+                      return (
+                        <div key={idx} className="chord-pattern-row">
+                          <div className="chord-pattern-dots">
+                            {Array.from({ length: 8 }, (_, i) => (
+                              <span
+                                key={i}
+                                className={`chord-pattern-dot ${
+                                  activeSet.has(i + 1) ? 'on' : 'off'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <div className="chord-pattern-spelling">
+                            {hoveredSpelling}
+                          </div>
+                          <div className="chord-pattern-list">
+                            {perms.map((perm, j) => {
+                              const spelling = perm.pcs
+                                .map((pc) => noteName(pc))
+                                .join(' ')
+                              return (
+                                <div
+                                  key={j}
+                                  className="chord-pattern-card"
+                                  title={`glyph ${j + 1} · degrees ${perm.positions.join('·')} → ${spelling}`}
+                                  onMouseEnter={() =>
+                                    setHoveredChord({ rowIdx: idx, permIdx: j })
+                                  }
+                                  onMouseLeave={() => setHoveredChord(null)}
+                                >
+                                  glyph {j + 1}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </>
           ) : (
             <div className="section">
@@ -911,6 +1069,29 @@ function App() {
                     ...s,
                     allowOutOfScale: !s.allowOutOfScale,
                   }))
+                }
+              >
+                <span className="settings-switch-knob" />
+              </button>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <div className="settings-row-label">
+                  Use flats instead of sharps
+                </div>
+                <div className="settings-row-sub">
+                  Display black-key notes as D♭ / E♭ / G♭ / A♭ / B♭ instead
+                  of C♯ / D♯ / F♯ / G♯ / A♯ across the app.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.useFlats}
+                className={`settings-switch ${settings.useFlats ? 'on' : ''}`}
+                onClick={() =>
+                  setSettings((s) => ({ ...s, useFlats: !s.useFlats }))
                 }
               >
                 <span className="settings-switch-knob" />
