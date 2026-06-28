@@ -1118,7 +1118,76 @@ export default function PianoRoll({
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
     const isInScale = inScale(midi % 12)
-    const additive = e.shiftKey && !isRightClick
+
+    // Shift+click+drag: insert a note at the click beat and drag in either
+    // direction to set its length in one gesture. Drag past the click sets
+    // length forward; drag before it moves the note's start back. On
+    // release, the resulting length becomes the new default for future
+    // single clicks (mirrors the resize-handle behavior).
+    if (e.shiftKey && !isRightClick) {
+      if (!isInScale && !allowOutOfScale) {
+        setSelectedKeys(new Set())
+        return
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      const trackEl = e.currentTarget
+      const trackRect = trackEl.getBoundingClientRect()
+      try {
+        trackEl.setPointerCapture?.(e.pointerId)
+      } catch {}
+      let startBeat = (e.clientX - trackRect.left) / BEAT_WIDTH
+      if (!freeMode) startBeat = Math.floor(startBeat)
+      startBeat = Math.max(0, Math.min(totalBeats - 1, startBeat))
+      pushHistory()
+      let currentKey = `${startBeat}-${midi}`
+      const initialLength = freeMode ? 0.25 : 1
+      setNotes((prev) => {
+        const next = new Map(prev)
+        next.set(currentKey, initialLength)
+        return next
+      })
+      setSelectedKeys(new Set([currentKey]))
+      const move = (mv) => {
+        if (mv.pointerId !== e.pointerId) return
+        let curBeat = (mv.clientX - trackRect.left) / BEAT_WIDTH
+        if (!freeMode) curBeat = Math.floor(curBeat)
+        curBeat = Math.max(0, Math.min(totalBeats - 0.001, curBeat))
+        const newBeat = Math.min(startBeat, curBeat)
+        const endBeat = Math.max(startBeat, curBeat)
+        const newLength = Math.max(
+          freeMode ? 0.25 : 1,
+          freeMode ? endBeat - newBeat : endBeat - newBeat + 1
+        )
+        const newKey = `${newBeat}-${midi}`
+        setNotes((prev) => {
+          const next = new Map(prev)
+          if (newKey !== currentKey) next.delete(currentKey)
+          next.set(newKey, newLength)
+          return next
+        })
+        if (newKey !== currentKey) {
+          currentKey = newKey
+          setSelectedKeys(new Set([newKey]))
+        }
+      }
+      const up = (uv) => {
+        if (uv.pointerId !== e.pointerId) return
+        trackEl.removeEventListener('pointermove', move)
+        trackEl.removeEventListener('pointerup', up)
+        trackEl.removeEventListener('pointercancel', up)
+        try { trackEl.releasePointerCapture?.(e.pointerId) } catch {}
+        const finalLength = notesRef.current.get(currentKey)
+        if (finalLength != null) defaultNoteLengthRef.current = finalLength
+        playOneNote(midi, undefined, 0.3)
+      }
+      trackEl.addEventListener('pointermove', move)
+      trackEl.addEventListener('pointerup', up)
+      trackEl.addEventListener('pointercancel', up)
+      return
+    }
+
+    const additive = false
     const isDeleteMarquee = isRightClick
     // Snapshot the existing selection so a shift+marquee can union with it
     // even after we re-render.
