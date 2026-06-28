@@ -22,7 +22,7 @@ const CHORD_SHAPES = [
   [1, 2, 3, 7],
   [1, 2, 4, 5],
   [1, 2, 4, 6],
-  [1, 2, 5, 7],
+  [1, 2, 4, 6],
   [1, 2, 5, 7],
   [1, 2, 4, 7],
   [1, 3, 5, 7],
@@ -880,13 +880,17 @@ function App() {
               </div>
 
               {(() => {
-                // Sorted rotated scale: degree i (1-indexed) sits at index
-                // i−1, with the intrinsic root at degree 1 / index 0.
+                // Reorder (don't shift) the scale so degree 1 is the active
+                // intrinsic root. Keeps every PC inside the user's actual
+                // scale — chord cards never produce notes outside it.
                 const rsActive = modeStep ?? rootSteps[scale.id - 1]
                 const intrinsicPc = rsActive ? scale.notes[rsActive - 1] : 0
-                const rotatedScale = scale.notes
-                  .map((n) => (n - intrinsicPc + 12) % 12)
-                  .sort((a, b) => a - b)
+                const sortedNotes = [...scale.notes].sort((a, b) => a - b)
+                const startIdx = Math.max(0, sortedNotes.indexOf(intrinsicPc))
+                const rotatedScale = [
+                  ...sortedNotes.slice(startIdx),
+                  ...sortedNotes.slice(0, startIdx),
+                ]
                 const invertShape = (shape) => {
                   const set = new Set(shape)
                   const out = []
