@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
+import { glyphsRight } from './glyphsRight'
 import { templates as defaultTemplates } from './templates'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
@@ -80,6 +81,48 @@ function GlyphRow({ rowIndex, accent }) {
   )
 }
 
+// Render a single isolated right-side glyph at any size. Pulls the
+// pre-extracted strokes + tight viewBox from glyphsRight, so each glyph
+// renders edge-to-edge regardless of where it originally sat in the wide
+// 60-unit row viewBox.
+function GlyphRight({ rowIndex, accent }) {
+  const entry = glyphsRight[rowIndex]
+  if (!entry) return null
+  const { strokes, viewBox } = entry
+  return (
+    <svg
+      className="glyph glyph-right"
+      viewBox={`0 0 ${viewBox.w} ${viewBox.h}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {strokes.map((s, i) => {
+        const isAccent = s.color === ORIGINAL_PURPLE
+        const color = isAccent ? accent : s.color
+        const rot = s.rot ?? 0
+        return (
+          <g
+            key={i}
+            transform={`translate(${s.x} ${s.y}) rotate(${rot} ${s.rx} ${s.ry})`}
+          >
+            {s.kind === 'fill' ? (
+              <path d={s.d} fill={color} stroke="none" />
+            ) : (
+              <path
+                d={s.d}
+                stroke={color}
+                strokeWidth={isAccent ? 1.3 : 1}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 function PlayIcon() {
   return (
     <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
@@ -98,6 +141,46 @@ function StopIcon() {
 
 function cellPulseDelay(scaleId, pitchClass) {
   return ((scaleId * 0.07 + pitchClass * 0.12) % 2.4).toFixed(2)
+}
+
+// Cyclic interval signature of a chord — the gaps between consecutive sorted
+// pitch classes including the wrap back to the first, so the 4 gaps sum to
+// 12. Inversions of the same chord produce rotations of this array.
+function chordCyclicIntervals(pcs) {
+  const sorted = [...new Set(pcs.map((p) => ((p % 12) + 12) % 12))].sort(
+    (a, b) => a - b
+  )
+  if (sorted.length === 0) return []
+  return sorted.map((pc, i) => {
+    const next = sorted[(i + 1) % sorted.length]
+    const gap = (next - pc + 12) % 12
+    return gap === 0 ? 12 : gap
+  })
+}
+
+// True if `a` is some rotation of `b` (both must be the same length).
+function isRotationOf(a, b) {
+  if (!a || !b || a.length !== b.length) return false
+  const n = a.length
+  for (let r = 0; r < n; r++) {
+    let match = true
+    for (let i = 0; i < n; i++) {
+      if (a[(i + r) % n] !== b[i]) { match = false; break }
+    }
+    if (match) return true
+  }
+  return false
+}
+
+// Index the 43 glyphs by their cyclic-interval signature so chord cards can
+// look up a matching glyph in O(43) at render time. Returns the row index of
+// a glyph whose interval signature matches (under rotation), or null.
+function findGlyphForCyclic(cyc) {
+  if (!cyc || cyc.length === 0) return null
+  for (const [id, entry] of Object.entries(glyphsRight)) {
+    if (isRotationOf(entry.cyclicIntervals, cyc)) return Number(id)
+  }
+  return null
 }
 
 function App() {
@@ -904,17 +987,35 @@ function App() {
                               const spelling = perm.pcs
                                 .map((pc) => noteName(pc))
                                 .join(' ')
+                              const cyc = chordCyclicIntervals(perm.pcs)
+                                const glyphId = findGlyphForCyclic(cyc)
+                              const titleScale =
+                                glyphId !== null
+                                  ? ` · matches scale ${glyphsRight[glyphId].scaleId}`
+                                  : ' · no glyph match'
                               return (
                                 <div
                                   key={j}
                                   className="chord-pattern-card"
-                                  title={`glyph ${j + 1} · degrees ${perm.positions.join('·')} → ${spelling}`}
+                                  title={`degrees ${perm.positions.join('·')} → ${spelling}${titleScale}`}
                                   onMouseEnter={() =>
                                     setHoveredChord({ rowIdx: idx, permIdx: j })
                                   }
                                   onMouseLeave={() => setHoveredChord(null)}
                                 >
-                                  glyph {j + 1}
+                                  {glyphId !== null ? (
+                                    <>
+                                      <GlyphRight
+                                        rowIndex={glyphId}
+                                        accent={accent}
+                                      />
+                                      <span className="chord-pattern-card-label">
+                                        glyph {glyphsRight[glyphId].scaleId}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="chord-pattern-card-empty">·</span>
+                                  )}
                                 </div>
                               )
                             })}

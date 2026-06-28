@@ -842,31 +842,50 @@
   flex: 1;
   min-width: 0;
 }
-/* Labeled swatch — hovering shows the chord's spelling in the dedicated
-   .chord-pattern-spelling block to the right of the dots. */
+/* Each card displays the matched scale-glyph (looked up from the chord's
+   cyclic interval signature against the 43-glyph library) above a tiny
+   "glyph <scaleId>" label. Hovering still drives the bold spelling to
+   the right of the dots. */
 .chord-pattern-card {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 52px;
-  height: 22px;
-  padding: 0 6px;
+  gap: 3px;
+  min-width: 48px;
+  height: 44px;
+  padding: 4px 9px 3px;
   background: color-mix(in srgb, var(--off) 70%, transparent);
   border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
   border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg);
-  letter-spacing: 0.04em;
-  white-space: nowrap;
   cursor: pointer;
-  transition: border-color 0.12s var(--ease), background 0.12s var(--ease),
-    color 0.12s var(--ease);
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
 }
 .chord-pattern-card:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--off) 50%);
+}
+.chord-pattern-card .glyph-right {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: block;
+}
+.chord-pattern-card-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+  line-height: 1;
+  white-space: nowrap;
+}
+.chord-pattern-card:hover .chord-pattern-card-label {
   color: var(--accent);
+}
+.chord-pattern-card-empty {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: color-mix(in srgb, var(--fg) 35%, transparent);
 }
 
 .electron-note {
