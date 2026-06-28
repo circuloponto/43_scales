@@ -1119,12 +1119,12 @@ export default function PianoRoll({
     // still works because it relies on mousemove past the threshold.
     const isInScale = inScale(midi % 12)
 
-    // Shift+click+drag: insert a note at the click beat and drag in either
+    // Alt+click+drag: insert a note at the click beat and drag in either
     // direction to set its length in one gesture. Drag past the click sets
     // length forward; drag before it moves the note's start back. On
     // release, the resulting length becomes the new default for future
     // single clicks (mirrors the resize-handle behavior).
-    if (e.shiftKey && !isRightClick) {
+    if (e.altKey && !isRightClick) {
       if (!isInScale && !allowOutOfScale) {
         setSelectedKeys(new Set())
         return
@@ -1187,7 +1187,7 @@ export default function PianoRoll({
       return
     }
 
-    const additive = false
+    const additive = e.shiftKey && !isRightClick
     const isDeleteMarquee = isRightClick
     // Snapshot the existing selection so a shift+marquee can union with it
     // even after we re-render.
