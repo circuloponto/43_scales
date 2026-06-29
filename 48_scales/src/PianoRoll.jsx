@@ -336,6 +336,13 @@ export default function PianoRoll({
   const clipboardRef = useRef(null)
   const notesRef = useRef(notes)
   notesRef.current = notes
+  // Live refs for state read by the loop scheduler so edits during playback
+  // (note add/remove/move, metronome toggle, swing change) propagate to the
+  // next iteration without restarting playback.
+  const metronomeRef = useRef(metronome)
+  metronomeRef.current = metronome
+  const swingPctRef = useRef(swingPct)
+  swingPctRef.current = swingPct
   const loopRef = useRef(loop)
   loopRef.current = loop
   // Last non-null loop the user had. Stashed every time `loop` is set to
@@ -1674,29 +1681,28 @@ export default function PianoRoll({
     if (activeLoop && (startBeat < activeLoop.start || startBeat >= activeLoop.end)) {
       startBeat = activeLoop.start
     }
-    const notesSnapshot = new Map(notes)
-    const metronomeOn = metronome
-
     // Schedule every melody note (and metronome click, if on) whose beat
     // falls in [rangeStart, rangeEnd), relative to scheduleStartTime as
-    // t=rangeStart. Pure function of state captured at playFromBeat time —
-    // safe to call repeatedly from the lookahead scheduler.
+    // t=rangeStart. Reads notes / metronome / swing from live refs at call
+    // time so loop iterations scheduled AFTER an edit reflect the new
+    // state without needing to restart playback.
     const scheduleRange = (rangeStart, rangeEnd, scheduleStartTime) => {
-      const swungRangeStart = applySwingBeat(rangeStart, swing)
-      for (const [key, length] of notesSnapshot) {
+      const liveSwing = swingPctRef.current
+      const swungRangeStart = applySwingBeat(rangeStart, liveSwing)
+      for (const [key, length] of notesRef.current) {
         const [beatStr, midiStr] = key.split('-')
         const beat = Number(beatStr)
         const midi = Number(midiStr)
         if (beat >= rangeStart && beat < rangeEnd) {
-          const swungNoteStart = applySwingBeat(beat, swing)
-          const swungNoteEnd = applySwingBeat(beat + length, swing)
+          const swungNoteStart = applySwingBeat(beat, liveSwing)
+          const swungNoteEnd = applySwingBeat(beat + length, liveSwing)
           const noteTime =
             scheduleStartTime + (swungNoteStart - swungRangeStart) * cellDur
           const noteDur = Math.max(0.06, (swungNoteEnd - swungNoteStart) * cellDur)
           playOneNote(midi, noteTime, noteDur)
         }
       }
-      if (metronomeOn) {
+      if (metronomeRef.current) {
         const CELLS_PER_BEAT = 4
         const CELLS_PER_MEASURE = 16
         const first = Math.ceil(rangeStart / CELLS_PER_BEAT) * CELLS_PER_BEAT
@@ -1739,15 +1745,15 @@ export default function PianoRoll({
       }
       setPlayheadBeat(startBeat)
     } else {
-      // One-shot mode (unchanged behavior): schedule once, end at lastBeat.
+      // One-shot mode: schedule once, end at the last note's right edge.
       let lastBeat = 0
-      for (const [key, length] of notesSnapshot) {
+      for (const [key, length] of notesRef.current) {
         const [beatStr] = key.split('-')
         const beat = Number(beatStr)
         const noteEndBeat = beat + length
         if (noteEndBeat > lastBeat) lastBeat = noteEndBeat
       }
-      const endBeat = notesSnapshot.size > 0 ? lastBeat : totalBeats
+      const endBeat = notesRef.current.size > 0 ? lastBeat : totalBeats
       scheduleRange(startBeat, endBeat, startBase)
       const swungStart = applySwingBeat(startBeat, swing)
       playStateRef.current = {
@@ -1831,6 +1837,46 @@ export default function PianoRoll({
       playFromBeat(playheadBeat ?? 0)
     }
   }
+
+  // Live re-schedule during loop playback: kill queued voices, then
+  // schedule the remainder of the current iteration starting at the
+  // playhead. Used when notes change so edits are heard immediately
+  // rather than at the next iteration boundary.
+  const liveRescheduleLoop = () => {
+    const st = playStateRef.current
+    if (!st || st.mode !== 'loop' || !st.scheduleRange) return
+    const ctx = audioCtxRef.current
+    if (!ctx) return
+    const now = ctx.currentTime
+    const elapsed = now - st.startTime
+    const firstIterDur = st.firstIterEndTime - st.startTime
+    let currentSwungBeat
+    let iterEndTime
+    if (elapsed < firstIterDur) {
+      currentSwungBeat = st.swungStart + elapsed / st.cellDur
+      iterEndTime = st.firstIterEndTime
+    } else {
+      const elapsedFull = elapsed - firstIterDur
+      const nIter = Math.floor(elapsedFull / st.iterationDur)
+      const timeInIter = elapsedFull - nIter * st.iterationDur
+      currentSwungBeat = st.swungLoopStart + timeInIter / st.cellDur
+      iterEndTime = st.firstIterEndTime + (nIter + 1) * st.iterationDur
+    }
+    killScheduledVoices()
+    const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
+    st.scheduleRange(currentMusicalBeat, st.loopEnd, now)
+    st.nextIterStartTime = iterEndTime
+  }
+
+  // Debounced trigger: when notes change during loop playback, wait a beat
+  // for rapid changes (drags, multi-step edits) to settle, then reschedule
+  // from the current playhead so the audio reflects the edit immediately.
+  useEffect(() => {
+    const st = playStateRef.current
+    if (!st || st.mode !== 'loop') return
+    const id = setTimeout(() => liveRescheduleLoop(), 60)
+    return () => clearTimeout(id)
+  }, [notes])
 
   const playFromStart = () => {
     playFromBeat(0)
