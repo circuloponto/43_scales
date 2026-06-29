@@ -1424,9 +1424,12 @@ export default function PianoRoll({
 
       // Same beat + step delta applied to the whole group so the interval
       // shape is preserved. One row of vertical drag = one scale step.
+      // Allow the anchor (and thus the delta) to go negative — notes that
+      // cross beat 0 disappear off the left edge instead of stacking on
+      // beat 0. Top bound still clamps so notes can't run past totalBeats.
       let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
       if (!freeMode) newAnchorBeat = Math.round(newAnchorBeat)
-      newAnchorBeat = Math.max(0, Math.min(totalBeats - 0.001, newAnchorBeat))
+      newAnchorBeat = Math.min(totalBeats - 0.001, newAnchorBeat)
       const beatDelta = newAnchorBeat - drag.originalBeat
 
       // One scale step averages 12 / scale.notes.length semitones, so the
@@ -1438,14 +1441,21 @@ export default function PianoRoll({
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
-        nb = Math.max(0, Math.min(totalBeats - 0.001, nb))
+        const offscreen = nb < 0
+        if (!offscreen) nb = Math.min(totalBeats - 0.001, nb)
         const gStep = midiToScaleStep(g.originalMidi)
         let nm =
           gStep != null
             ? scaleStepToMidi(gStep + stepDelta)
             : nearestScaleMidi(g.originalMidi + stepDelta)
         nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
-        return { newBeat: nb, newMidi: nm, newKey: `${nb}-${nm}`, length: g.length }
+        return {
+          newBeat: nb,
+          newMidi: nm,
+          newKey: offscreen ? null : `${nb}-${nm}`,
+          length: g.length,
+          offscreen,
+        }
       })
 
       const newAnchorMidi =
@@ -1462,16 +1472,25 @@ export default function PianoRoll({
 
       // Recompute live notes from the drag-start snapshot. The dragged
       // group's original keys are removed; the new positions are placed
-      // on top. Notes the dragged group covers temporarily appear gone,
-      // but they're still in `drag.snapshot`, so the next move iteration
-      // (or release) restores them once the cursor moves past.
+      // on top. Off-screen entries (newKey === null) are simply omitted —
+      // they reappear automatically the moment the cursor moves right
+      // enough that they cross beat 0 again, because the snapshot still
+      // holds their original beat/midi.
       const next = new Map(drag.snapshot)
       for (const ok of drag.originalKeys) next.delete(ok)
-      for (const np of newPositions) next.set(np.newKey, np.length)
+      for (const np of newPositions) {
+        if (np.newKey != null) next.set(np.newKey, np.length)
+      }
       setNotes(next)
 
       if (drag.isGroup) {
-        setSelectedKeys(new Set(newPositions.map((np) => np.newKey)))
+        setSelectedKeys(
+          new Set(
+            newPositions
+              .map((np) => np.newKey)
+              .filter((k) => k != null)
+          )
+        )
       }
 
       if (newAnchorMidi !== drag.lastMidi) {
