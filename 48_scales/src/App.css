@@ -1367,6 +1367,116 @@
   color: var(--mute);
 }
 
+/* ---------- Track tabs ---------- */
+
+.track-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+.track-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--fg);
+  flex-shrink: 0;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.track-tab:hover {
+  border-color: var(--mute);
+  background: color-mix(in srgb, var(--off) 80%, transparent);
+}
+.track-tab.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.track-tab-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.track-tab-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.track-volume {
+  width: 70px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.track-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.track-btn:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.track-mute.on {
+  color: #ffb86b;
+  border-color: #ffb86b;
+  background: color-mix(in srgb, #ffb86b 14%, transparent);
+}
+.track-solo.on {
+  color: #6bff9b;
+  border-color: #6bff9b;
+  background: color-mix(in srgb, #6bff9b 14%, transparent);
+}
+.track-delete {
+  font-size: 14px;
+  font-weight: 400;
+}
+.track-delete:hover {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+.track-tab-add {
+  flex-shrink: 0;
+  width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px dashed var(--hairline);
+  border-radius: 6px;
+  color: var(--mute);
+  font-size: 18px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.track-tab-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+
 .roll-body {
   flex: 1;
   display: grid;

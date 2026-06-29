@@ -302,7 +302,41 @@ export default function PianoRoll({
           .sort((a, b) => a - b),
       }
     : null
-  const [notes, setNotes] = useState(() => buildInitialPattern(scale, root))
+  // Tracks: each carries its own notes Map + name + volume/mute/solo.
+  // The existing single-track API (`notes` / `setNotes`) below routes
+  // through the active track so every existing handler keeps working.
+  const makeTrackId = () =>
+    `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  const [tracks, setTracks] = useState(() => [
+    {
+      id: makeTrackId(),
+      name: 'Melody',
+      notes: buildInitialPattern(scale, root),
+      volume: 0.85,
+      muted: false,
+      soloed: false,
+    },
+  ])
+  const [activeTrackId, setActiveTrackId] = useState(() => null)
+  // Resolve the active track (first one if no explicit selection).
+  const activeTrack =
+    tracks.find((t) => t.id === activeTrackId) ?? tracks[0] ?? null
+  // Existing call sites read `notes` and call `setNotes(updater)`; both
+  // now operate on the active track's notes. `setNotes` accepts either a
+  // value or an updater function, matching React's useState contract.
+  const notes = activeTrack ? activeTrack.notes : new Map()
+  const setNotes = (updater) => {
+    const targetId = activeTrack ? activeTrack.id : null
+    if (!targetId) return
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id !== targetId) return t
+        const next =
+          typeof updater === 'function' ? updater(t.notes) : updater
+        return { ...t, notes: next }
+      })
+    )
+  }
   const [totalBeats, setTotalBeats] = useState(DEFAULT_BEATS)
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [swingPct, setSwingPct] = useState(DEFAULT_SWING)
@@ -340,6 +374,11 @@ export default function PianoRoll({
   const clipboardRef = useRef(null)
   const notesRef = useRef(notes)
   notesRef.current = notes
+  // All tracks (with their notes + volume/mute/solo) — the loop scheduler
+  // reads from this so live edits or volume changes show up in subsequent
+  // iterations without restarting playback.
+  const tracksRef = useRef(tracks)
+  tracksRef.current = tracks
   // Live refs for state read by the loop scheduler so edits during playback
   // (note add/remove/move, metronome toggle, swing change) propagate to the
   // next iteration without restarting playback.
@@ -367,7 +406,21 @@ export default function PianoRoll({
 
   useEffect(() => {
     const initial = buildInitialPattern(scale, root)
-    setNotes(initial)
+    // Reset to a single Melody track when the user switches scales / roots
+    // — old tracks were written against the previous scale and would not
+    // map cleanly onto the new one.
+    const id = makeTrackId()
+    setTracks([
+      {
+        id,
+        name: 'Melody',
+        notes: initial,
+        volume: 0.85,
+        muted: false,
+        soloed: false,
+      },
+    ])
+    setActiveTrackId(id)
     historyRef.current = []
     futureRef.current = []
     setSelectedKeys(new Set())
@@ -677,11 +730,13 @@ export default function PianoRoll({
   }
 
   const snapshotState = () => ({
-    notes: new Map(notesRef.current),
+    tracks: tracks.map((t) => ({ ...t, notes: new Map(t.notes) })),
+    activeTrackId,
   })
 
   const restoreSnapshot = (snap) => {
-    setNotes(snap.notes)
+    setTracks(snap.tracks.map((t) => ({ ...t, notes: new Map(t.notes) })))
+    if (snap.activeTrackId) setActiveTrackId(snap.activeTrackId)
     setSelectedKeys(new Set())
   }
 
@@ -1788,7 +1843,8 @@ export default function PianoRoll({
   const beatDurForBpm = (b) => 60 / b / 4
 
   const playFromBeat = (startBeat = 0) => {
-    if (notes.size === 0 && !metronome) return
+    const hasAnyNotes = tracksRef.current.some((t) => t.notes.size > 0)
+    if (!hasAnyNotes && !metronome) return
     stopPlayback(false)
     const ctx = getAudioContext()
     const cellDur = beatDurForBpm(bpm)
@@ -1806,17 +1862,32 @@ export default function PianoRoll({
     const scheduleRange = (rangeStart, rangeEnd, scheduleStartTime) => {
       const liveSwing = swingPctRef.current
       const swungRangeStart = applySwingBeat(rangeStart, liveSwing)
-      for (const [key, length] of notesRef.current) {
-        const [beatStr, midiStr] = key.split('-')
-        const beat = Number(beatStr)
-        const midi = Number(midiStr)
-        if (beat >= rangeStart && beat < rangeEnd) {
-          const swungNoteStart = applySwingBeat(beat, liveSwing)
-          const swungNoteEnd = applySwingBeat(beat + length, liveSwing)
-          const noteTime =
-            scheduleStartTime + (swungNoteStart - swungRangeStart) * cellDur
-          const noteDur = Math.max(0.06, (swungNoteEnd - swungNoteStart) * cellDur)
-          playOneNote(midi, noteTime, noteDur)
+      // Iterate every track. Mute/solo gating: if any track is soloed,
+      // only soloed tracks play; otherwise every non-muted track plays.
+      // Per-track volume scales the base peak gain.
+      const liveTracks = tracksRef.current
+      const anySolo = liveTracks.some((t) => t.soloed)
+      const BASE_GAIN = 0.22
+      for (const track of liveTracks) {
+        if (track.muted) continue
+        if (anySolo && !track.soloed) continue
+        const peak = BASE_GAIN * track.volume
+        if (peak <= 0.001) continue
+        for (const [key, length] of track.notes) {
+          const [beatStr, midiStr] = key.split('-')
+          const beat = Number(beatStr)
+          const midi = Number(midiStr)
+          if (beat >= rangeStart && beat < rangeEnd) {
+            const swungNoteStart = applySwingBeat(beat, liveSwing)
+            const swungNoteEnd = applySwingBeat(beat + length, liveSwing)
+            const noteTime =
+              scheduleStartTime + (swungNoteStart - swungRangeStart) * cellDur
+            const noteDur = Math.max(
+              0.06,
+              (swungNoteEnd - swungNoteStart) * cellDur
+            )
+            playOneNote(midi, noteTime, noteDur, peak)
+          }
         }
       }
       if (metronomeRef.current) {
@@ -1862,15 +1933,20 @@ export default function PianoRoll({
       }
       setPlayheadBeat(startBeat)
     } else {
-      // One-shot mode: schedule once, end at the last note's right edge.
+      // One-shot mode: schedule once, end at the latest note's right edge
+      // across all tracks.
       let lastBeat = 0
-      for (const [key, length] of notesRef.current) {
-        const [beatStr] = key.split('-')
-        const beat = Number(beatStr)
-        const noteEndBeat = beat + length
-        if (noteEndBeat > lastBeat) lastBeat = noteEndBeat
+      let anyNotes = false
+      for (const track of tracksRef.current) {
+        for (const [key, length] of track.notes) {
+          anyNotes = true
+          const [beatStr] = key.split('-')
+          const beat = Number(beatStr)
+          const noteEndBeat = beat + length
+          if (noteEndBeat > lastBeat) lastBeat = noteEndBeat
+        }
       }
-      const endBeat = notesRef.current.size > 0 ? lastBeat : totalBeats
+      const endBeat = anyNotes ? lastBeat : totalBeats
       scheduleRange(startBeat, endBeat, startBase)
       const swungStart = applySwingBeat(startBeat, swing)
       playStateRef.current = {
@@ -1943,6 +2019,53 @@ export default function PianoRoll({
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
+  }
+
+  const addTrack = () => {
+    pushHistory()
+    const id = makeTrackId()
+    const trackNumber = tracks.length + 1
+    const name = trackNumber === 2 ? 'Chords' : `Track ${trackNumber}`
+    setTracks((prev) => [
+      ...prev,
+      {
+        id,
+        name,
+        notes: new Map(),
+        volume: 0.85,
+        muted: false,
+        soloed: false,
+      },
+    ])
+    setActiveTrackId(id)
+    setSelectedKeys(new Set())
+  }
+
+  const removeTrack = (id) => {
+    const track = tracks.find((t) => t.id === id)
+    if (!track) return
+    if (tracks.length <= 1) return // never delete the last track
+    if (track.notes.size > 0) {
+      const ok = window.confirm(
+        `Delete track "${track.name}"? It has ${track.notes.size} note${
+          track.notes.size === 1 ? '' : 's'
+        }; this can't be undone with Ctrl+Z if you keep editing.`
+      )
+      if (!ok) return
+    }
+    pushHistory()
+    const remaining = tracks.filter((t) => t.id !== id)
+    setTracks(remaining)
+    if (activeTrackId === id) {
+      setActiveTrackId(remaining[0].id)
+      setSelectedKeys(new Set())
+    }
+  }
+
+  const updateTrack = (id, patch) => {
+    setTracks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...patch } : t))
+    )
   }
 
   const togglePlay = () => {
@@ -2243,6 +2366,95 @@ export default function PianoRoll({
             )
           })}
         </div>
+      </div>
+
+      <div className="track-tabs" role="tablist" aria-label="tracks">
+        {tracks.map((t) => {
+          const isActive = activeTrack && t.id === activeTrack.id
+          return (
+            <div
+              key={t.id}
+              role="tab"
+              aria-selected={isActive}
+              className={`track-tab ${isActive ? 'active' : ''}`}
+              onClick={() => {
+                if (!isActive) {
+                  setActiveTrackId(t.id)
+                  setSelectedKeys(new Set())
+                }
+              }}
+              title={`${t.name} · ${t.notes.size} note${
+                t.notes.size === 1 ? '' : 's'
+              }`}
+            >
+              <span className="track-tab-name">{t.name}</span>
+              <div className="track-tab-controls">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={t.volume}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    updateTrack(t.id, { volume: Number(e.target.value) })
+                  }
+                  className="track-volume"
+                  aria-label={`${t.name} volume`}
+                  title={`Volume ${Math.round(t.volume * 100)}%`}
+                />
+                <button
+                  type="button"
+                  className={`track-btn track-mute ${t.muted ? 'on' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    updateTrack(t.id, { muted: !t.muted })
+                  }}
+                  title={t.muted ? 'Un-mute track' : 'Mute track'}
+                  aria-pressed={t.muted}
+                >
+                  M
+                </button>
+                <button
+                  type="button"
+                  className={`track-btn track-solo ${t.soloed ? 'on' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    updateTrack(t.id, { soloed: !t.soloed })
+                  }}
+                  title={t.soloed ? 'Un-solo track' : 'Solo track'}
+                  aria-pressed={t.soloed}
+                >
+                  S
+                </button>
+                {tracks.length > 1 && (
+                  <button
+                    type="button"
+                    className="track-btn track-delete"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeTrack(t.id)
+                    }}
+                    title="Delete track"
+                    aria-label={`Delete track ${t.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          className="track-tab-add"
+          onClick={addTrack}
+          title="Add a new track"
+          aria-label="Add track"
+        >
+          +
+        </button>
       </div>
 
       <div className="roll-body">
