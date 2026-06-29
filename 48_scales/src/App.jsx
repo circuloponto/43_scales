@@ -694,13 +694,6 @@ function App() {
                       />
                     )
                   })}
-                  {intrinsicPc != null && (
-                    <div
-                      className="scale-root-indicator"
-                      style={{ '--root-col': rootColumn }}
-                      aria-hidden="true"
-                    />
-                  )}
                 </div>
               </div>
             )

@@ -237,30 +237,6 @@
   gap: var(--row-gap);
 }
 
-/* Floating ring that marks the scale's intrinsic root. Sits in the same
-   slot as the matching cell but is positioned via transform so the change
-   animates as a horizontal slide along the row — visually communicates
-   that the scale is rotating around different roots. */
-.scale-root-indicator {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--cell);
-  height: var(--cell);
-  border-radius: 50%;
-  outline: 2.25px solid var(--accent);
-  outline-offset: -2.25px;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
-  pointer-events: none;
-  z-index: 3;
-  transform: translate3d(
-    calc((var(--cell) + var(--row-gap)) * var(--root-col, 0)),
-    0,
-    0
-  );
-  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
 
 .matrix.has-selection .row:not(.selected) {
   opacity: 0.45;
@@ -336,9 +312,13 @@
 }
 
 .cell.is-scale-root {
-  /* No visual treatment here — the .scale-root-indicator floating sibling
-     paints the circular ring and animates between columns. Class is kept
-     for semantic targeting in other rules if needed. */
+  /* The cell itself becomes a circle with the accent ring + glow — simple
+     and visually distinct from the surrounding squares. */
+  border-radius: 50%;
+  outline: 2.25px solid var(--accent);
+  outline-offset: -2.25px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  z-index: 2;
 }
 
 .pattern-cell.is-scale-root {
