@@ -1041,11 +1041,17 @@ export default function PianoRoll({
         newBeat = Math.max(0, Math.min(totalBeats - len, newBeat))
         let newMidi = oldMidi
         if (stepDelta !== 0) {
-          const gStep = midiToScaleStep(oldMidi)
-          newMidi =
-            gStep != null
-              ? scaleStepToMidi(gStep + stepDelta)
-              : nearestScaleMidi(oldMidi + stepDelta)
+          if (allowOutOfScale) {
+            // Free chromatic movement when the user has opted out of the
+            // scale constraint — Arrow keys nudge by one semitone.
+            newMidi = oldMidi + stepDelta
+          } else {
+            const gStep = midiToScaleStep(oldMidi)
+            newMidi =
+              gStep != null
+                ? scaleStepToMidi(gStep + stepDelta)
+                : nearestScaleMidi(oldMidi + stepDelta)
+          }
         }
         newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
         moves.push({ oldKey: k, newKey: `${newBeat}-${newMidi}`, length: len })
@@ -1496,22 +1502,32 @@ export default function PianoRoll({
       newAnchorBeat = Math.min(totalBeats - 0.001, newAnchorBeat)
       const beatDelta = newAnchorBeat - drag.originalBeat
 
-      // One scale step averages 12 / scale.notes.length semitones, so the
-      // step threshold matches that many visual rows. Without this scale,
-      // notes shot ahead of the cursor on scales whose steps span 2
-      // semitones (1.5 average for 8-note scales).
-      const rowsPerStep = scale.notes.length > 0 ? 12 / scale.notes.length : 1
+      // Vertical step:
+      //  - In scale mode, average 12 / scale.notes.length semitones per
+      //    step, so each scale degree spans rowsPerStep rows.
+      //  - When the "allow notes outside the scale" setting is on, drag
+      //    moves freely in semitones (one row per semitone), no snapping.
+      const rowsPerStep = allowOutOfScale
+        ? 1
+        : scale.notes.length > 0
+        ? 12 / scale.notes.length
+        : 1
       const stepDelta = -Math.round(dy / (ROW_HEIGHT * rowsPerStep))
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
         const offscreen = nb < 0
         if (!offscreen) nb = Math.min(totalBeats - 0.001, nb)
-        const gStep = midiToScaleStep(g.originalMidi)
-        let nm =
-          gStep != null
-            ? scaleStepToMidi(gStep + stepDelta)
-            : nearestScaleMidi(g.originalMidi + stepDelta)
+        let nm
+        if (allowOutOfScale) {
+          nm = g.originalMidi + stepDelta
+        } else {
+          const gStep = midiToScaleStep(g.originalMidi)
+          nm =
+            gStep != null
+              ? scaleStepToMidi(gStep + stepDelta)
+              : nearestScaleMidi(g.originalMidi + stepDelta)
+        }
         nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
         return {
           newBeat: nb,
