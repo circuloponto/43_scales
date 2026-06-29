@@ -357,6 +357,34 @@ function App() {
   // Chord-shapes section: false → show the original 4 filled positions of
   // each pattern; true → show the inverse (the 4 unfilled positions).
   const [chordsInverted, setChordsInverted] = useState(false)
+  // Scale degree the user is hovering on a bottom mode-dot. Used to preview
+  // which note would become the matrix tile-strip's highlighted root if they
+  // clicked it. Null when not hovering.
+  const [hoveredModeStep, setHoveredModeStep] = useState(null)
+  // Sliding modes-row carousel: a monotonically-increasing counter so the
+  // track always advances right-to-left, even when the user picks a "lower"
+  // root. After a full cycle of 12, an onTransitionEnd handler snaps the
+  // counter back modulo 12 with the transition briefly disabled — visually
+  // seamless because the cells repeat every 12 indices.
+  const [slideOffset, setSlideOffset] = useState(0)
+  const [slideSnapping, setSlideSnapping] = useState(false)
+  const prevRootRef = useRef(root)
+  useEffect(() => {
+    const prev = prevRootRef.current
+    prevRootRef.current = root
+    const delta = ((root - prev) % 12 + 12) % 12
+    if (delta === 0) return
+    setSlideOffset((o) => o + delta)
+  }, [root])
+  const handleSlideEnd = (e) => {
+    if (e.propertyName !== 'transform') return
+    if (slideOffset < 12) return
+    setSlideSnapping(true)
+    setSlideOffset((o) => ((o % 12) + 12) % 12)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSlideSnapping(false))
+    })
+  }
   // Which chord card is currently hovered, so the left-side dot pattern
   // can light up that rotation's positions (with note labels above) instead
   // of the canonical shape.
@@ -583,7 +611,12 @@ function App() {
           {visibleScales.map((s) => {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
-            const rs = rootSteps[s.id - 1]
+            const rsDefault = rootSteps[s.id - 1]
+            // For the SELECTED row only, the user's modeStep override moves
+            // the highlighted intrinsic root through the scale's pcs — this
+            // is what makes the "shift" visible as a slide of the root
+            // indicator. Non-selected rows always show their default root.
+            const rs = isSel ? modeStep ?? rsDefault : rsDefault
             const intrinsicPc = rs ? s.notes[rs - 1] : null
             // For the selected row, compute the chord-pair pcs in this row's
             // unrotated scale-pc space so we can tint each cell by which
@@ -591,21 +624,23 @@ function App() {
             let rowLeftSet = null
             let rowRightSet = null
             if (isSel) {
-              const rsActive = modeStep ?? rs
-              const intrinsicPcActive = rsActive ? s.notes[rsActive - 1] : 0
               const pair = chordPairs.find((p) => p.scaleId === s.id)
               const resolved = pair
-                ? resolveChordPair(pair, s.notes, 0, rsActive)
+                ? resolveChordPair(pair, s.notes, 0, rs)
                 : null
               if (resolved) {
                 rowLeftSet = new Set(
-                  resolved.leftNotes.map((p) => (p + intrinsicPcActive) % 12)
+                  resolved.leftNotes.map((p) => (p + intrinsicPc) % 12)
                 )
                 rowRightSet = new Set(
-                  resolved.rightNotes.map((p) => (p + intrinsicPcActive) % 12)
+                  resolved.rightNotes.map((p) => (p + intrinsicPc) % 12)
                 )
               }
             }
+            // Column index (0..11) for the scale-root cell, so the indicator
+            // knows which slot to slide to. The CSS transition on transform
+            // visualises the rotation of the scale around different roots.
+            const rootColumn = intrinsicPc ?? 0
             const rowChordClass = (pc) => {
               if (!isSel) return ''
               const inL = rowLeftSet && rowLeftSet.has(pc)
@@ -659,6 +694,13 @@ function App() {
                       />
                     )
                   })}
+                  {intrinsicPc != null && (
+                    <div
+                      className="scale-root-indicator"
+                      style={{ '--root-col': rootColumn }}
+                      aria-hidden="true"
+                    />
+                  )}
                 </div>
               </div>
             )
@@ -721,56 +763,102 @@ function App() {
             return (
               <div className="section">
                 <div className="roots-hint top">pick root</div>
-                <div className="roots">
-                  {Array.from({ length: 12 }, (_, c) => {
-                    const pc = (root + c) % 12
-                    const isRootActive = c === 0
-                    const inScale = inRotated(c)
-                    const degree = degreeOf(c)
-                    const isModeActive = degree !== 0 && degree === rs
-                    const dim = !isRootActive && !inScale
-                    return (
-                      <div
-                        key={c}
-                        className={`root-cell ${inScale ? 'in' : 'out'} ${
-                          dim ? 'dim' : ''
-                        } ${chordClass(pc)}`}
-                      >
-                        <button
-                          type="button"
-                          className={`root-dot top ${isRootActive ? 'on' : ''}`}
-                          onClick={() => setRoot(pc)}
-                          aria-label={`Set root to ${NOTE_DISPLAY[pc]}`}
-                          title={`Set root to ${NOTE_DISPLAY[pc]}`}
-                        />
-                        <button
-                          type="button"
-                          className={`root-label ${isRootActive ? 'active' : ''}`}
-                          onClick={() => setRoot(pc)}
+                <div className="roots-frame">
+                  <div
+                    className={`roots ${slideSnapping ? 'snapping' : ''}`}
+                    style={{ '--slide': slideOffset }}
+                    onTransitionEnd={handleSlideEnd}
+                  >
+                    {Array.from({ length: 36 }, (_, idx) => {
+                      // Render three full chromatic copies so the strip can
+                      // translate continuously right-to-left without empty
+                      // gaps — handles a few rapid clicks while a transition
+                      // is still in progress.
+                      const pc = idx % 12
+                      const c = ((idx - root) % 12 + 12) % 12
+                      const isRootActive = c === 0
+                      const inScale = inRotated(c)
+                      const degree = degreeOf(c)
+                      const isModeActive = degree !== 0 && degree === rs
+                      const dim = !isRootActive && !inScale
+                      const isDuplicate = idx >= 12
+                      return (
+                        <div
+                          key={idx}
+                          className={`root-cell ${inScale ? 'in' : 'out'} ${
+                            dim ? 'dim' : ''
+                          } ${chordClass(pc)}`}
+                          aria-hidden={isDuplicate ? 'true' : undefined}
                         >
-                          {NOTE_DISPLAY[pc]}
-                        </button>
-                        <button
-                          type="button"
-                          className={`root-dot bottom ${isModeActive ? 'on' : ''}`}
-                          onClick={inScale ? () => setModeStep(degree) : undefined}
-                          disabled={!inScale}
-                          aria-label={
-                            inScale
-                              ? `Start scale on degree ${degree} (${NOTE_DISPLAY[pc]})`
-                              : ''
-                          }
-                          title={
-                            inScale
-                              ? `Start scale on degree ${degree}`
-                              : ''
-                          }
-                        />
-                      </div>
-                    )
-                  })}
+                          <button
+                            type="button"
+                            className={`root-dot top ${isRootActive ? 'on' : ''}`}
+                            onClick={() => setRoot(pc)}
+                            aria-label={`Set root to ${NOTE_DISPLAY[pc]}`}
+                            title={`Set root to ${NOTE_DISPLAY[pc]}`}
+                            tabIndex={isDuplicate ? -1 : 0}
+                          />
+                          <button
+                            type="button"
+                            className={`root-label ${isRootActive ? 'active' : ''}`}
+                            onClick={() => setRoot(pc)}
+                            tabIndex={isDuplicate ? -1 : 0}
+                          >
+                            {NOTE_DISPLAY[pc]}
+                          </button>
+                          <button
+                            type="button"
+                            className={`root-dot bottom ${isModeActive ? 'on' : ''}`}
+                            onClick={inScale ? () => setModeStep(degree) : undefined}
+                            onMouseEnter={
+                              inScale
+                                ? () => setHoveredModeStep(degree)
+                                : undefined
+                            }
+                            onMouseLeave={
+                              inScale
+                                ? () => setHoveredModeStep(null)
+                                : undefined
+                            }
+                            disabled={!inScale}
+                            aria-label={
+                              inScale
+                                ? `Start scale on degree ${degree} (${NOTE_DISPLAY[pc]})`
+                                : ''
+                            }
+                            title={
+                              inScale
+                                ? `Start scale on degree ${degree}`
+                                : ''
+                            }
+                            tabIndex={isDuplicate ? -1 : 0}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-                <div className="roots-hint bottom">pick mode</div>
+                <div className="roots-hint bottom">
+                  pick mode
+                  {scale && (() => {
+                    // Mirror the matrix tile-strip's highlighted-root cell.
+                    // Show the hovered mode's would-be root in dim accent, or
+                    // the active mode's current root in bright accent.
+                    const previewStep = hoveredModeStep ?? rs
+                    if (!previewStep) return null
+                    const pcAtStep = scale.notes[previewStep - 1]
+                    if (pcAtStep == null) return null
+                    return (
+                      <span
+                        className={`roots-hint-root ${
+                          hoveredModeStep != null ? 'preview' : ''
+                        }`}
+                      >
+                        {' '}· root {noteName(pcAtStep)}
+                      </span>
+                    )
+                  })()}
+                </div>
               </div>
             )
           })()}
