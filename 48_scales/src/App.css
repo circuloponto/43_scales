@@ -1717,6 +1717,10 @@
   display: flex;
   min-width: max-content;
   flex-shrink: 0;
+  /* Include any border (e.g., .octave's border-top) inside the 21 px so
+     the row stays exactly one ROW_HEIGHT — otherwise every octave drifts
+     1 px below the absolutely-positioned piano keys. */
+  box-sizing: border-box;
 }
 
 .grid-row.black {

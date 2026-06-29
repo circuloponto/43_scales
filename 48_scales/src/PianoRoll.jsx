@@ -423,8 +423,12 @@ export default function PianoRoll({
         e.preventDefault()
         togglePlay()
       } else if (e.code === 'Enter') {
+        // Reset the playhead to beat 0. If currently playing, stop first so
+        // the rAF doesn't immediately overwrite the position. Space resumes
+        // from the new playhead.
         e.preventDefault()
-        playFromStart()
+        if (playStateRef.current) stopPlayback(false)
+        setPlayheadBeat(0)
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
         if (selectedKeys.size > 0) {
           e.preventDefault()
