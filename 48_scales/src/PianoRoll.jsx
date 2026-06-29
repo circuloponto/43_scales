@@ -310,6 +310,10 @@ export default function PianoRoll({
   const [freeMode, setFreeMode] = useState(false)
   const [metronome, setMetronome] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState(() => new Set())
+  // Template waiting to be placed by the user's next grid click. Carries
+  // the full template object so the placement handler can compute the
+  // beat + scale-step shift from the click position.
+  const [pendingTemplate, setPendingTemplate] = useState(null)
   const [marquee, setMarquee] = useState(null)
   const [loop, setLoop] = useState(null)
   const [captureOpen, setCaptureOpen] = useState(false)
@@ -441,6 +445,7 @@ export default function PianoRoll({
           setSelectedKeys(new Set())
         }
       } else if (e.code === 'Escape') {
+        if (pendingTemplate) setPendingTemplate(null)
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (chordModalOpen) setChordModalOpen(false)
         if (loop) setLoop(null)
@@ -766,23 +771,62 @@ export default function PianoRoll({
     setCaptureName('')
   }
 
-  // Resolve a template's scale degrees back to absolute MIDI using the
-  // current scale + root. Notes whose degree exceeds the current scale
-  // length, or whose computed MIDI lands outside the visible range, are
-  // skipped silently.
-  const applyTemplate = (tpl) => {
-    if (!scale || !tpl) return
+  // Apply a template at a specific anchor point (beat + midi). The template's
+  // earliest note becomes the rhythmic anchor; the anchor midi becomes the
+  // pitch base. Every other note shifts by the same beat delta and the same
+  // scale-step delta, so the template's musical shape is preserved against
+  // the current scale + root. Adds the template's notes on top of existing
+  // ones; doesn't clear the grid first.
+  const commitTemplateAt = (tpl, anchorBeat, anchorMidi) => {
+    if (!scale || !tpl || tpl.notes.length === 0) return
     const baseRoot = 60 + root
-    const next = new Map()
+    let minBeat = Infinity
+    let firstItem = null
     for (const item of tpl.notes) {
-      if (item.degree < 0 || item.degree >= scale.notes.length) continue
-      const midi = baseRoot + scale.notes[item.degree] + item.octave * 12
-      if (midi < MIDI_LOW || midi > MIDI_HIGH) continue
-      next.set(`${item.beat}-${midi}`, item.length ?? 1)
+      if (item.beat < minBeat) {
+        minBeat = item.beat
+        firstItem = item
+      }
     }
+    if (!firstItem) return
+    if (firstItem.degree < 0 || firstItem.degree >= scale.notes.length) return
+    const firstMidi =
+      baseRoot + scale.notes[firstItem.degree] + firstItem.octave * 12
+    const firstStep = midiToScaleStep(firstMidi)
+    const snappedAnchor = nearestScaleMidi(anchorMidi)
+    const anchorStep = midiToScaleStep(snappedAnchor)
+    if (firstStep == null || anchorStep == null) return
+    const stepShift = anchorStep - firstStep
+    const beatShift = anchorBeat - minBeat
     pushHistory()
-    setNotes(next)
-    setSelectedKeys(new Set())
+    const addedKeys = new Set()
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const item of tpl.notes) {
+        if (item.degree < 0 || item.degree >= scale.notes.length) continue
+        const origMidi =
+          baseRoot + scale.notes[item.degree] + item.octave * 12
+        const origStep = midiToScaleStep(origMidi)
+        if (origStep == null) continue
+        const newStep = origStep + stepShift
+        const newMidi = scaleStepToMidi(newStep)
+        const newBeat = item.beat + beatShift
+        if (newBeat < 0 || newBeat >= totalBeats) continue
+        if (newMidi < MIDI_LOW || newMidi > MIDI_HIGH) continue
+        const key = `${newBeat}-${newMidi}`
+        next.set(key, item.length ?? 1)
+        addedKeys.add(key)
+      }
+      return next
+    })
+    setSelectedKeys(addedKeys)
+  }
+
+  // Click handler for a template entry: enter "placement mode" — the next
+  // click on the grid commits the template at that cursor position. Click
+  // the same template again (or press Esc) to cancel.
+  const handleTemplateClick = (tpl) => {
+    setPendingTemplate((cur) => (cur && cur.id === tpl.id ? null : tpl))
   }
 
   const deleteTemplate = (id) => {
@@ -1126,6 +1170,26 @@ export default function PianoRoll({
     // and does nothing.
     const isRightClick = e.pointerType === 'mouse' && e.button === 2
     if (isRightClick) e.preventDefault()
+
+    // If a template is queued for placement, commit it at the click
+    // position (beat from cursor X, scale-step anchor from the clicked
+    // row's midi) and exit. Right-click cancels placement instead.
+    if (pendingTemplate && !isRightClick) {
+      e.preventDefault()
+      e.stopPropagation()
+      const trackRect = e.currentTarget.getBoundingClientRect()
+      let clickBeat = (e.clientX - trackRect.left) / BEAT_WIDTH
+      if (!freeMode) clickBeat = Math.floor(clickBeat)
+      clickBeat = Math.max(0, Math.min(totalBeats - 1, clickBeat))
+      commitTemplateAt(pendingTemplate, clickBeat, midi)
+      setPendingTemplate(null)
+      return
+    }
+    if (pendingTemplate && isRightClick) {
+      setPendingTemplate(null)
+      return
+    }
+
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
     const isInScale = inScale(midi % 12)
@@ -1991,7 +2055,7 @@ export default function PianoRoll({
 
   return (
     <div
-      className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''}`}
+      className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''} ${pendingTemplate ? 'placing-template' : ''}`}
       onContextMenu={(e) => e.preventDefault()}
     >
       <header className={`roll-header ${mobileMenuOpen ? 'menu-open' : ''}`}>
@@ -2175,11 +2239,17 @@ export default function PianoRoll({
               {templates.map((tpl) => (
                 <li
                   key={tpl.id}
-                  className="template-row"
-                  onClick={() => applyTemplate(tpl)}
-                  title={`Captured from scale ${padId(
-                    tpl.capturedFrom.scaleId
-                  )} · ${tpl.notes.length} notes`}
+                  className={`template-row ${
+                    pendingTemplate && pendingTemplate.id === tpl.id
+                      ? 'pending'
+                      : ''
+                  }`}
+                  onClick={() => handleTemplateClick(tpl)}
+                  title={
+                    pendingTemplate && pendingTemplate.id === tpl.id
+                      ? 'Click on the grid to place this template — Esc to cancel'
+                      : `Click then click on the grid to place this template at that beat + scale degree (${tpl.notes.length} notes, captured from scale ${padId(tpl.capturedFrom.scaleId)})`
+                  }
                 >
                   <span className="template-name">{tpl.name}</span>
                   <span className="template-meta">

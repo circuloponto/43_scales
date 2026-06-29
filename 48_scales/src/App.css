@@ -1464,6 +1464,28 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* Pending placement state: template waiting for the user's grid click.
+   Stronger accent + glow so it's clear the next click will place this. */
+.template-row.pending {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.template-row.pending::after {
+  content: 'click grid to place';
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-left: 8px;
+}
+/* When any template is pending, the grid invites a click anywhere. */
+.roll-view.placing-template .grid-area .beats-track {
+  cursor: crosshair !important;
+}
+
 .template-name {
   overflow: hidden;
   text-overflow: ellipsis;
