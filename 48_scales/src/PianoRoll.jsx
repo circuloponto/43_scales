@@ -996,12 +996,26 @@ export default function PianoRoll({
     const lengths = sorted.map((s) => s.length)
     let newMidis, newLengths
     if (direction === 1) {
-      // Lowest-beat pitch goes up an octave and becomes the latest pitch.
-      newMidis = [...midis.slice(1), midis[0] + 12]
+      // Forward rotation: the earliest-beat pitch wraps to the latest
+      // beat. Bump it up by whole octaves until it sits above the new
+      // last pitch (which was the original second-to-last). With a flat
+      // +12 the wrap could fall inside the existing range — e.g.,
+      // [60, 70, 80] would land 60+12=72 below 80 and break the contour.
+      const first = midis[0]
+      const newLast = midis[n - 1]
+      let bumped = first
+      while (bumped <= newLast) bumped += 12
+      newMidis = [...midis.slice(1), bumped]
       newLengths = [...lengths.slice(1), lengths[0]]
     } else {
-      // Latest-beat pitch goes down an octave and becomes the earliest.
-      newMidis = [midis[n - 1] - 12, ...midis.slice(0, n - 1)]
+      // Backward rotation: the latest-beat pitch wraps to the earliest
+      // beat. Drop it by whole octaves until it sits below the new
+      // first pitch (which was the original second).
+      const last = midis[n - 1]
+      const newFirst = midis[0]
+      let bumped = last
+      while (bumped >= newFirst) bumped -= 12
+      newMidis = [bumped, ...midis.slice(0, n - 1)]
       newLengths = [lengths[n - 1], ...lengths.slice(0, n - 1)]
     }
     // Bail out if any rotated pitch would leave the keyboard range.
