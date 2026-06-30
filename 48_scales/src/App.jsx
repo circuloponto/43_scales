@@ -242,6 +242,53 @@ function App() {
     loadColor('eightFold.electron', '#6b6b70')
   )
   const [view, setView] = useState('matrix')
+
+  // Songs: top-level Chrome-style tabs. Each song owns its own track list,
+  // so switching tabs preserves the per-song tracks. `tracks: null` is the
+  // sentinel for "needs initial pattern" — PianoRoll seeds it on mount.
+  const makeSongId = () =>
+    `sg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  const [songs, setSongs] = useState(() => [
+    { id: makeSongId(), name: 'Song 1', tracks: null, activeTrackId: null },
+  ])
+  const [activeSongId, setActiveSongId] = useState(() => songs[0].id)
+  const activeSong = songs.find((s) => s.id === activeSongId) ?? songs[0]
+  const updateActiveSong = (patch) => {
+    setSongs((prev) =>
+      prev.map((s) =>
+        s.id === activeSong.id
+          ? { ...s, ...(typeof patch === 'function' ? patch(s) : patch) }
+          : s
+      )
+    )
+  }
+  const addSong = () => {
+    const id = makeSongId()
+    const name = `Song ${songs.length + 1}`
+    setSongs((prev) => [...prev, { id, name, tracks: null, activeTrackId: null }])
+    setActiveSongId(id)
+  }
+  const removeSong = (id) => {
+    if (songs.length <= 1) return
+    const target = songs.find((s) => s.id === id)
+    if (!target) return
+    const hasNotes =
+      target.tracks && target.tracks.some((t) => t.notes && t.notes.size > 0)
+    if (hasNotes) {
+      const ok = window.confirm(
+        `Close "${target.name}"? Its tracks won't be saved.`
+      )
+      if (!ok) return
+    }
+    const remaining = songs.filter((s) => s.id !== id)
+    setSongs(remaining)
+    if (activeSongId === id) setActiveSongId(remaining[0].id)
+  }
+  const renameSong = (id, name) => {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+    setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)))
+  }
   const [templates, setTemplates] = useState(defaultTemplates)
   const [scaleNames, setScaleNames] = useState(() => {
     try {
@@ -595,6 +642,7 @@ function App() {
 
         {view === 'roll' && scale ? (
           <PianoRoll
+            key={activeSongId}
             scale={scale}
             root={root}
             accent={accent}
@@ -604,6 +652,17 @@ function App() {
             setTemplates={setTemplates}
             modeStep={modeStep}
             settings={settings}
+            songs={songs}
+            activeSongId={activeSongId}
+            onSelectSong={setActiveSongId}
+            onAddSong={addSong}
+            onRemoveSong={removeSong}
+            onRenameSong={renameSong}
+            initialTracks={activeSong?.tracks}
+            initialActiveTrackId={activeSong?.activeTrackId}
+            onPersistTracks={(tracks, activeTrackId) =>
+              updateActiveSong({ tracks, activeTrackId })
+            }
           />
         ) : (
         <>

@@ -264,6 +264,15 @@ function VariationPanel() {
   )
 }
 
+// Available synth oscillator types. Each track picks one and the scheduler
+// plays its notes with that oscillator, giving tracks distinct timbres.
+const SYNTH_TYPES = [
+  { id: 'triangle', label: 'Triangle', gainScale: 1.0 },
+  { id: 'sine', label: 'Sine', gainScale: 1.05 },
+  { id: 'sawtooth', label: 'Saw', gainScale: 0.55 },
+  { id: 'square', label: 'Square', gainScale: 0.5 },
+]
+
 export default function PianoRoll({
   scale: rawScale,
   root,
@@ -272,6 +281,15 @@ export default function PianoRoll({
   setTemplates,
   modeStep = null,
   settings = {},
+  songs = [],
+  activeSongId = null,
+  onSelectSong,
+  onAddSong,
+  onRemoveSong,
+  onRenameSong,
+  initialTracks = null,
+  initialActiveTrackId = null,
+  onPersistTracks,
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
   const useFlats = !!settings.useFlats
@@ -307,17 +325,46 @@ export default function PianoRoll({
   // through the active track so every existing handler keeps working.
   const makeTrackId = () =>
     `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-  const [tracks, setTracks] = useState(() => [
-    {
-      id: makeTrackId(),
-      name: 'Melody',
-      notes: buildInitialPattern(scale, root),
-      volume: 0.85,
-      muted: false,
-      soloed: false,
-    },
-  ])
-  const [activeTrackId, setActiveTrackId] = useState(() => null)
+  // Default track factory used by song initialisation + the "+ track" button.
+  // attackMs: how long the gain envelope takes to ramp to peak (0.5–60 ms).
+  // releaseMs: how long the gain envelope takes to fall to silence (5–800 ms).
+  // detuneCents: pitch offset in cents (-100 to +100) — adds shimmer or
+  //              tunes the voice off the equal-temperament center.
+  const buildDefaultTrack = (overrides = {}) => ({
+    id: makeTrackId(),
+    name: 'Melody',
+    notes: new Map(),
+    volume: 0.85,
+    muted: false,
+    soloed: false,
+    synth: 'triangle',
+    attackMs: 15,
+    releaseMs: 220,
+    detuneCents: 0,
+    ...overrides,
+  })
+  const [tracks, setTracks] = useState(() => {
+    if (initialTracks && initialTracks.length > 0) {
+      // Hydrate from the song's persisted tracks. Notes may arrive as a
+      // plain Map (in-session) or absent — guard either way.
+      return initialTracks.map((t) => ({
+        ...buildDefaultTrack(),
+        ...t,
+        notes: t.notes instanceof Map ? t.notes : new Map(t.notes ?? []),
+      }))
+    }
+    // Fresh song → one generically-named track seeded with the initial
+    // pattern. The user names it themselves via the sidebar.
+    return [
+      buildDefaultTrack({
+        name: 'Track 1',
+        notes: buildInitialPattern(scale, root),
+      }),
+    ]
+  })
+  const [activeTrackId, setActiveTrackId] = useState(
+    () => initialActiveTrackId ?? null
+  )
   // Resolve the active track (first one if no explicit selection).
   const activeTrack =
     tracks.find((t) => t.id === activeTrackId) ?? tracks[0] ?? null
@@ -405,41 +452,40 @@ export default function PianoRoll({
   const tHeldRef = useRef(false)
 
   useEffect(() => {
-    const initial = buildInitialPattern(scale, root)
-    // Reset to a single Melody track when the user switches scales / roots
-    // — old tracks were written against the previous scale and would not
-    // map cleanly onto the new one.
-    const id = makeTrackId()
-    setTracks([
-      {
-        id,
-        name: 'Melody',
-        notes: initial,
-        volume: 0.85,
-        muted: false,
-        soloed: false,
-      },
-    ])
-    setActiveTrackId(id)
-    historyRef.current = []
-    futureRef.current = []
-    setSelectedKeys(new Set())
-    // Scroll the roll vertically so the initial notes sit roughly in the
-    // middle of the viewport. With the 88-key range this avoids dropping
-    // the user at the top of an empty C8 area.
+    // Scroll the roll vertically so the active track's notes (or the
+    // initial pattern as a fallback) sit roughly in the middle of the
+    // viewport. Track resets are no longer triggered here — the song-based
+    // state in App.jsx owns track lifecycle now, so switching scales or
+    // roots leaves existing tracks in place; the user can clear or redo
+    // tracks deliberately. Only auto-scroll fires on scale/root change.
     requestAnimationFrame(() => {
       const sc = scrollRef.current
       if (!sc) return
+      const noteMap =
+        (tracksRef.current[0] && tracksRef.current[0].notes) ||
+        buildInitialPattern(scale, root)
       let avgMidi = 60 + root
-      if (initial.size > 0) {
+      if (noteMap.size > 0) {
         let sum = 0
-        for (const [k] of initial) sum += Number(k.split('-')[1])
-        avgMidi = sum / initial.size
+        for (const [k] of noteMap) sum += Number(k.split('-')[1])
+        avgMidi = sum / noteMap.size
       }
       const targetTop = (MIDI_HIGH - avgMidi) * ROW_HEIGHT
       sc.scrollTop = Math.max(0, targetTop - sc.clientHeight / 2 + ROW_HEIGHT / 2)
     })
   }, [scale?.id, root])
+
+  // Persist tracks back to the active song in App.jsx whenever they change,
+  // so switching songs (which re-mounts PianoRoll) restores the saved tracks.
+  useEffect(() => {
+    if (!onPersistTracks) return
+    // Serialize the Maps as plain arrays so they survive across remounts.
+    const serialized = tracks.map((t) => ({
+      ...t,
+      notes: Array.from(t.notes.entries()),
+    }))
+    onPersistTracks(serialized, activeTrackId)
+  }, [tracks, activeTrackId])
 
   useEffect(() => {
     return () => {
@@ -557,21 +603,43 @@ export default function PianoRoll({
     return ctx
   }
 
-  const playOneNote = (midi, startAt, duration = 0.22, peakGain = 0.22) => {
+  const playOneNote = (
+    midi,
+    startAt,
+    duration = 0.22,
+    peakGain = 0.22,
+    oscType = 'triangle',
+    voice = {}
+  ) => {
+    const attackMs = voice.attackMs ?? 15
+    const releaseMs = voice.releaseMs ?? 220
+    const detuneCents = voice.detuneCents ?? 0
     const ctx = getAudioContext()
     const t = startAt ?? ctx.currentTime
     const freq = 440 * Math.pow(2, (midi - 69) / 12)
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
-    osc.type = 'triangle'
+    osc.type = oscType
     osc.frequency.value = freq
+    if (detuneCents) osc.detune.value = detuneCents
     osc.connect(gain)
     gain.connect(ctx.destination)
+    // Sawtooth / square have far more harmonic energy than triangle / sine,
+    // so scale the gain so different synths sound roughly balanced.
+    const synth = SYNTH_TYPES.find((s) => s.id === oscType)
+    const adjustedPeak = peakGain * (synth ? synth.gainScale : 1)
+    // Attack / release shape the envelope. Attack ramps gain to peak; the
+    // remainder of the note holds + tails out via the release. Release is
+    // capped at the note's hold time so very short notes don't sound flat.
+    const attack = Math.max(0.0005, attackMs / 1000)
+    const release = Math.max(0.005, releaseMs / 1000)
+    const holdEnd = Math.max(t + attack + 0.001, t + duration - release)
     gain.gain.setValueAtTime(0, t)
-    gain.gain.linearRampToValueAtTime(peakGain, t + 0.015)
-    gain.gain.exponentialRampToValueAtTime(0.001, t + duration)
+    gain.gain.linearRampToValueAtTime(adjustedPeak, t + attack)
+    gain.gain.setValueAtTime(adjustedPeak, holdEnd)
+    gain.gain.exponentialRampToValueAtTime(0.001, holdEnd + release)
     osc.start(t)
-    osc.stop(t + duration + 0.02)
+    osc.stop(holdEnd + release + 0.02)
     scheduledVoicesRef.current.push({ osc, gain })
   }
 
@@ -1873,6 +1941,12 @@ export default function PianoRoll({
         if (anySolo && !track.soloed) continue
         const peak = BASE_GAIN * track.volume
         if (peak <= 0.001) continue
+        const synth = track.synth || 'triangle'
+        const voice = {
+          attackMs: track.attackMs,
+          releaseMs: track.releaseMs,
+          detuneCents: track.detuneCents,
+        }
         for (const [key, length] of track.notes) {
           const [beatStr, midiStr] = key.split('-')
           const beat = Number(beatStr)
@@ -1886,7 +1960,7 @@ export default function PianoRoll({
               0.06,
               (swungNoteEnd - swungNoteStart) * cellDur
             )
-            playOneNote(midi, noteTime, noteDur, peak)
+            playOneNote(midi, noteTime, noteDur, peak, synth, voice)
           }
         }
       }
@@ -2025,17 +2099,12 @@ export default function PianoRoll({
     pushHistory()
     const id = makeTrackId()
     const trackNumber = tracks.length + 1
-    const name = trackNumber === 2 ? 'Chords' : `Track ${trackNumber}`
+    // Generic "Track N" name + the default triangle synth (the original
+    // patch). User can switch synth + tweak parameters in the sidebar.
+    const name = `Track ${trackNumber}`
     setTracks((prev) => [
       ...prev,
-      {
-        id,
-        name,
-        notes: new Map(),
-        volume: 0.85,
-        muted: false,
-        soloed: false,
-      },
+      buildDefaultTrack({ id, name, synth: 'triangle' }),
     ])
     setActiveTrackId(id)
     setSelectedKeys(new Set())
@@ -2368,93 +2437,55 @@ export default function PianoRoll({
         </div>
       </div>
 
-      <div className="track-tabs" role="tablist" aria-label="tracks">
-        {tracks.map((t) => {
-          const isActive = activeTrack && t.id === activeTrack.id
+      {/* Chrome-style song tabs — each tab is its own piano-roll workspace. */}
+      <div className="song-tabs" role="tablist" aria-label="songs">
+        {songs.map((s) => {
+          const isActive = s.id === activeSongId
           return (
             <div
-              key={t.id}
+              key={s.id}
               role="tab"
               aria-selected={isActive}
-              className={`track-tab ${isActive ? 'active' : ''}`}
+              className={`song-tab ${isActive ? 'active' : ''}`}
               onClick={() => {
-                if (!isActive) {
-                  setActiveTrackId(t.id)
-                  setSelectedKeys(new Set())
-                }
+                if (!isActive && onSelectSong) onSelectSong(s.id)
               }}
-              title={`${t.name} · ${t.notes.size} note${
-                t.notes.size === 1 ? '' : 's'
-              }`}
+              onDoubleClick={() => {
+                if (!onRenameSong) return
+                const next = window.prompt('Rename song', s.name)
+                if (next != null) onRenameSong(s.id, next)
+              }}
+              title={`${s.name}${isActive ? ' · double-click to rename' : ''}`}
             >
-              <span className="track-tab-name">{t.name}</span>
-              <div className="track-tab-controls">
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={t.volume}
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onChange={(e) =>
-                    updateTrack(t.id, { volume: Number(e.target.value) })
-                  }
-                  className="track-volume"
-                  aria-label={`${t.name} volume`}
-                  title={`Volume ${Math.round(t.volume * 100)}%`}
-                />
+              <span className="song-tab-name">{s.name}</span>
+              {songs.length > 1 && onRemoveSong && (
                 <button
                   type="button"
-                  className={`track-btn track-mute ${t.muted ? 'on' : ''}`}
+                  className="song-tab-close"
                   onClick={(e) => {
                     e.stopPropagation()
-                    updateTrack(t.id, { muted: !t.muted })
+                    onRemoveSong(s.id)
                   }}
-                  title={t.muted ? 'Un-mute track' : 'Mute track'}
-                  aria-pressed={t.muted}
+                  aria-label={`Close ${s.name}`}
+                  title="Close song"
                 >
-                  M
+                  ×
                 </button>
-                <button
-                  type="button"
-                  className={`track-btn track-solo ${t.soloed ? 'on' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    updateTrack(t.id, { soloed: !t.soloed })
-                  }}
-                  title={t.soloed ? 'Un-solo track' : 'Solo track'}
-                  aria-pressed={t.soloed}
-                >
-                  S
-                </button>
-                {tracks.length > 1 && (
-                  <button
-                    type="button"
-                    className="track-btn track-delete"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeTrack(t.id)
-                    }}
-                    title="Delete track"
-                    aria-label={`Delete track ${t.name}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           )
         })}
-        <button
-          type="button"
-          className="track-tab-add"
-          onClick={addTrack}
-          title="Add a new track"
-          aria-label="Add track"
-        >
-          +
-        </button>
+        {onAddSong && (
+          <button
+            type="button"
+            className="song-tab-add"
+            onClick={onAddSong}
+            title="New song"
+            aria-label="New song"
+          >
+            +
+          </button>
+        )}
       </div>
 
       <div className="roll-body">
@@ -2673,6 +2704,199 @@ export default function PianoRoll({
             </div>
           </div>
         </div>
+
+        {/* Right-side track sidebar: vertical tabs sticking out the left
+            edge (like folder tabs), with the active one merging into the
+            sidebar's control panel on its right. */}
+        <aside className="track-sidebar">
+          <div className="track-rail" role="tablist" aria-label="tracks">
+            {tracks.map((t) => {
+              const isActive = activeTrack && t.id === activeTrack.id
+              return (
+                <button
+                  type="button"
+                  key={t.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`track-rail-tab ${isActive ? 'active' : ''} ${
+                    t.muted ? 'is-muted' : ''
+                  } ${t.soloed ? 'is-soloed' : ''}`}
+                  onClick={() => {
+                    if (!isActive) {
+                      setActiveTrackId(t.id)
+                      setSelectedKeys(new Set())
+                    }
+                  }}
+                  title={`${t.name} · ${t.notes.size} note${
+                    t.notes.size === 1 ? '' : 's'
+                  }`}
+                >
+                  <span className="track-rail-name">{t.name}</span>
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              className="track-rail-add"
+              onClick={addTrack}
+              title="Add a new track"
+              aria-label="Add track"
+            >
+              +
+            </button>
+          </div>
+
+          {activeTrack && (
+            <div className="track-controls">
+              <input
+                type="text"
+                className="track-controls-name"
+                value={activeTrack.name}
+                onChange={(e) =>
+                  updateTrack(activeTrack.id, { name: e.target.value })
+                }
+                aria-label="Track name"
+              />
+              <div className="track-controls-buttons">
+                <button
+                  type="button"
+                  className={`track-btn track-mute ${
+                    activeTrack.muted ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    updateTrack(activeTrack.id, { muted: !activeTrack.muted })
+                  }
+                  title={activeTrack.muted ? 'Un-mute' : 'Mute'}
+                  aria-pressed={activeTrack.muted}
+                >
+                  M
+                </button>
+                <button
+                  type="button"
+                  className={`track-btn track-solo ${
+                    activeTrack.soloed ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    updateTrack(activeTrack.id, {
+                      soloed: !activeTrack.soloed,
+                    })
+                  }
+                  title={activeTrack.soloed ? 'Un-solo' : 'Solo'}
+                  aria-pressed={activeTrack.soloed}
+                >
+                  S
+                </button>
+                {tracks.length > 1 && (
+                  <button
+                    type="button"
+                    className="track-btn track-delete"
+                    onClick={() => removeTrack(activeTrack.id)}
+                    title="Delete this track"
+                    aria-label="Delete this track"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              <div className="track-controls-volume">
+                <span className="track-controls-label">Volume</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={activeTrack.volume}
+                  onChange={(e) =>
+                    updateTrack(activeTrack.id, {
+                      volume: Number(e.target.value),
+                    })
+                  }
+                  className="track-volume"
+                  aria-label="Track volume"
+                  title={`Volume ${Math.round(activeTrack.volume * 100)}%`}
+                />
+                <span className="track-controls-value">
+                  {Math.round(activeTrack.volume * 100)}
+                </span>
+              </div>
+              <div className="track-controls-synth">
+                <span className="track-controls-label">Synth</span>
+                <div className="synth-picker" role="radiogroup" aria-label="Synth type">
+                  {SYNTH_TYPES.map((s) => {
+                    const checked = (activeTrack.synth || 'triangle') === s.id
+                    return (
+                      <button
+                        type="button"
+                        key={s.id}
+                        role="radio"
+                        aria-checked={checked}
+                        className={`synth-picker-option ${checked ? 'on' : ''}`}
+                        onClick={() =>
+                          updateTrack(activeTrack.id, { synth: s.id })
+                        }
+                        title={`${s.label} oscillator`}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {[
+                {
+                  key: 'attackMs',
+                  label: 'Attack',
+                  min: 0.5,
+                  max: 80,
+                  step: 0.5,
+                  value: activeTrack.attackMs ?? 15,
+                  formatter: (v) => `${v.toFixed(1)} ms`,
+                },
+                {
+                  key: 'releaseMs',
+                  label: 'Release',
+                  min: 5,
+                  max: 800,
+                  step: 5,
+                  value: activeTrack.releaseMs ?? 220,
+                  formatter: (v) => `${Math.round(v)} ms`,
+                },
+                {
+                  key: 'detuneCents',
+                  label: 'Detune',
+                  min: -100,
+                  max: 100,
+                  step: 1,
+                  value: activeTrack.detuneCents ?? 0,
+                  formatter: (v) => `${v > 0 ? '+' : ''}${Math.round(v)}¢`,
+                },
+              ].map((param) => (
+                <div key={param.key} className="track-controls-param">
+                  <span className="track-controls-label">{param.label}</span>
+                  <input
+                    type="range"
+                    min={param.min}
+                    max={param.max}
+                    step={param.step}
+                    value={param.value}
+                    onChange={(e) =>
+                      updateTrack(activeTrack.id, {
+                        [param.key]: Number(e.target.value),
+                      })
+                    }
+                    className="track-volume"
+                    aria-label={`Track ${param.label.toLowerCase()}`}
+                    title={`${param.label}: ${param.formatter(param.value)}`}
+                  />
+                  <span className="track-controls-value">
+                    {param.formatter(param.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
       </div>
 
       {captureOpen && (
