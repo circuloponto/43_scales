@@ -2439,42 +2439,46 @@ export default function PianoRoll({
 
       {/* Chrome-style song tabs — each tab is its own piano-roll workspace. */}
       <div className="song-tabs" role="tablist" aria-label="songs">
-        {songs.map((s) => {
-          const isActive = s.id === activeSongId
-          return (
-            <div
-              key={s.id}
-              role="tab"
-              aria-selected={isActive}
-              className={`song-tab ${isActive ? 'active' : ''}`}
-              onClick={() => {
-                if (!isActive && onSelectSong) onSelectSong(s.id)
-              }}
-              onDoubleClick={() => {
-                if (!onRenameSong) return
-                const next = window.prompt('Rename song', s.name)
-                if (next != null) onRenameSong(s.id, next)
-              }}
-              title={`${s.name}${isActive ? ' · double-click to rename' : ''}`}
-            >
-              <span className="song-tab-name">{s.name}</span>
-              {songs.length > 1 && onRemoveSong && (
-                <button
-                  type="button"
-                  className="song-tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onRemoveSong(s.id)
-                  }}
-                  aria-label={`Close ${s.name}`}
-                  title="Close song"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {/* The baseline lives on .song-tabs-list so it only spans the
+            actual tabs, not the trailing + button or padding. */}
+        <div className="song-tabs-list">
+          {songs.map((s) => {
+            const isActive = s.id === activeSongId
+            return (
+              <div
+                key={s.id}
+                role="tab"
+                aria-selected={isActive}
+                className={`song-tab ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  if (!isActive && onSelectSong) onSelectSong(s.id)
+                }}
+                onDoubleClick={() => {
+                  if (!onRenameSong) return
+                  const next = window.prompt('Rename song', s.name)
+                  if (next != null) onRenameSong(s.id, next)
+                }}
+                title={`${s.name}${isActive ? ' · double-click to rename' : ''}`}
+              >
+                <span className="song-tab-name">{s.name}</span>
+                {songs.length > 1 && onRemoveSong && (
+                  <button
+                    type="button"
+                    className="song-tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onRemoveSong(s.id)
+                    }}
+                    aria-label={`Close ${s.name}`}
+                    title="Close song"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
         {onAddSong && (
           <button
             type="button"

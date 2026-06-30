@@ -1370,61 +1370,106 @@
 /* ---------- Song tabs (Chrome-style top bar) ---------- */
 
 .song-tabs {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  padding: 6px 0 0 0;
-  border-bottom: 1px solid var(--hairline);
+  gap: 0;
+  padding: 10px 12px 0 12px;
   flex-shrink: 0;
   overflow-x: auto;
-  /* Hide the scrollbar — wheel / trackpad / touch still scrolls the
-     overflow if a user has many songs. */
+  /* Hide the scrollbar — wheel / trackpad / touch still scrolls. */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .song-tabs::-webkit-scrollbar {
   display: none;
 }
+/* Baseline beneath the strip — every inactive tab sits ON it; the active
+   tab "pops" above and breaks through, with curved outies linking back. */
+.song-tabs-list {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+.song-tabs-list::after {
+  /* Baseline that runs only beneath the actual tabs — stops at the last
+     tab's right edge, no longer extends past the + button or trailing
+     padding. z-index 2 sits ABOVE inactive tabs (z-index 1) so the line
+     is visible along their bottom, but BELOW the active tab (z-index 3)
+     and its outies so the active tab visually breaks through it. */
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--fg);
+  z-index: 2;
+  pointer-events: none;
+}
 .song-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px 8px 14px;
-  background: color-mix(in srgb, var(--off) 70%, transparent);
-  border: 1px solid var(--hairline);
+  padding: 7px 16px 7px 16px;
+  background: color-mix(in srgb, var(--off) 65%, transparent);
+  /* Inactive tabs have no visible border — only the active one shows
+     its outline. 1 px transparent border keeps the box dimensions
+     stable so the active state doesn't shift adjacent tabs. */
+  border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 10px 10px 0 0;
+  margin-right: -1px;
   cursor: pointer;
   font-family: var(--sans);
   font-size: 12px;
   color: var(--mute);
   flex-shrink: 0;
   max-width: 220px;
+  z-index: 1;
   transition: color 0.12s var(--ease), background 0.12s var(--ease),
-    border-color 0.12s var(--ease);
-  margin-bottom: -1px;
+    border-color 0.12s var(--ease), padding 0.12s var(--ease);
 }
 .song-tab:hover {
   color: var(--fg);
-  background: color-mix(in srgb, var(--off) 90%, transparent);
-}
-.song-tab.active {
-  color: var(--fg);
-  background: var(--frame);
-  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--off) 85%, transparent);
   z-index: 2;
 }
+.song-tab.active {
+  /* White background + dark text — pops cleanly against dimmer neighbors. */
+  color: var(--ink);
+  background: var(--fg);
+  border-color: var(--fg);
+  /* Scoop upward: taller top padding so the active tab lifts above the
+     inactive ones, and it visually connects through the baseline. */
+  padding-top: 10px;
+  padding-bottom: 8px;
+  margin-bottom: -1px;
+  z-index: 3;
+}
+/* Curved outies — the active tab's bottom corners flare out into the
+   baseline. Achieved with a transparent square whose inverse-rounded
+   corner is filled by a thick box-shadow in the tab's own background
+   color, so the baseline appears to scoop up into the tab. */
+.song-tab.active::before,
 .song-tab.active::after {
-  /* Hairline lift — Chrome-style flat-tab where the active tab visually
-     connects to the content area below by clearing the underline. */
   content: '';
   position: absolute;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  height: 1px;
-  background: var(--frame);
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+}
+.song-tab.active::before {
+  left: -9px;
+  border-bottom-right-radius: 9px;
+  box-shadow: 4px 4px 0 4px var(--fg);
+}
+.song-tab.active::after {
+  right: -9px;
+  border-bottom-left-radius: 9px;
+  box-shadow: -4px 4px 0 4px var(--fg);
 }
 .song-tab-name {
   overflow: hidden;
@@ -1491,7 +1536,7 @@
 .track-rail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   padding-top: 12px;
   align-items: stretch;
   z-index: 1;
@@ -1516,27 +1561,52 @@
   justify-content: center;
   padding: 0;
   background: color-mix(in srgb, var(--off) 60%, var(--ink) 40%);
-  border: 1px solid var(--hairline);
+  /* Inactive tabs are border-less; only the active rail tab shows
+     its outline. -1 px bottom margin keeps tabs touching seamlessly. */
+  border: 1px solid transparent;
   border-right: none;
-  border-radius: 8px 0 0 8px;
+  border-radius: 14px 0 0 14px;
+  margin-bottom: -1px;
   color: var(--mute);
   cursor: pointer;
+  z-index: 1;
   transition: color 0.12s var(--ease), background 0.12s var(--ease),
-    border-color 0.12s var(--ease);
-  overflow: hidden;
+    border-color 0.12s var(--ease), width 0.12s var(--ease);
 }
 .track-rail-tab:hover {
   color: var(--fg);
   background: color-mix(in srgb, var(--off) 80%, var(--ink) 20%);
+  z-index: 2;
 }
 .track-rail-tab.active {
-  /* Visually merge with the panel — same background, no right border,
-     and a tiny right-overlap so the panel's left border is masked. */
-  background: var(--frame);
-  border-color: var(--accent);
-  color: var(--fg);
+  /* Scoop outward — slightly wider plus bright white background with
+     dark text so it pops against dimmer neighbours. */
+  width: 30px;
+  margin-left: -4px;
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--ink);
   margin-right: -1px;
   z-index: 3;
+}
+.track-rail-tab.active::before,
+.track-rail-tab.active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+}
+.track-rail-tab.active::before {
+  top: -9px;
+  border-bottom-right-radius: 9px;
+  box-shadow: 4px 4px 0 4px var(--fg);
+}
+.track-rail-tab.active::after {
+  bottom: -9px;
+  border-top-right-radius: 9px;
+  box-shadow: 4px -4px 0 4px var(--fg);
 }
 .track-rail-tab.is-muted {
   border-left: 3px solid #ffb86b;
@@ -1551,7 +1621,7 @@
   writing-mode: vertical-rl;
   text-orientation: upright;
   font-family: var(--sans);
-  font-size: 8.5px;
+  font-size: 7.5px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -1584,7 +1654,7 @@
   gap: 10px;
   padding: 14px;
   background: var(--frame);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--fg);
   border-radius: 6px;
 }
 .track-controls-name {
