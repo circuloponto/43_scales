@@ -290,9 +290,26 @@ function App() {
     setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)))
   }
   const [templates, setTemplates] = useState(defaultTemplates)
+  // scaleNames stores per-scale naming metadata. Each scale can carry multiple
+  // aliases, one per "viewpoint" (which scale degree acts as root). We migrate
+  // the older `{ [id]: "Name" }` string format into the richer shape on load.
   const [scaleNames, setScaleNames] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('eightFold.scaleNames') || '{}')
+      const raw = JSON.parse(localStorage.getItem('eightFold.scaleNames') || '{}')
+      const out = {}
+      for (const [id, val] of Object.entries(raw)) {
+        if (typeof val === 'string') {
+          const eid = `e-${id}-default`
+          out[id] = {
+            entries: [{ id: eid, name: val, modeStep: null }],
+            selectedId: eid,
+            defaultId: eid,
+          }
+        } else if (val && Array.isArray(val.entries) && val.entries.length > 0) {
+          out[id] = val
+        }
+      }
+      return out
     } catch {
       return {}
     }
@@ -370,16 +387,132 @@ function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [view, selectedId])
 
-  const scaleNameOf = (id) => scaleNames[id] ?? `Scale ${id}`
+  const scaleNameEntryOf = (id) => {
+    const data = scaleNames[id]
+    if (!data) return null
+    return data.entries.find((e) => e.id === data.selectedId) ?? data.entries[0] ?? null
+  }
+  const scaleNameOf = (id) => scaleNameEntryOf(id)?.name ?? `Scale ${id}`
+  // Rename the DEFAULT entry — this is what the hero input edits so the
+  // pre-existing single-name UX keeps working. Alternative aliases are added
+  // through the scale-settings modal.
   const renameScale = (id, name) => {
     setScaleNames((prev) => {
       const trimmed = (name || '').trim()
-      const next = { ...prev }
-      if (!trimmed || trimmed === `Scale ${id}`) delete next[id]
-      else next[id] = trimmed
-      return next
+      const data = prev[id]
+      if (data) {
+        const targetId = data.defaultId ?? data.entries[0]?.id
+        if (!targetId) return prev
+        // Erase the whole record if the user emptied it and it was never
+        // customised beyond the default entry.
+        if (!trimmed && data.entries.length === 1) {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        }
+        if (!trimmed) return prev
+        return {
+          ...prev,
+          [id]: {
+            ...data,
+            entries: data.entries.map((e) =>
+              e.id === targetId ? { ...e, name: trimmed } : e
+            ),
+          },
+        }
+      }
+      if (!trimmed || trimmed === `Scale ${id}`) return prev
+      const eid = `e-${id}-default`
+      return {
+        ...prev,
+        [id]: {
+          entries: [{ id: eid, name: trimmed, modeStep: null }],
+          selectedId: eid,
+          defaultId: eid,
+        },
+      }
     })
   }
+  const selectScaleName = (scaleId, entryId) => {
+    setScaleNames((prev) => {
+      const data = prev[scaleId]
+      if (!data) return prev
+      return { ...prev, [scaleId]: { ...data, selectedId: entryId } }
+    })
+    const entry = scaleNames[scaleId]?.entries.find((e) => e.id === entryId)
+    setModeStep(entry?.modeStep ?? null)
+  }
+  const addScaleName = (scaleId, name, modeStep) => {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+    const eid = `e-${scaleId}-${Math.floor(Math.random() * 1e9).toString(36)}`
+    setScaleNames((prev) => {
+      const existing = prev[scaleId]
+      if (existing) {
+        return {
+          ...prev,
+          [scaleId]: {
+            ...existing,
+            entries: [
+              ...existing.entries,
+              { id: eid, name: trimmed, modeStep: modeStep ?? null },
+            ],
+            selectedId: eid,
+          },
+        }
+      }
+      const defId = `e-${scaleId}-default`
+      return {
+        ...prev,
+        [scaleId]: {
+          entries: [
+            { id: defId, name: `Scale ${scaleId}`, modeStep: null },
+            { id: eid, name: trimmed, modeStep: modeStep ?? null },
+          ],
+          selectedId: eid,
+          defaultId: defId,
+        },
+      }
+    })
+    setModeStep(modeStep ?? null)
+  }
+  const removeScaleName = (scaleId, entryId) => {
+    setScaleNames((prev) => {
+      const data = prev[scaleId]
+      if (!data) return prev
+      if (entryId === data.defaultId) return prev
+      const newEntries = data.entries.filter((e) => e.id !== entryId)
+      if (newEntries.length === 0) {
+        const next = { ...prev }
+        delete next[scaleId]
+        return next
+      }
+      let selectedId = data.selectedId
+      if (selectedId === entryId) selectedId = data.defaultId ?? newEntries[0].id
+      return { ...prev, [scaleId]: { ...data, entries: newEntries, selectedId } }
+    })
+  }
+
+  // Scale-settings modal (per-scale name aliases + which alias is displayed).
+  const [scaleSettingsOpen, setScaleSettingsOpen] = useState(false)
+  const [newAliasText, setNewAliasText] = useState('')
+  const [newAliasStep, setNewAliasStep] = useState(null)
+  const [addingAlias, setAddingAlias] = useState(false)
+  useEffect(() => {
+    if (!scaleSettingsOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setScaleSettingsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [scaleSettingsOpen])
+  useEffect(() => {
+    // Reset the inline "add" form whenever the modal closes or the scale
+    // changes underneath it, so a stale name doesn't reappear next open.
+    setAddingAlias(false)
+    setNewAliasText('')
+    setNewAliasStep(null)
+  }, [scaleSettingsOpen, selectedId])
 
   // Scale finder: the user toggles pitch classes in `finderPcs`; we list
   // every (scaleId, root) pair where those pcs are a subset of the scale.
@@ -399,7 +532,15 @@ function App() {
   // intrinsic root from rootSteps. Resets when the user picks a new scale.
   const [modeStep, setModeStep] = useState(null)
   useEffect(() => {
-    setModeStep(null)
+    if (selectedId == null) {
+      setModeStep(null)
+      return
+    }
+    const entry = scaleNameEntryOf(selectedId)
+    setModeStep(entry?.modeStep ?? null)
+    // Intentionally not depending on scaleNames — we only want the mode reset
+    // when the user selects a new scale, not each time an alias is renamed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
   // Chord-shapes section: false → show the original 4 filled positions of
   // each pattern; true → show the inverse (the 4 unfilled positions).
@@ -919,24 +1060,53 @@ function App() {
             <>
               <div className="section">
                 <div className="hero">
-                  <input
-                    type="text"
-                    className="hero-number hero-name-input"
-                    value={scaleNameOf(scale.id)}
-                    onChange={(e) => renameScale(scale.id, e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    aria-label={`Name for scale ${scale.id}`}
-                  />
-                  <button
-                    type="button"
-                    className="hero-clear"
-                    onClick={() => setSelectedId(null)}
-                    aria-label="clear scale selection"
-                    title="Clear selection (Esc)"
-                  >
-                    ×
-                  </button>
-                  <div className="hero-caption">rooted in {NOTE_DISPLAY[root]}</div>
+                  <div className="hero-name-row">
+                    <input
+                      type="text"
+                      className="hero-number hero-name-input"
+                      value={scaleNameOf(scale.id)}
+                      onChange={(e) => renameScale(scale.id, e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      aria-label={`Name for scale ${scale.id}`}
+                    />
+                    <span className="hero-caption">
+                      rooted in {NOTE_DISPLAY[root]}
+                    </span>
+                  </div>
+                  <div className="hero-controls">
+                    <button
+                      type="button"
+                      className="hero-settings"
+                      onClick={() => setScaleSettingsOpen(true)}
+                      aria-label="scale settings"
+                      title="Scale settings — manage alternative names"
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                      <span className="hero-settings-label">scale settings</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="hero-clear"
+                      onClick={() => setSelectedId(null)}
+                      aria-label="clear scale selection"
+                      title="Clear selection (Esc)"
+                    >
+                      ×
+                    </button>
+                  </div>
                   <div className="hero-actions">
                     <button
                       className="open-roll"
@@ -1345,6 +1515,164 @@ function App() {
           </div>
         </div>
       )}
+
+      {scaleSettingsOpen && scale && (() => {
+        const data = scaleNames[scale.id]
+        const entries = data?.entries ?? []
+        const selectedEntryId = data?.selectedId
+        const defaultEntryId = data?.defaultId
+        const sortedNotes = [...scale.notes].sort((a, b) => a - b)
+        return (
+          <div
+            className="modal-backdrop"
+            onClick={() => setScaleSettingsOpen(false)}
+          >
+            <div
+              className="modal scale-settings-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="settings-modal-header">
+                <h3>Scale settings</h3>
+                <button
+                  type="button"
+                  className="finder-modal-close"
+                  onClick={() => setScaleSettingsOpen(false)}
+                  aria-label="close scale settings"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="scale-settings-field">
+                <div className="scale-settings-field-label">Selected name:</div>
+                <select
+                  className="scale-settings-select"
+                  value={selectedEntryId ?? ''}
+                  onChange={(e) => selectScaleName(scale.id, e.target.value)}
+                  disabled={entries.length === 0}
+                >
+                  {entries.length === 0 && (
+                    <option value="">{`Scale ${scale.id}`}</option>
+                  )}
+                  {entries.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="scale-settings-field-label">All Names:</div>
+              {entries.length === 0 ? (
+                <div className="hint">{`Scale ${scale.id} (Default, selected)`}</div>
+              ) : (
+                <ul className="scale-settings-list">
+                  {entries.map((e) => {
+                    const isDefault = e.id === defaultEntryId
+                    const isSelected = e.id === selectedEntryId
+                    const tags = []
+                    if (isDefault) tags.push('Default')
+                    if (isSelected) tags.push('selected')
+                    return (
+                      <li key={e.id} className="scale-settings-entry">
+                        <span className="scale-settings-entry-name">
+                          {e.name}
+                          {tags.length > 0 && ` (${tags.join(', ')})`}
+                        </span>
+                        {!isDefault && (
+                          <button
+                            type="button"
+                            className="scale-settings-remove"
+                            onClick={() => removeScaleName(scale.id, e.id)}
+                            aria-label={`remove ${e.name}`}
+                            title="Remove this alias"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+
+              {addingAlias ? (
+                <div className="scale-settings-form">
+                  <div className="scale-settings-form-label">
+                    Pick a root for this name:
+                  </div>
+                  <div className="scale-settings-pattern">
+                    {Array.from({ length: 12 }, (_, c) => {
+                      const inScale = scale.notes.includes(c)
+                      const degree = inScale ? sortedNotes.indexOf(c) + 1 : 0
+                      const isPicked = degree !== 0 && degree === newAliasStep
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`scale-settings-cell ${
+                            inScale ? 'on' : 'off'
+                          } ${isPicked ? 'picked' : ''}`}
+                          onClick={
+                            inScale ? () => setNewAliasStep(degree) : undefined
+                          }
+                          disabled={!inScale}
+                          aria-label={
+                            inScale ? `Root at degree ${degree}` : 'not in scale'
+                          }
+                        />
+                      )
+                    })}
+                  </div>
+                  <input
+                    type="text"
+                    className="scale-settings-input"
+                    value={newAliasText}
+                    onChange={(e) => setNewAliasText(e.target.value)}
+                    placeholder="Alternative name"
+                    autoFocus
+                  />
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingAlias(false)
+                        setNewAliasText('')
+                        setNewAliasStep(null)
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={!newAliasText.trim() || newAliasStep == null}
+                      onClick={() => {
+                        addScaleName(scale.id, newAliasText, newAliasStep)
+                        setAddingAlias(false)
+                        setNewAliasText('')
+                        setNewAliasStep(null)
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="scale-settings-add"
+                  onClick={() => setAddingAlias(true)}
+                  aria-label="Add another name"
+                  title="Add another name"
+                >
+                  +
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
