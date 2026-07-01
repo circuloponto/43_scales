@@ -556,14 +556,31 @@ function App() {
   // seamless because the cells repeat every 12 indices.
   const [slideOffset, setSlideOffset] = useState(0)
   const [slideSnapping, setSlideSnapping] = useState(false)
-  const prevRootRef = useRef(root)
+  // Which pitch class should sit at step 1 of the strip. Default: the user's
+  // root. When a mode is picked, the mode's chosen note takes step 1; the
+  // root travels off step 1 but its top-dot highlight follows it visually.
+  // Offsets go against the rooted scale (circle-degree pinned to root), not
+  // raw scale.notes.
+  const leadPc = (() => {
+    const s = selectedId !== null
+      ? scales.find((sc) => sc.id === selectedId)
+      : null
+    if (!s) return root
+    const rsDef = rootSteps[s.id - 1]
+    const cOff = rsDef && s.notes[rsDef - 1] != null ? s.notes[rsDef - 1] : 0
+    const rsEff = modeStep ?? rsDef
+    if (!rsEff || s.notes[rsEff - 1] == null) return root
+    const rootedOffset = ((s.notes[rsEff - 1] - cOff) % 12 + 12) % 12
+    return (root + rootedOffset) % 12
+  })()
+  const prevLeadPcRef = useRef(leadPc)
   useEffect(() => {
-    const prev = prevRootRef.current
-    prevRootRef.current = root
-    const delta = ((root - prev) % 12 + 12) % 12
+    const prev = prevLeadPcRef.current
+    prevLeadPcRef.current = leadPc
+    const delta = ((leadPc - prev) % 12 + 12) % 12
     if (delta === 0) return
     setSlideOffset((o) => o + delta)
-  }, [root])
+  }, [leadPc])
   const handleSlideEnd = (e) => {
     if (e.propertyName !== 'transform') return
     if (slideOffset < 12) return
@@ -604,8 +621,15 @@ function App() {
     const out = []
     for (const s of scales) {
       if (!s.notes || s.notes.length === 0) continue
+      // Match against the rooted view: each root r means "circle-degree
+      // lands on pc r", so we subtract the scale's canonical circleOff
+      // before shifting by r — same rule the panel uses to build concrete.
+      const rsDef = rootSteps[s.id - 1]
+      const cOff = rsDef && s.notes[rsDef - 1] != null ? s.notes[rsDef - 1] : 0
       for (let r = 0; r < 12; r++) {
-        const set = new Set(s.notes.map((n) => (n + r) % 12))
+        const set = new Set(
+          s.notes.map((n) => ((n - cOff + r) % 12 + 12) % 12)
+        )
         if (arr.every((pc) => set.has(pc))) {
           out.push({ scaleId: s.id, root: r })
         }
@@ -615,7 +639,22 @@ function App() {
   })()
 
   const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
-  const concrete = scale ? scale.notes.map((n) => (n + root) % 12) : []
+  // Each scale has a canonical "circle-degree" (rootSteps[id-1]) — the degree
+  // of scale.notes that acts as the scale's intrinsic root. When the user
+  // picks a root, we want THAT degree to land on the chosen note, not the
+  // first entry of scale.notes. So we shift scale.notes by -circleOff first,
+  // making PC 0 = circle-degree; adding `root` then puts the circle on the
+  // user's root. Everywhere the app combines scale.notes with `root`, it
+  // should go through rootedNotes.
+  const scaleCircleOff = scale && rootSteps[scale.id - 1] != null
+    ? scale.notes[rootSteps[scale.id - 1] - 1] ?? 0
+    : 0
+  const rootedNotes = scale
+    ? scale.notes.map((n) => ((n - scaleCircleOff) % 12 + 12) % 12)
+    : []
+  const concrete = scale
+    ? rootedNotes.map((n) => (n + root) % 12)
+    : []
   const visibleScales = scales.filter((s) => s.notes.length > 0)
 
   const playbackRef = useRef(null)
@@ -665,7 +704,7 @@ function App() {
     const Ctx = window.AudioContext || window.webkitAudioContext
     const ctx = new Ctx()
     const dur = 0.28
-    const sorted = [...scale.notes].sort((a, b) => a - b)
+    const sorted = [...rootedNotes].sort((a, b) => a - b)
     const sequence = [...sorted, sorted[0] + 12]
     const voices = []
     sequence.forEach((n, i) => {
@@ -926,15 +965,14 @@ function App() {
           {(() => {
             const defaultRs = scale ? rootSteps[scale.id - 1] : null
             const rs = scale ? modeStep ?? defaultRs : null
-            const intrinsicPc = scale && rs ? scale.notes[rs - 1] : 0
-            const rotated = scale
-              ? scale.notes.map((n) => (n - intrinsicPc + 12) % 12)
-              : []
-            const inRotated = (c) => !scale || rotated.includes(c)
-            // For a chromatic offset c (0..11) relative to root, return its
-            // 1-indexed scale degree, or 0 if it's not in the rotated scale.
-            const degreeOf = (c) => {
-              const idx = rotated.indexOf(c)
+            // Picking a mode doesn't change the pitch set — it only slides
+            // the strip so the picked note lands at step 1. Membership +
+            // degree lookup go against rootedNotes, which already has the
+            // circle-degree pinned to PC 0 (i.e., the user's root).
+            const inScaleOffset = (c) => !scale || rootedNotes.includes(c)
+            const stepOf = (c) => {
+              if (!scale) return 0
+              const idx = rootedNotes.indexOf(c)
               return idx === -1 ? 0 : idx + 1
             }
             const pair = scale
@@ -970,9 +1008,9 @@ function App() {
                       const pc = idx % 12
                       const c = ((idx - root) % 12 + 12) % 12
                       const isRootActive = c === 0
-                      const inScale = inRotated(c)
-                      const degree = degreeOf(c)
-                      const isModeActive = degree !== 0 && degree === rs
+                      const inScale = inScaleOffset(c)
+                      const step = stepOf(c)
+                      const isModeActive = step !== 0 && step === rs
                       const dim = !isRootActive && !inScale
                       const isDuplicate = idx >= 12
                       return (
@@ -1002,10 +1040,10 @@ function App() {
                           <button
                             type="button"
                             className={`root-dot bottom ${isModeActive ? 'on' : ''}`}
-                            onClick={inScale ? () => setModeStep(degree) : undefined}
+                            onClick={inScale ? () => setModeStep(step) : undefined}
                             onMouseEnter={
                               inScale
-                                ? () => setHoveredModeStep(degree)
+                                ? () => setHoveredModeStep(step)
                                 : undefined
                             }
                             onMouseLeave={
@@ -1016,13 +1054,11 @@ function App() {
                             disabled={!inScale}
                             aria-label={
                               inScale
-                                ? `Start scale on degree ${degree} (${NOTE_DISPLAY[pc]})`
+                                ? `Start scale on ${NOTE_DISPLAY[pc]}`
                                 : ''
                             }
                             title={
-                              inScale
-                                ? `Start scale on degree ${degree}`
-                                : ''
+                              inScale ? `Start scale on ${NOTE_DISPLAY[pc]}` : ''
                             }
                             tabIndex={isDuplicate ? -1 : 0}
                           />
@@ -1034,20 +1070,23 @@ function App() {
                 <div className="roots-hint bottom">
                   pick mode
                   {scale && (() => {
-                    // Mirror the matrix tile-strip's highlighted-root cell.
-                    // Show the hovered mode's would-be root in dim accent, or
-                    // the active mode's current root in bright accent.
+                    // The bottom dot picks which note the scale sequence
+                    // *starts* on — the root itself (top dot / hero) stays
+                    // put. Caption shows the concrete pitch of that starting
+                    // note in the rooted scale (rootedNotes has PC 0 at the
+                    // circle-degree, i.e., the user's root).
                     const previewStep = hoveredModeStep ?? rs
                     if (!previewStep) return null
-                    const pcAtStep = scale.notes[previewStep - 1]
-                    if (pcAtStep == null) return null
+                    const offset = rootedNotes[previewStep - 1]
+                    if (offset == null) return null
+                    const startPc = (offset + root) % 12
                     return (
                       <span
                         className={`roots-hint-root ${
                           hoveredModeStep != null ? 'preview' : ''
                         }`}
                       >
-                        {' '}· root {noteName(pcAtStep)}
+                        {' '}· starts on {noteName(startPc)}
                       </span>
                     )
                   })()}
@@ -1178,7 +1217,7 @@ function App() {
                 <div className="label">Electrons</div>
                 <div className="electrons">
                   {Array.from({ length: 12 }, (_, c) => {
-                    if (scale.notes.includes(c)) return null
+                    if (rootedNotes.includes(c)) return null
                     const pc = (root + c) % 12
                     return (
                       <span key={c} className="electron-note">
@@ -1190,12 +1229,12 @@ function App() {
               </div>
 
               {(() => {
-                // Reorder (don't shift) the scale so degree 1 is the active
-                // intrinsic root. Keeps every PC inside the user's actual
-                // scale — chord cards never produce notes outside it.
+                // Reorder (don't shift) the rooted scale so degree 1 is the
+                // active intrinsic root. Keeps every PC inside the user's
+                // actual scale — chord cards never produce notes outside it.
                 const rsActive = modeStep ?? rootSteps[scale.id - 1]
-                const intrinsicPc = rsActive ? scale.notes[rsActive - 1] : 0
-                const sortedNotes = [...scale.notes].sort((a, b) => a - b)
+                const intrinsicPc = rsActive ? rootedNotes[rsActive - 1] : 0
+                const sortedNotes = [...rootedNotes].sort((a, b) => a - b)
                 const startIdx = Math.max(0, sortedNotes.indexOf(intrinsicPc))
                 const rotatedScale = [
                   ...sortedNotes.slice(startIdx),
