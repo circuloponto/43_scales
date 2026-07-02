@@ -557,10 +557,9 @@ function App() {
   const [slideOffset, setSlideOffset] = useState(0)
   const [slideSnapping, setSlideSnapping] = useState(false)
   // Which pitch class should sit at step 1 of the strip. Default: the user's
-  // root. When a mode is picked, the mode's chosen note takes step 1; the
-  // root travels off step 1 but its top-dot highlight follows it visually.
-  // Offsets go against the rooted scale (circle-degree pinned to root), not
-  // raw scale.notes.
+  // root (Mode #1). When a mode is picked, the mode's chosen note takes
+  // step 1; the root travels off step 1 but its top-dot highlight follows.
+  // modeStep is a 1-indexed position in the SORTED rooted scale.
   const leadPc = (() => {
     const s = selectedId !== null
       ? scales.find((sc) => sc.id === selectedId)
@@ -568,9 +567,10 @@ function App() {
     if (!s) return root
     const rsDef = rootSteps[s.id - 1]
     const cOff = rsDef && s.notes[rsDef - 1] != null ? s.notes[rsDef - 1] : 0
-    const rsEff = modeStep ?? rsDef
-    if (!rsEff || s.notes[rsEff - 1] == null) return root
-    const rootedOffset = ((s.notes[rsEff - 1] - cOff) % 12 + 12) % 12
+    const localRooted = s.notes.map((n) => ((n - cOff) % 12 + 12) % 12)
+    const localSorted = [...localRooted].sort((a, b) => a - b)
+    const rsEff = modeStep ?? 1
+    const rootedOffset = localSorted[rsEff - 1] ?? 0
     return (root + rootedOffset) % 12
   })()
   const prevLeadPcRef = useRef(leadPc)
@@ -651,6 +651,12 @@ function App() {
     : 0
   const rootedNotes = scale
     ? scale.notes.map((n) => ((n - scaleCircleOff) % 12 + 12) % 12)
+    : []
+  // Ascending-sorted rooted scale. Its position IS the mode number: index 0
+  // (= root, offset 0) is Mode #1, ascending up through Mode #8. Every place
+  // that maps between a modeStep and a pitch offset goes through this array.
+  const sortedRooted = scale
+    ? [...rootedNotes].sort((a, b) => a - b)
     : []
   const concrete = scale
     ? rootedNotes.map((n) => (n + root) % 12)
@@ -851,11 +857,10 @@ function App() {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
             const rsDefault = rootSteps[s.id - 1]
-            // For the SELECTED row only, the user's modeStep override moves
-            // the highlighted intrinsic root through the scale's pcs — this
-            // is what makes the "shift" visible as a slide of the root
-            // indicator. Non-selected rows always show their default root.
-            const rs = isSel ? modeStep ?? rsDefault : rsDefault
+            // Matrix stays canonical — the circle always sits on the scale's
+            // intrinsic root regardless of the user's mode pick. Mode picking
+            // is a panel-side view thing; the matrix is a reference chart.
+            const rs = rsDefault
             const intrinsicPc = rs ? s.notes[rs - 1] : null
             // For the selected row, compute the chord-pair pcs in this row's
             // unrotated scale-pc space so we can tint each cell by which
@@ -963,23 +968,23 @@ function App() {
           </div>
 
           {(() => {
-            const defaultRs = scale ? rootSteps[scale.id - 1] : null
-            const rs = scale ? modeStep ?? defaultRs : null
-            // Picking a mode doesn't change the pitch set — it only slides
-            // the strip so the picked note lands at step 1. Membership +
-            // degree lookup go against rootedNotes, which already has the
-            // circle-degree pinned to PC 0 (i.e., the user's root).
-            const inScaleOffset = (c) => !scale || rootedNotes.includes(c)
+            // Mode is a 1-indexed position in the sorted rooted scale, with
+            // Mode #1 = the user's root and Mode #N ascending by pitch. When
+            // no mode is picked, we default to Mode #1 (canonical root view).
+            const rs = scale ? modeStep ?? 1 : null
+            const inScaleOffset = (c) => !scale || sortedRooted.includes(c)
             const stepOf = (c) => {
               if (!scale) return 0
-              const idx = rootedNotes.indexOf(c)
+              const idx = sortedRooted.indexOf(c)
               return idx === -1 ? 0 : idx + 1
             }
             const pair = scale
               ? chordPairs.find((p) => p.scaleId === scale.id)
               : null
+            // `rs` is a sorted-rooted position now, so pass sortedRooted so
+            // resolveChordPair's rootStep lookup lands on the right pitch.
             const resolved = pair
-              ? resolveChordPair(pair, scale.notes, root, rs)
+              ? resolveChordPair(pair, sortedRooted, root, rs)
               : null
             const leftSet = new Set(resolved ? resolved.leftNotes : [])
             const rightSet = new Set(resolved ? resolved.rightNotes : [])
@@ -1052,14 +1057,8 @@ function App() {
                                 : undefined
                             }
                             disabled={!inScale}
-                            aria-label={
-                              inScale
-                                ? `Start scale on ${NOTE_DISPLAY[pc]}`
-                                : ''
-                            }
-                            title={
-                              inScale ? `Start scale on ${NOTE_DISPLAY[pc]}` : ''
-                            }
+                            aria-label={inScale ? `Mode #${step}` : ''}
+                            title={inScale ? `Mode #${step}` : ''}
                             tabIndex={isDuplicate ? -1 : 0}
                           />
                         </div>
@@ -1077,7 +1076,7 @@ function App() {
                     // circle-degree, i.e., the user's root).
                     const previewStep = hoveredModeStep ?? rs
                     if (!previewStep) return null
-                    const offset = rootedNotes[previewStep - 1]
+                    const offset = sortedRooted[previewStep - 1]
                     if (offset == null) return null
                     const startPc = (offset + root) % 12
                     return (
@@ -1230,11 +1229,11 @@ function App() {
 
               {(() => {
                 // Reorder (don't shift) the rooted scale so degree 1 is the
-                // active intrinsic root. Keeps every PC inside the user's
-                // actual scale — chord cards never produce notes outside it.
-                const rsActive = modeStep ?? rootSteps[scale.id - 1]
-                const intrinsicPc = rsActive ? rootedNotes[rsActive - 1] : 0
-                const sortedNotes = [...rootedNotes].sort((a, b) => a - b)
+                // active mode's tonic. Mode #1 = root (default) puts PC 0
+                // first; other modes rotate around their pitch offset.
+                const rsActive = modeStep ?? 1
+                const intrinsicPc = sortedRooted[rsActive - 1] ?? 0
+                const sortedNotes = sortedRooted
                 const startIdx = Math.max(0, sortedNotes.indexOf(intrinsicPc))
                 const rotatedScale = [
                   ...sortedNotes.slice(startIdx),

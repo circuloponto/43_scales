@@ -4,6 +4,13 @@ import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 
+// Module-scope clipboard so copy/paste survives PianoRoll remounts (which
+// happen every time the user switches songs via key={activeSongId}). Every
+// mounted PianoRoll — matrix roll, chord palette drag, or a re-entered song
+// tab — reads and writes the same slot, so notes can be copied from one song
+// or track and pasted into another.
+let sharedClipboard = null
+
 const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
@@ -418,7 +425,10 @@ export default function PianoRoll({
   const marqueeRef = useRef(null)
   const historyRef = useRef([])
   const futureRef = useRef([])
-  const clipboardRef = useRef(null)
+  // Copy/paste clipboard lives at module scope (see sharedClipboard below) so
+  // it survives PianoRoll remounts triggered by switching songs. Undo/redo
+  // history is per-song and stays per-instance.
+  const clipboardRef = { get current() { return sharedClipboard }, set current(v) { sharedClipboard = v } }
   const notesRef = useRef(notes)
   notesRef.current = notes
   // All tracks (with their notes + volume/mute/solo) — the loop scheduler
@@ -1269,16 +1279,15 @@ export default function PianoRoll({
   const pasteNotes = () => {
     const clip = clipboardRef.current
     if (!clip || !clip.items || clip.items.length === 0) return
-    // Paste at the playhead if it's set AND different from the source's
-    // start; otherwise drop the paste right after the source so a plain
-    // Ctrl+C → Ctrl+V duplicates the selection to the immediate right
-    // instead of stacking it on top of the original.
-    let target
-    if (playheadBeat != null && playheadBeat !== clip.sourceMinBeat) {
-      target = playheadBeat
-    } else {
-      target = clip.sourceMinBeat + clip.sourceWidth
-    }
+    // Paste at the playhead if it's set — that's the primary "drop here"
+    // signal. Falls back to "immediately after the source" only when there's
+    // no playhead, so a plain Ctrl+C → Ctrl+V still duplicates in place.
+    // Cross-song / cross-track pastes always take the playhead path unless
+    // the user has never clicked into the timeline of the target song.
+    const target =
+      playheadBeat != null
+        ? playheadBeat
+        : clip.sourceMinBeat + clip.sourceWidth
     pushHistory()
     const newSelection = new Set()
     setNotes((prev) => {
