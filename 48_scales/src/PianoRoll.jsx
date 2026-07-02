@@ -477,14 +477,9 @@ export default function PianoRoll({
         notes: t.notes instanceof Map ? t.notes : new Map(t.notes ?? []),
       }))
     }
-    // Fresh song → one generically-named track seeded with the initial
-    // pattern. The user names it themselves via the sidebar.
-    return [
-      buildDefaultTrack({
-        name: 'Track 1',
-        notes: buildInitialPattern(scale, root),
-      }),
-    ]
+    // Fresh song → one empty, generically-named track. The user fills it in
+    // themselves; no auto-generated pattern is placed on the grid.
+    return [buildDefaultTrack({ name: 'Track 1' })]
   })
   const [activeTrackId, setActiveTrackId] = useState(
     () => initialActiveTrackId ?? null
