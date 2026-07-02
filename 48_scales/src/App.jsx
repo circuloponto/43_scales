@@ -253,10 +253,16 @@ function App() {
   ])
   const [activeSongId, setActiveSongId] = useState(() => songs[0].id)
   const activeSong = songs.find((s) => s.id === activeSongId) ?? songs[0]
+  // Ref-tracked activeSongId so `updateActiveSong` always writes to the
+  // currently-active song even if the closure was captured on a previous
+  // render (e.g. inside a PianoRoll useEffect that runs later).
+  const activeSongIdRef = useRef(activeSongId)
+  activeSongIdRef.current = activeSongId
   const updateActiveSong = (patch) => {
+    const targetId = activeSongIdRef.current
     setSongs((prev) =>
       prev.map((s) =>
-        s.id === activeSong.id
+        s.id === targetId
           ? { ...s, ...(typeof patch === 'function' ? patch(s) : patch) }
           : s
       )
@@ -304,7 +310,23 @@ function App() {
     pushSongHistory()
     const id = makeSongId()
     const name = `Song ${songs.length + 1}`
-    setSongs((prev) => [...prev, { id, name, tracks: null, activeTrackId: null }])
+    // Inherit playback settings (tempo, swing, loop region, beat count) from
+    // whatever tab is currently active — a new song should pick up where you
+    // left off rather than resetting to the module defaults.
+    const src = songs.find((s) => s.id === activeSongIdRef.current)
+    setSongs((prev) => [
+      ...prev,
+      {
+        id,
+        name,
+        tracks: null,
+        activeTrackId: null,
+        bpm: src?.bpm,
+        swing: src?.swing,
+        loop: src?.loop,
+        totalBeats: src?.totalBeats,
+      },
+    ])
     setActiveSongId(id)
   }
   const removeSong = (id) => {
@@ -1084,6 +1106,11 @@ function App() {
             onPersistTracks={(tracks, activeTrackId) =>
               updateActiveSong({ tracks, activeTrackId })
             }
+            initialBpm={activeSong?.bpm}
+            initialSwing={activeSong?.swing}
+            initialLoop={activeSong?.loop}
+            initialTotalBeats={activeSong?.totalBeats}
+            onPersistPlayback={(patch) => updateActiveSong(patch)}
           />
         ) : (
         <>

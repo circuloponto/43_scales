@@ -409,6 +409,11 @@ export default function PianoRoll({
   initialTracks = null,
   initialActiveTrackId = null,
   onPersistTracks,
+  initialBpm = null,
+  initialSwing = null,
+  initialLoop = null,
+  initialTotalBeats = null,
+  onPersistPlayback,
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
   const useFlats = !!settings.useFlats
@@ -503,9 +508,11 @@ export default function PianoRoll({
       })
     )
   }
-  const [totalBeats, setTotalBeats] = useState(DEFAULT_BEATS)
-  const [bpm, setBpm] = useState(DEFAULT_BPM)
-  const [swingPct, setSwingPct] = useState(DEFAULT_SWING)
+  const [totalBeats, setTotalBeats] = useState(
+    initialTotalBeats ?? DEFAULT_BEATS
+  )
+  const [bpm, setBpm] = useState(initialBpm ?? DEFAULT_BPM)
+  const [swingPct, setSwingPct] = useState(initialSwing ?? DEFAULT_SWING)
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
   const [metronome, setMetronome] = useState(false)
@@ -515,7 +522,7 @@ export default function PianoRoll({
   // beat + scale-step shift from the click position.
   const [pendingTemplate, setPendingTemplate] = useState(null)
   const [marquee, setMarquee] = useState(null)
-  const [loop, setLoop] = useState(null)
+  const [loop, setLoop] = useState(initialLoop ?? null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [captureName, setCaptureName] = useState('')
   const [exportFeedback, setExportFeedback] = useState('')
@@ -668,6 +675,28 @@ export default function PianoRoll({
     }))
     onPersistTracks(serialized, activeTrackId)
   }, [tracks, activeTrackId])
+
+  // Persist playback settings (tempo, swing, loop region, beat count) so
+  // switching tabs restores each song's own numbers instead of resetting
+  // to the module defaults. The loop is stored as { start, end } | null.
+  // - The onPersistPlayback prop is kept in a ref so the effect always calls
+  //   the FRESHEST version — otherwise a stale closure would occasionally
+  //   write into whichever song was active when the effect first captured.
+  // - We skip the mount-time write. State was just seeded from the song's
+  //   persisted values (or defaults for a brand-new song); persisting the
+  //   defaults right back would either be a no-op or, worse, clobber the
+  //   song's real numbers if activeSong resolved to a stale reference at the
+  //   moment the effect fired. Persistence only runs on actual user changes.
+  const persistPlaybackRef = useRef(onPersistPlayback)
+  persistPlaybackRef.current = onPersistPlayback
+  const playbackHydratedRef = useRef(false)
+  useEffect(() => {
+    if (!playbackHydratedRef.current) {
+      playbackHydratedRef.current = true
+      return
+    }
+    persistPlaybackRef.current?.({ bpm, swing: swingPct, loop, totalBeats })
+  }, [bpm, swingPct, loop, totalBeats])
 
   useEffect(() => {
     return () => {
