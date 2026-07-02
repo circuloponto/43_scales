@@ -530,6 +530,93 @@ function App() {
       localStorage.setItem('eightFold.templates', JSON.stringify(templates))
     } catch {}
   }, [templates])
+
+  // Session export / import. Everything the app tracks about a user's
+  // project — songs (with tracks + notes), song groups, templates, scale
+  // aliases, colour theme, current view, selected scale + root + mode —
+  // rolls into one JSON blob. Import replaces the current session after a
+  // confirm. A `version` field lets us evolve the schema later without
+  // breaking older exports (we only accept v1 for now).
+  const SESSION_VERSION = 1
+  const exportSession = () => {
+    const session = {
+      version: SESSION_VERSION,
+      songs,
+      songGroups,
+      activeSongId,
+      templates,
+      scaleNames,
+      settings,
+      accent,
+      chord1Color,
+      chord2Color,
+      electronColor,
+      selectedId,
+      root,
+      modeStep,
+      view,
+    }
+    try {
+      const json = JSON.stringify(session, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const stamp = new Date().toISOString().slice(0, 10)
+      a.download = `8fold-session-${stamp}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert('Could not export session: ' + err.message)
+    }
+  }
+  const importSession = (file) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      let data
+      try {
+        data = JSON.parse(e.target.result)
+      } catch {
+        window.alert('That file is not a valid session (JSON parse failed).')
+        return
+      }
+      if (!data || typeof data !== 'object') {
+        window.alert('That file is not a valid session.')
+        return
+      }
+      if (data.version && data.version !== SESSION_VERSION) {
+        const proceed = window.confirm(
+          `Session was exported from a different version (${data.version} vs ${SESSION_VERSION}). Import anyway?`
+        )
+        if (!proceed) return
+      }
+      const proceed = window.confirm(
+        'Importing will replace your current session. Continue?'
+      )
+      if (!proceed) return
+      if (Array.isArray(data.songs) && data.songs.length > 0) setSongs(data.songs)
+      if (Array.isArray(data.songGroups)) setSongGroups(data.songGroups)
+      if (data.activeSongId) setActiveSongId(data.activeSongId)
+      if (Array.isArray(data.templates)) setTemplates(data.templates)
+      if (data.scaleNames && typeof data.scaleNames === 'object') setScaleNames(data.scaleNames)
+      if (data.settings && typeof data.settings === 'object') setSettings(data.settings)
+      if (typeof data.accent === 'string') setAccent(data.accent)
+      if (typeof data.chord1Color === 'string') setChord1Color(data.chord1Color)
+      if (typeof data.chord2Color === 'string') setChord2Color(data.chord2Color)
+      if (typeof data.electronColor === 'string') setElectronColor(data.electronColor)
+      if (typeof data.selectedId === 'number' || data.selectedId === null)
+        setSelectedId(data.selectedId)
+      if (typeof data.root === 'number') setRoot(data.root)
+      if (data.modeStep == null || typeof data.modeStep === 'number')
+        setModeStep(data.modeStep ?? null)
+      if (data.view === 'matrix' || data.view === 'roll') setView(data.view)
+      setSettingsOpen(false)
+    }
+    reader.onerror = () => window.alert('Could not read the file.')
+    reader.readAsText(file)
+  }
   // scaleNames stores per-scale naming metadata. Each scale can carry multiple
   // aliases, one per "viewpoint" (which scale degree acts as root). We migrate
   // the older `{ [id]: "Name" }` string format into the richer shape on load.
@@ -1830,6 +1917,41 @@ function App() {
               >
                 <span className="settings-switch-knob" />
               </button>
+            </div>
+
+            <div className="settings-row settings-row-column">
+              <div className="settings-row-text">
+                <div className="settings-row-label">Project</div>
+                <div className="settings-row-sub">
+                  Download every song, track, group, template, and scale
+                  setting as a single .json file — or load a file someone
+                  else shared with you. Import replaces the current session.
+                </div>
+              </div>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="settings-action"
+                  onClick={exportSession}
+                >
+                  Export session
+                </button>
+                <label className="settings-action">
+                  Import session
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) importSession(file)
+                      // Reset so the same file can be picked again if the
+                      // import failed or the user re-shares it.
+                      e.target.value = ''
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </div>
