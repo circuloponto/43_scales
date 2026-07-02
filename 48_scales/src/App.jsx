@@ -510,7 +510,26 @@ function App() {
       return [...without.slice(0, insertIdx), updated, ...without.slice(insertIdx)]
     })
   }
-  const [templates, setTemplates] = useState(defaultTemplates)
+  // Templates are seeded from src/templates.js on first load (production
+  // still exports there via the export button), then any user-created or
+  // deleted templates persist to localStorage so they survive refreshes.
+  // Once the built-in library is stable we can drop the seed + export path
+  // entirely and read exclusively from storage.
+  const [templates, setTemplates] = useState(() => {
+    try {
+      const raw = localStorage.getItem('eightFold.templates')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed
+      }
+    } catch {}
+    return defaultTemplates
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('eightFold.templates', JSON.stringify(templates))
+    } catch {}
+  }, [templates])
   // scaleNames stores per-scale naming metadata. Each scale can carry multiple
   // aliases, one per "viewpoint" (which scale degree acts as root). We migrate
   // the older `{ [id]: "Name" }` string format into the richer shape on load.
