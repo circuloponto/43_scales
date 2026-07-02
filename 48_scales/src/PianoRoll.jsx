@@ -547,6 +547,13 @@ export default function PianoRoll({
   // time; the input starts prefilled with the current name and commits on
   // Enter / blur (Esc cancels without saving).
   const [renamingGroup, setRenamingGroup] = useState(null) // { id, draft } | null
+  // Cursor anchor while a template is queued for placement. Every grid row
+  // pushes { beat, midi } here on mousemove so we can render a ghost preview
+  // of what a click would drop onto the roll. Null → no preview.
+  const [templateHover, setTemplateHover] = useState(null) // { beat, midi } | null
+  useEffect(() => {
+    if (!pendingTemplate) setTemplateHover(null)
+  }, [pendingTemplate])
   useEffect(() => {
     if (!tabMenu && !groupMenu) return
     const close = () => {
@@ -1138,6 +1145,65 @@ export default function PianoRoll({
   const handleTemplateClick = (tpl) => {
     setPendingTemplate((cur) => (cur && cur.id === tpl.id ? null : tpl))
   }
+
+  // Given a template + anchor point, return the set of (beat, midi, length)
+  // triples the template would drop onto the grid — same math as
+  // commitTemplateAt but pure. Used to render the ghost preview while the
+  // user is hovering the grid with a pending template.
+  const computeTemplatePlacement = (tpl, anchorBeat, anchorMidi) => {
+    if (!scale || !tpl || tpl.notes.length === 0) return []
+    const baseRoot = 60 + root
+    let minBeat = Infinity
+    let firstItem = null
+    for (const item of tpl.notes) {
+      if (item.beat < minBeat) {
+        minBeat = item.beat
+        firstItem = item
+      }
+    }
+    if (!firstItem) return []
+    if (firstItem.degree < 0 || firstItem.degree >= scale.notes.length) return []
+    const firstMidi =
+      baseRoot + scale.notes[firstItem.degree] + firstItem.octave * 12
+    const firstStep = midiToScaleStep(firstMidi)
+    const snappedAnchor = nearestScaleMidi(anchorMidi)
+    const anchorStep = midiToScaleStep(snappedAnchor)
+    if (firstStep == null || anchorStep == null) return []
+    const stepShift = anchorStep - firstStep
+    const beatShift = anchorBeat - minBeat
+    const out = []
+    for (const item of tpl.notes) {
+      if (item.degree < 0 || item.degree >= scale.notes.length) continue
+      const origMidi =
+        baseRoot + scale.notes[item.degree] + item.octave * 12
+      const origStep = midiToScaleStep(origMidi)
+      if (origStep == null) continue
+      const newStep = origStep + stepShift
+      const newMidi = scaleStepToMidi(newStep)
+      const newBeat = item.beat + beatShift
+      if (newBeat < 0 || newBeat >= totalBeats) continue
+      if (newMidi < MIDI_LOW || newMidi > MIDI_HIGH) continue
+      out.push({ beat: newBeat, midi: newMidi, length: item.length ?? 1 })
+    }
+    return out
+  }
+  const templatePreview = useMemo(() => {
+    if (!pendingTemplate || !templateHover) return null
+    const placements = computeTemplatePlacement(
+      pendingTemplate,
+      templateHover.beat,
+      templateHover.midi
+    )
+    // Group by midi so each grid row can pull its own preview notes just
+    // like it does for real notes via notesByMidi.
+    const byMidi = new Map()
+    for (const p of placements) {
+      const arr = byMidi.get(p.midi) || []
+      arr.push(p)
+      byMidi.set(p.midi, arr)
+    }
+    return byMidi
+  }, [pendingTemplate, templateHover, scale, root, totalBeats])
 
   const deleteTemplate = (id) => {
     if (!setTemplates) return
@@ -3087,7 +3153,13 @@ export default function PianoRoll({
                   )
                 })}
               </div>
-              <div className="grid-area" ref={gridAreaRef}>
+              <div
+                className="grid-area"
+                ref={gridAreaRef}
+                onMouseLeave={
+                  pendingTemplate ? () => setTemplateHover(null) : undefined
+                }
+              >
                 {loop && (
                   <div
                     className="grid-loop"
@@ -3123,6 +3195,9 @@ export default function PianoRoll({
                   const isIn = inScale(pc)
                   const isRoot = pc === root
                   const rowNotes = notesByMidi.get(midi) ?? []
+                  const rowPreview = templatePreview
+                    ? templatePreview.get(midi) ?? []
+                    : []
                   return (
                     <div
                       key={midi}
@@ -3134,7 +3209,40 @@ export default function PianoRoll({
                         className={`beats-track ${freeMode ? 'free' : ''}`}
                         style={{ width: totalBeats * BEAT_WIDTH }}
                         onPointerDown={(e) => handleRowMouseDown(e, midi)}
+                        onMouseMove={
+                          pendingTemplate
+                            ? (e) => {
+                                // Cheap per-row anchor tracking: convert
+                                // pointer X to a beat and pass midi from the
+                                // closure. Only wired when a template is
+                                // queued to avoid firing this on every
+                                // mousemove in the roll.
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                let beat = (e.clientX - rect.left) / BEAT_WIDTH
+                                if (!freeMode) beat = Math.floor(beat)
+                                beat = Math.max(
+                                  0,
+                                  Math.min(totalBeats - 1, beat)
+                                )
+                                setTemplateHover((cur) =>
+                                  cur && cur.beat === beat && cur.midi === midi
+                                    ? cur
+                                    : { beat, midi }
+                                )
+                              }
+                            : undefined
+                        }
                       >
+                        {rowPreview.map((p, idx) => (
+                          <div
+                            key={`preview-${idx}`}
+                            className={`row-note preview ${chordClassFor(midi % 12)}`}
+                            style={{
+                              left: `${p.beat * BEAT_WIDTH}px`,
+                              width: `${p.length * BEAT_WIDTH}px`,
+                            }}
+                          />
+                        ))}
                         {rowNotes.map(({ key, beat, length }) => (
                           <div
                             key={key}

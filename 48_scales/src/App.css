@@ -2550,6 +2550,17 @@
   cursor: grabbing;
 }
 
+/* Ghost preview of what clicking would drop while a template is queued.
+   Transparent + non-interactive so real notes underneath stay grabbable. */
+.row-note.preview {
+  opacity: 0.35;
+  pointer-events: none;
+  outline: 1px dashed color-mix(in srgb, var(--fg) 70%, transparent);
+  outline-offset: -1px;
+  filter: none;
+  cursor: default;
+}
+
 .row-note.selected {
   outline: 1.5px solid var(--fg);
   outline-offset: 0;
