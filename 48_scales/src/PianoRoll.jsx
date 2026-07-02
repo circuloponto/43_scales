@@ -1457,14 +1457,13 @@ export default function PianoRoll({
     const clip = clipboardRef.current
     if (!clip || !clip.items || clip.items.length === 0) return
     // Paste at the playhead if it's set — that's the primary "drop here"
-    // signal. Falls back to "immediately after the source" only when there's
-    // no playhead, so a plain Ctrl+C → Ctrl+V still duplicates in place.
-    // Cross-song / cross-track pastes always take the playhead path unless
-    // the user has never clicked into the timeline of the target song.
+    // signal. Otherwise fall back to the source's original start beat so
+    // cross-song / cross-track pastes land at the same beat they were
+    // copied from (in-place, same position). A plain in-track Ctrl+C →
+    // Ctrl+V will stack over the original in that case; use the playhead
+    // if you want a separate landing spot.
     const target =
-      playheadBeat != null
-        ? playheadBeat
-        : clip.sourceMinBeat + clip.sourceWidth
+      playheadBeat != null ? playheadBeat : clip.sourceMinBeat
     pushHistory()
     const newSelection = new Set()
     setNotes((prev) => {
