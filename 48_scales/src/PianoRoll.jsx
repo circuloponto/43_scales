@@ -11,6 +11,107 @@ import { resolveChordPair, pcName } from './chordVocab'
 // or track and pasted into another.
 let sharedClipboard = null
 
+// A single song tab with HTML5 drag/drop wiring. Kept at module scope so
+// PianoRoll's giant render body stays readable; state changes come in via
+// props (dragState / setDragState) so all tabs share one drag session.
+function SongTab({
+  song,
+  index,
+  isActive,
+  canClose,
+  onSelect,
+  onRename,
+  onRemove,
+  onContextMenu,
+  dragState,
+  setDragState,
+  onDropBefore,
+  songs,
+  groupColour,
+}) {
+  const isDragging = dragState.draggingId === song.id
+  const indicatorBefore = dragState.draggingId && dragState.overBeforeId === song.id
+  return (
+    <div
+      role="tab"
+      aria-selected={isActive}
+      className={`song-tab ${isActive ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${
+        indicatorBefore ? 'drop-before' : ''
+      } ${groupColour ? 'in-group' : ''}`}
+      style={groupColour ? { '--group-colour': groupColour } : undefined}
+      draggable
+      onDragStart={(e) => {
+        // Firefox needs a payload before it will fire subsequent drag
+        // events. Everything else uses our React state.
+        e.dataTransfer.effectAllowed = 'move'
+        try { e.dataTransfer.setData('text/plain', song.id) } catch {}
+        setDragState({ draggingId: song.id, kind: 'tab', overBeforeId: null })
+      }}
+      onDragEnd={() =>
+        setDragState({ draggingId: null, kind: null, overBeforeId: null })
+      }
+      onDragOver={(e) => {
+        if (!dragState.draggingId) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        const rect = e.currentTarget.getBoundingClientRect()
+        const midX = rect.left + rect.width / 2
+        // Left half → drop before this tab; right half → drop before next
+        // sibling (or at tail if last). Chrome's tab bar behaves the same.
+        if (e.clientX < midX) {
+          if (dragState.overBeforeId !== song.id) {
+            setDragState((s) => ({ ...s, overBeforeId: song.id }))
+          }
+        } else {
+          const next = songs[index + 1]
+          const nextId = next ? next.id : '__tail'
+          if (dragState.overBeforeId !== nextId) {
+            setDragState((s) => ({ ...s, overBeforeId: nextId }))
+          }
+        }
+      }}
+      onDrop={(e) => {
+        if (!dragState.draggingId) return
+        e.preventDefault()
+        e.stopPropagation()
+        const target = dragState.overBeforeId === '__tail'
+          ? null
+          : dragState.overBeforeId
+        onDropBefore(target)
+      }}
+      onClick={() => {
+        if (!isActive && onSelect) onSelect(song.id)
+      }}
+      onDoubleClick={() => {
+        if (!onRename) return
+        const next = window.prompt('Rename song', song.name)
+        if (next != null) onRename(song.id, next)
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onContextMenu?.({ songId: song.id, x: e.clientX, y: e.clientY })
+      }}
+      title={`${song.name}${isActive ? ' · double-click to rename · right-click for groups' : ''}`}
+    >
+      <span className="song-tab-name">{song.name}</span>
+      {canClose && onRemove && (
+        <button
+          type="button"
+          className="song-tab-close"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(song.id)
+          }}
+          aria-label={`Close ${song.name}`}
+          title="Close song"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
 const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
@@ -294,6 +395,15 @@ export default function PianoRoll({
   onAddSong,
   onRemoveSong,
   onRenameSong,
+  songGroups = [],
+  onAddGroup,
+  onRemoveGroup,
+  onRenameGroup,
+  onSetGroupColour,
+  onToggleGroupCollapsed,
+  onMoveSong,
+  onMoveGroup,
+  onAssignSongToGroup,
   initialTracks = null,
   initialActiveTrackId = null,
   onPersistTracks,
@@ -416,6 +526,59 @@ export default function PianoRoll({
   // Visible badge that lights up while T is held so the user can see that
   // ArrowUp/Down do a pitch rotation instead of the regular step nudge.
   const [tHeld, setTHeld] = useState(false)
+  // Song-tab drag state (HTML5 DnD). `draggingId` = which song OR group is
+  // being dragged (see `kind`); `overBeforeId` = which sibling the drop
+  // indicator sits before (or "__tail" for the trailing zone). `kind` is
+  // 'tab' when dragging a song tab or 'group' when dragging a group pill —
+  // the drop handlers check this to decide between moveSong / moveGroup.
+  const [tabDrag, setTabDrag] = useState({
+    draggingId: null,
+    kind: null,
+    overBeforeId: null,
+  })
+  // Floating context menus on the song-tab bar. `tabMenu` opens on
+  // right-click of a song tab (group-management actions); `groupMenu` opens
+  // on right-click of a group strip. Coordinates are viewport pixels.
+  const [tabMenu, setTabMenu] = useState(null)
+  const [groupMenu, setGroupMenu] = useState(null)
+  // Inline-editable group name state. Only one pill can be in edit mode at a
+  // time; the input starts prefilled with the current name and commits on
+  // Enter / blur (Esc cancels without saving).
+  const [renamingGroup, setRenamingGroup] = useState(null) // { id, draft } | null
+  useEffect(() => {
+    if (!tabMenu && !groupMenu) return
+    const close = () => {
+      setTabMenu(null)
+      setGroupMenu(null)
+    }
+    // Close on next click anywhere and on Escape — matches OS convention.
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', (e) => e.key === 'Escape' && close())
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [tabMenu, groupMenu])
+  // A shared drop handler used by both tab-drop and pill-drop targets. It
+  // reads `tabDrag.kind` to decide whether the payload is a song (moveSong)
+  // or an entire group (moveGroup). Drop targets translate their "before"
+  // reference into a target songId (or null for the tail); when the payload
+  // is a group, we normalise "drop before another group's pill" to "drop
+  // before the first member of that group" so the target reference always
+  // points at a real song.
+  const handleDropBefore = (beforeId) => {
+    const { draggingId, kind } = tabDrag
+    if (!draggingId) {
+      setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
+      return
+    }
+    if (kind === 'group') {
+      onMoveGroup?.(draggingId, beforeId)
+    } else {
+      onMoveSong?.(draggingId, beforeId, undefined)
+    }
+    setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
+  }
   const audioCtxRef = useRef(null)
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
@@ -2450,47 +2613,207 @@ export default function PianoRoll({
         </div>
       </div>
 
-      {/* Chrome-style song tabs — each tab is its own piano-roll workspace. */}
+      {/* Chrome-style song tabs — each tab is its own piano-roll workspace,
+          optionally grouped under a coloured strip. Tabs are HTML5-draggable
+          for reorder and cross-group moves; right-click opens a group menu. */}
       <div className="song-tabs" role="tablist" aria-label="songs">
         {/* The baseline lives on .song-tabs-list so it only spans the
             actual tabs, not the trailing + button or padding. */}
         <div className="song-tabs-list">
-          {songs.map((s) => {
-            const isActive = s.id === activeSongId
-            return (
-              <div
-                key={s.id}
-                role="tab"
-                aria-selected={isActive}
-                className={`song-tab ${isActive ? 'active' : ''}`}
-                onClick={() => {
-                  if (!isActive && onSelectSong) onSelectSong(s.id)
-                }}
-                onDoubleClick={() => {
-                  if (!onRenameSong) return
-                  const next = window.prompt('Rename song', s.name)
-                  if (next != null) onRenameSong(s.id, next)
-                }}
-                title={`${s.name}${isActive ? ' · double-click to rename' : ''}`}
-              >
-                <span className="song-tab-name">{s.name}</span>
-                {songs.length > 1 && onRemoveSong && (
-                  <button
-                    type="button"
-                    className="song-tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRemoveSong(s.id)
+          {(() => {
+            // Walk songs in order. Whenever we enter a new group, drop an
+            // inline pill before its members. Collapsed groups render only
+            // the pill (with a member-count badge) and skip their tabs. All
+            // tabs and pills live in the same flex row.
+            const nodes = []
+            let prevGroupId = null
+            for (let i = 0; i < songs.length; i++) {
+              const song = songs[i]
+              const gid = song.groupId ?? null
+              const group = gid
+                ? songGroups.find((g) => g.id === gid)
+                : null
+              if (gid && gid !== prevGroupId) {
+                const memberCount = songs.filter((s) => s.groupId === gid).length
+                const isRenaming = renamingGroup?.id === gid
+                const collapsed = !!group?.collapsed
+                const isDraggingThisGroup =
+                  tabDrag.kind === 'group' && tabDrag.draggingId === gid
+                const indicatorBefore =
+                  tabDrag.draggingId && tabDrag.overBeforeId === `pill-${gid}`
+                // First member of this group — used to translate the pill's
+                // "drop before this pill" into the corresponding song-level
+                // reference (moveSong / moveGroup both target song ids).
+                const firstMemberId = songs.find((s) => s.groupId === gid)?.id
+                nodes.push(
+                  <div
+                    key={`pill-${gid}`}
+                    className={`song-group-pill ${collapsed ? 'collapsed' : ''} ${
+                      isRenaming ? 'renaming' : ''
+                    } ${isDraggingThisGroup ? 'dragging' : ''} ${
+                      indicatorBefore ? 'drop-before' : ''
+                    }`}
+                    style={{ '--group-colour': group?.colour ?? '#4f8cff' }}
+                    draggable={!isRenaming}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      try { e.dataTransfer.setData('text/plain', `group:${gid}`) } catch {}
+                      setTabDrag({
+                        draggingId: gid,
+                        kind: 'group',
+                        overBeforeId: null,
+                      })
                     }}
-                    aria-label={`Close ${s.name}`}
-                    title="Close song"
+                    onDragEnd={() =>
+                      setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
+                    }
+                    onClick={() => {
+                      if (isRenaming) return
+                      onToggleGroupCollapsed?.(gid)
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      setRenamingGroup({ id: gid, draft: group?.name ?? '' })
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setGroupMenu({ groupId: gid, x: e.clientX, y: e.clientY })
+                    }}
+                    onDragOver={(e) => {
+                      if (!tabDrag.draggingId) return
+                      // Dropping the SAME group on its own pill is a no-op —
+                      // don't paint a drop indicator or accept the drop.
+                      if (tabDrag.kind === 'group' && tabDrag.draggingId === gid) return
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (tabDrag.kind === 'group') {
+                        // Group-on-pill: show the "insert here" indicator on
+                        // the pill itself. The drop translates to "before the
+                        // first member of this group".
+                        const key = `pill-${gid}`
+                        if (tabDrag.overBeforeId !== key) {
+                          setTabDrag((s) => ({ ...s, overBeforeId: key }))
+                        }
+                      }
+                    }}
+                    onDrop={(e) => {
+                      if (!tabDrag.draggingId) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (tabDrag.kind === 'group') {
+                        // Ignore self-drops; otherwise reposition the whole
+                        // dragged group to sit before this group's first
+                        // song, then clear drag state.
+                        if (tabDrag.draggingId !== gid && firstMemberId) {
+                          onMoveGroup?.(tabDrag.draggingId, firstMemberId)
+                        }
+                      } else {
+                        // Song tab dropped on the pill → join this group.
+                        onAssignSongToGroup?.(tabDrag.draggingId, gid)
+                      }
+                      setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
+                    }}
+                    title={
+                      isRenaming
+                        ? ''
+                        : `${group?.name ?? 'Group'} · click to ${
+                            collapsed ? 'expand' : 'collapse'
+                          }, drag to reorder, double-click to rename, right-click for options`
+                    }
                   >
-                    ×
-                  </button>
-                )}
-              </div>
+                    <span className="song-group-pill-dot" />
+                    {isRenaming ? (
+                      <input
+                        className="song-group-pill-input"
+                        value={renamingGroup.draft}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) =>
+                          setRenamingGroup((r) => ({ ...r, draft: e.target.value }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.currentTarget.blur()
+                          } else if (e.key === 'Escape') {
+                            setRenamingGroup(null)
+                          }
+                        }}
+                        onBlur={() => {
+                          const next = (renamingGroup?.draft ?? '').trim()
+                          if (next && next !== group?.name) {
+                            onRenameGroup?.(gid, next)
+                          }
+                          setRenamingGroup(null)
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <span className="song-group-pill-name">
+                          {group?.name ?? 'Group'}
+                        </span>
+                        {collapsed && (
+                          <span className="song-group-pill-count">
+                            {memberCount}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              }
+              // Skip member tabs entirely when their group is collapsed —
+              // only the pill (with count badge) represents the group.
+              if (group?.collapsed) {
+                prevGroupId = gid
+                continue
+              }
+              nodes.push(
+                <SongTab
+                  key={song.id}
+                  song={song}
+                  index={i}
+                  isActive={song.id === activeSongId}
+                  canClose={songs.length > 1}
+                  onSelect={onSelectSong}
+                  onRename={onRenameSong}
+                  onRemove={onRemoveSong}
+                  onContextMenu={setTabMenu}
+                  dragState={tabDrag}
+                  setDragState={setTabDrag}
+                  onDropBefore={handleDropBefore}
+                  songs={songs}
+                  groupColour={group?.colour ?? null}
+                />
+              )
+              prevGroupId = gid
+            }
+            // Trailing drop zone so the user can drop a tab at the very end
+            // of the list (past every existing tab / group).
+            nodes.push(
+              <div
+                key="__tail"
+                className={`song-tab-drop-tail ${
+                  tabDrag.draggingId && tabDrag.overBeforeId === '__tail'
+                    ? 'active'
+                    : ''
+                }`}
+                onDragOver={(e) => {
+                  if (!tabDrag.draggingId) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (tabDrag.overBeforeId !== '__tail') {
+                    setTabDrag((s) => ({ ...s, overBeforeId: '__tail' }))
+                  }
+                }}
+                onDrop={(e) => {
+                  if (!tabDrag.draggingId) return
+                  e.preventDefault()
+                  handleDropBefore(null)
+                }}
+              />
             )
-          })}
+            return nodes
+          })()}
         </div>
         {onAddSong && (
           <button
@@ -2504,6 +2827,139 @@ export default function PianoRoll({
           </button>
         )}
       </div>
+      {tabMenu && (() => {
+        const song = songs.find((s) => s.id === tabMenu.songId)
+        if (!song) return null
+        const currentGroup = song.groupId
+          ? songGroups.find((g) => g.id === song.groupId)
+          : null
+        return (
+          <div
+            className="tab-context-menu"
+            style={{ left: tabMenu.x, top: tabMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="tab-context-menu-title">{song.name}</div>
+            <button
+              type="button"
+              className="tab-context-menu-item"
+              onClick={() => {
+                if (!onAddGroup || !onAssignSongToGroup) {
+                  setTabMenu(null)
+                  return
+                }
+                const id = onAddGroup()
+                onAssignSongToGroup(song.id, id)
+                setTabMenu(null)
+              }}
+            >
+              New group with this tab
+            </button>
+            {songGroups.length > 0 && (
+              <>
+                <div className="tab-context-menu-divider" />
+                <div className="tab-context-menu-label">Add to group</div>
+                {songGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className={`tab-context-menu-item ${
+                      currentGroup?.id === g.id ? 'checked' : ''
+                    }`}
+                    onClick={() => {
+                      onAssignSongToGroup?.(song.id, g.id)
+                      setTabMenu(null)
+                    }}
+                  >
+                    <span
+                      className="tab-context-menu-swatch"
+                      style={{ background: g.colour }}
+                    />
+                    {g.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {currentGroup && (
+              <>
+                <div className="tab-context-menu-divider" />
+                <button
+                  type="button"
+                  className="tab-context-menu-item"
+                  onClick={() => {
+                    onAssignSongToGroup?.(song.id, null)
+                    setTabMenu(null)
+                  }}
+                >
+                  Remove from group
+                </button>
+              </>
+            )}
+          </div>
+        )
+      })()}
+      {groupMenu && (() => {
+        const group = songGroups.find((g) => g.id === groupMenu.groupId)
+        if (!group) return null
+        return (
+          <div
+            className="tab-context-menu"
+            style={{ left: groupMenu.x, top: groupMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="tab-context-menu-title">{group.name}</div>
+            <button
+              type="button"
+              className="tab-context-menu-item"
+              onClick={() => {
+                setRenamingGroup({ id: group.id, draft: group.name })
+                setGroupMenu(null)
+              }}
+            >
+              Rename group
+            </button>
+            <button
+              type="button"
+              className="tab-context-menu-item"
+              onClick={() => {
+                onToggleGroupCollapsed?.(group.id)
+                setGroupMenu(null)
+              }}
+            >
+              {group.collapsed ? 'Expand group' : 'Collapse group'}
+            </button>
+            <div className="tab-context-menu-divider" />
+            <label className="tab-context-menu-colour-picker">
+              <span className="tab-context-menu-label">Colour</span>
+              <span
+                className="tab-context-menu-colour-swatch"
+                style={{ background: group.colour }}
+              />
+              <span className="tab-context-menu-colour-hex">
+                {group.colour}
+              </span>
+              <input
+                type="color"
+                value={group.colour}
+                onChange={(e) => onSetGroupColour?.(group.id, e.target.value)}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Pick group colour"
+              />
+            </label>
+            <div className="tab-context-menu-divider" />
+            <button
+              type="button"
+              className="tab-context-menu-item danger"
+              onClick={() => {
+                onRemoveGroup?.(group.id)
+                setGroupMenu(null)
+              }}
+            >
+              Delete group (keep songs)
+            </button>
+          </div>
+        )
+      })()}
 
       <div className="roll-body">
         <aside className="variation-panel">

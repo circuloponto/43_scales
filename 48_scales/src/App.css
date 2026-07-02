@@ -1530,6 +1530,229 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+/* ---------- Song-tab groups (Chrome-style, inline) ---------- */
+/* The group is just an inline pill sitting on the tab strip alongside real
+   tabs. Its member tabs follow immediately to its right and share a
+   coloured underline via the .in-group class. Everything lives in one row. */
+.song-group-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  align-self: flex-end;
+  margin: 0 2px 4px 4px;
+  padding: 0 10px 0 8px;
+  background: color-mix(in srgb, var(--group-colour) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--group-colour) 55%, transparent);
+  border-radius: 999px;
+  color: var(--group-colour);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s var(--ease), border-color 0.1s var(--ease);
+}
+.song-group-pill:hover {
+  background: color-mix(in srgb, var(--group-colour) 32%, transparent);
+}
+.song-group-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--group-colour);
+  flex-shrink: 0;
+}
+.song-group-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.song-group-pill.collapsed {
+  background: color-mix(in srgb, var(--group-colour) 32%, transparent);
+  border-color: color-mix(in srgb, var(--group-colour) 70%, transparent);
+}
+.song-group-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 2px;
+  background: var(--group-colour);
+  color: var(--bg);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.song-group-pill.renaming {
+  cursor: default;
+  background: color-mix(in srgb, var(--group-colour) 30%, transparent);
+}
+.song-group-pill.dragging {
+  opacity: 0.5;
+}
+.song-group-pill.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.song-group-pill-input {
+  width: 90px;
+  min-width: 40px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--group-colour);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.song-tab.in-group {
+  box-shadow: inset 0 -2px 0 var(--group-colour);
+}
+.song-tab.in-group.active {
+  box-shadow: inset 0 -2px 0 var(--group-colour);
+}
+
+/* Drag feedback + drop indicators. */
+.song-tab.dragging {
+  opacity: 0.5;
+}
+.song-tab.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.song-tab-drop-tail {
+  width: 6px;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+.song-tab-drop-tail.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ---------- Tab context menu (right-click on a song tab or group strip) ---------- */
+.tab-context-menu {
+  position: fixed;
+  min-width: 200px;
+  padding: 6px;
+  background: #000;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+  font-family: var(--sans);
+  color: var(--fg);
+}
+.tab-context-menu-title {
+  padding: 4px 8px 6px 8px;
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tab-context-menu-label {
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tab-context-menu-divider {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}
+.tab-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+.tab-context-menu-item:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.tab-context-menu-item.checked::before {
+  content: '✓';
+  color: var(--accent);
+  margin-right: 2px;
+}
+.tab-context-menu-item.danger {
+  color: #ff6b6b;
+}
+.tab-context-menu-item.danger:hover {
+  background: color-mix(in srgb, #ff6b6b 15%, transparent);
+}
+.tab-context-menu-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tab-context-menu-colour-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+  position: relative;
+}
+.tab-context-menu-colour-picker:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.tab-context-menu-colour-picker .tab-context-menu-label {
+  padding: 0;
+  text-transform: uppercase;
+  flex: 1;
+  min-width: 0;
+}
+.tab-context-menu-colour-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.tab-context-menu-colour-hex {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* Native <input type="color"> — invisible overlay that stretches over the
+   whole row so clicking anywhere on the row opens the OS colour picker. */
+.tab-context-menu-colour-picker input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
 /* ---------- Track sidebar (right side of roll body) ----------
    Layout: vertical rail of "folder tab" buttons on the LEFT edge of the
    sidebar; the active tab merges seamlessly into the panel on its right,

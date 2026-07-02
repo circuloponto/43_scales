@@ -289,6 +289,142 @@ function App() {
     if (!trimmed) return
     setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)))
   }
+
+  // Chrome-style song-tab groups. Each group has an id, name, and colour;
+  // songs opt in by carrying a `groupId`. Rendering keeps same-group songs
+  // contiguous (drag-drop enforces this) so grouped tabs sit under a shared
+  // coloured strip. Ungrouped songs are freestanding.
+  const GROUP_COLOURS = ['#4f8cff', '#ff6b9a', '#3ecf8e', '#f5a623', '#9d5cff', '#ff5c5c', '#00c2c7']
+  const makeGroupId = () =>
+    `gr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  const [songGroups, setSongGroups] = useState([])
+  const addGroup = (opts = {}) => {
+    const id = opts.id || makeGroupId()
+    const name = opts.name || `Group ${songGroups.length + 1}`
+    const colour = opts.colour || GROUP_COLOURS[songGroups.length % GROUP_COLOURS.length]
+    setSongGroups((prev) => [...prev, { id, name, colour, collapsed: false }])
+    return id
+  }
+  // Toggling a group's collapse state. If the active song lives inside a
+  // group that's about to collapse, we switch active to the first song
+  // outside that group so the roll doesn't strand the user on a hidden tab.
+  // Silently no-ops if every song belongs to the group being collapsed.
+  const toggleGroupCollapsed = (id) => {
+    const group = songGroups.find((g) => g.id === id)
+    if (!group) return
+    const willCollapse = !group.collapsed
+    if (willCollapse) {
+      const activeSong = songs.find((s) => s.id === activeSongId)
+      if (activeSong && activeSong.groupId === id) {
+        const outside = songs.find((s) => s.groupId !== id)
+        if (!outside) return
+        setActiveSongId(outside.id)
+      }
+    }
+    setSongGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, collapsed: willCollapse } : g))
+    )
+  }
+  const removeGroup = (id) => {
+    setSongGroups((prev) => prev.filter((g) => g.id !== id))
+    setSongs((prev) =>
+      prev.map((s) => (s.groupId === id ? { ...s, groupId: null } : s))
+    )
+  }
+  const renameGroup = (id, name) => {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+    setSongGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, name: trimmed } : g))
+    )
+  }
+  const setGroupColour = (id, colour) => {
+    setSongGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, colour } : g))
+    )
+  }
+  // Reorder + optionally re-group a song in one atomic step. `beforeId` is
+  // the id of the tab the dragged song should land in front of; null means
+  // "drop at the end". `targetGroupId` overrides the song's group; when
+  // omitted, we adopt whatever group the destination neighbours are in so
+  // grouped tabs stay contiguous.
+  const moveSong = (draggedId, beforeId, targetGroupId) => {
+    setSongs((prev) => {
+      const dragged = prev.find((s) => s.id === draggedId)
+      if (!dragged) return prev
+      const without = prev.filter((s) => s.id !== draggedId)
+      let insertIdx =
+        beforeId == null ? without.length : without.findIndex((s) => s.id === beforeId)
+      if (insertIdx === -1) insertIdx = without.length
+      let resolvedGroup = targetGroupId
+      if (resolvedGroup === undefined) {
+        // Inherit only from unambiguous neighbours. Between two grouped tabs
+        // of the same group → join. At a boundary that touches the dragged
+        // song's current group → stay. Otherwise → ungroup, so tail drops
+        // and mismatched-boundary drops cleanly leave the previous group.
+        const before = without[insertIdx - 1]?.groupId ?? null
+        const after = without[insertIdx]?.groupId ?? null
+        if (before && before === after) resolvedGroup = before
+        else if (
+          dragged.groupId &&
+          (before === dragged.groupId || after === dragged.groupId)
+        ) resolvedGroup = dragged.groupId
+        else resolvedGroup = null
+      }
+      const updated = { ...dragged, groupId: resolvedGroup ?? null }
+      return [...without.slice(0, insertIdx), updated, ...without.slice(insertIdx)]
+    })
+  }
+  // Move an entire group (its member songs, as a contiguous block) to sit
+  // just before `beforeSongId`. `beforeSongId=null` parks the group at the
+  // very end. Members keep their relative order — only the block's position
+  // in the tab strip changes.
+  const moveGroup = (groupId, beforeSongId) => {
+    setSongs((prev) => {
+      const members = prev.filter((s) => s.groupId === groupId)
+      if (members.length === 0) return prev
+      const rest = prev.filter((s) => s.groupId !== groupId)
+      let insertIdx =
+        beforeSongId == null
+          ? rest.length
+          : rest.findIndex((s) => s.id === beforeSongId)
+      if (insertIdx === -1) insertIdx = rest.length
+      // If the requested insert index lands inside another group's
+      // contiguous run, snap left to that run's start — otherwise the
+      // dropped group would split the neighbour in two.
+      if (insertIdx > 0 && insertIdx < rest.length) {
+        const beforeG = rest[insertIdx - 1].groupId
+        const afterG = rest[insertIdx].groupId
+        if (beforeG && beforeG === afterG) {
+          while (insertIdx > 0 && rest[insertIdx - 1].groupId === beforeG) {
+            insertIdx--
+          }
+        }
+      }
+      return [...rest.slice(0, insertIdx), ...members, ...rest.slice(insertIdx)]
+    })
+  }
+  const assignSongToGroup = (songId, groupId) => {
+    setSongs((prev) => {
+      const target = prev.find((s) => s.id === songId)
+      if (!target) return prev
+      const without = prev.filter((s) => s.id !== songId)
+      const updated = { ...target, groupId: groupId ?? null }
+      if (!groupId) {
+        // Ungroup: park the song at the end of its previous group's run so
+        // it detaches cleanly and doesn't split a group in two.
+        return [...without, updated]
+      }
+      // Find the last song already in `groupId` and slot after it. If none
+      // exists yet (first member), append.
+      let lastIdx = -1
+      for (let i = 0; i < without.length; i++) {
+        if (without[i].groupId === groupId) lastIdx = i
+      }
+      const insertIdx = lastIdx === -1 ? without.length : lastIdx + 1
+      return [...without.slice(0, insertIdx), updated, ...without.slice(insertIdx)]
+    })
+  }
   const [templates, setTemplates] = useState(defaultTemplates)
   // scaleNames stores per-scale naming metadata. Each scale can carry multiple
   // aliases, one per "viewpoint" (which scale degree acts as root). We migrate
@@ -844,6 +980,15 @@ function App() {
             onAddSong={addSong}
             onRemoveSong={removeSong}
             onRenameSong={renameSong}
+            songGroups={songGroups}
+            onAddGroup={addGroup}
+            onRemoveGroup={removeGroup}
+            onRenameGroup={renameGroup}
+            onSetGroupColour={setGroupColour}
+            onToggleGroupCollapsed={toggleGroupCollapsed}
+            onMoveSong={moveSong}
+            onMoveGroup={moveGroup}
+            onAssignSongToGroup={assignSongToGroup}
             initialTracks={activeSong?.tracks}
             initialActiveTrackId={activeSong?.activeTrackId}
             onPersistTracks={(tracks, activeTrackId) =>
