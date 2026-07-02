@@ -404,6 +404,8 @@ export default function PianoRoll({
   onMoveSong,
   onMoveGroup,
   onAssignSongToGroup,
+  onFallbackUndo,
+  onFallbackRedo,
   initialTracks = null,
   initialActiveTrackId = null,
   onPersistTracks,
@@ -992,7 +994,12 @@ export default function PianoRoll({
   }
 
   const undo = () => {
-    if (historyRef.current.length === 0) return
+    if (historyRef.current.length === 0) {
+      // Notes stack is empty — fall through to App-level song history so
+      // Ctrl+Z still undoes tab creation / deletion / group moves.
+      onFallbackUndo?.()
+      return
+    }
     const prev = historyRef.current.pop()
     futureRef.current.push(snapshotState())
     if (futureRef.current.length > 200) futureRef.current.shift()
@@ -1000,7 +1007,10 @@ export default function PianoRoll({
   }
 
   const redo = () => {
-    if (futureRef.current.length === 0) return
+    if (futureRef.current.length === 0) {
+      onFallbackRedo?.()
+      return
+    }
     const next = futureRef.current.pop()
     historyRef.current.push(snapshotState())
     if (historyRef.current.length > 200) historyRef.current.shift()

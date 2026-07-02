@@ -262,7 +262,46 @@ function App() {
       )
     )
   }
+  // Song-level undo/redo. Any tab CRUD or group operation pushes a snapshot
+  // of (songs, songGroups, activeSongId) onto historyRef before mutating.
+  // Ctrl+Z in matrix view drains this stack; in roll view PianoRoll drains
+  // its own notes history first and then falls through here via onFallback*.
+  const SONG_HISTORY_LIMIT = 100
+  const songHistoryRef = useRef([])
+  const songFutureRef = useRef([])
+  const snapshotSongState = () => ({
+    songs: songs.map((s) => ({ ...s })),
+    songGroups: songGroups.map((g) => ({ ...g })),
+    activeSongId,
+  })
+  const pushSongHistory = () => {
+    songHistoryRef.current.push(snapshotSongState())
+    if (songHistoryRef.current.length > SONG_HISTORY_LIMIT) {
+      songHistoryRef.current.shift()
+    }
+    songFutureRef.current = []
+  }
+  const applySongSnap = (snap) => {
+    setSongs(snap.songs)
+    setSongGroups(snap.songGroups)
+    setActiveSongId(snap.activeSongId)
+  }
+  const undoSongState = () => {
+    const hist = songHistoryRef.current
+    if (hist.length === 0) return false
+    songFutureRef.current.push(snapshotSongState())
+    applySongSnap(hist.pop())
+    return true
+  }
+  const redoSongState = () => {
+    const fut = songFutureRef.current
+    if (fut.length === 0) return false
+    songHistoryRef.current.push(snapshotSongState())
+    applySongSnap(fut.pop())
+    return true
+  }
   const addSong = () => {
+    pushSongHistory()
     const id = makeSongId()
     const name = `Song ${songs.length + 1}`
     setSongs((prev) => [...prev, { id, name, tracks: null, activeTrackId: null }])
@@ -280,6 +319,7 @@ function App() {
       )
       if (!ok) return
     }
+    pushSongHistory()
     const remaining = songs.filter((s) => s.id !== id)
     setSongs(remaining)
     if (activeSongId === id) setActiveSongId(remaining[0].id)
@@ -287,6 +327,9 @@ function App() {
   const renameSong = (id, name) => {
     const trimmed = (name || '').trim()
     if (!trimmed) return
+    const current = songs.find((s) => s.id === id)
+    if (!current || current.name === trimmed) return
+    pushSongHistory()
     setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)))
   }
 
@@ -302,6 +345,7 @@ function App() {
     const id = opts.id || makeGroupId()
     const name = opts.name || `Group ${songGroups.length + 1}`
     const colour = opts.colour || GROUP_COLOURS[songGroups.length % GROUP_COLOURS.length]
+    pushSongHistory()
     setSongGroups((prev) => [...prev, { id, name, colour, collapsed: false }])
     return id
   }
@@ -326,6 +370,8 @@ function App() {
     )
   }
   const removeGroup = (id) => {
+    if (!songGroups.some((g) => g.id === id)) return
+    pushSongHistory()
     setSongGroups((prev) => prev.filter((g) => g.id !== id))
     setSongs((prev) =>
       prev.map((s) => (s.groupId === id ? { ...s, groupId: null } : s))
@@ -334,11 +380,21 @@ function App() {
   const renameGroup = (id, name) => {
     const trimmed = (name || '').trim()
     if (!trimmed) return
+    const current = songGroups.find((g) => g.id === id)
+    if (!current || current.name === trimmed) return
+    pushSongHistory()
     setSongGroups((prev) =>
       prev.map((g) => (g.id === id ? { ...g, name: trimmed } : g))
     )
   }
+  // Group colour tweaks fire continuously while the user drags inside the
+  // native colour picker — coalesce them by only pushing history when the
+  // colour actually changes from the last committed value. This keeps the
+  // undo stack from ballooning with per-pixel intermediate colours.
   const setGroupColour = (id, colour) => {
+    const current = songGroups.find((g) => g.id === id)
+    if (!current || current.colour === colour) return
+    pushSongHistory()
     setSongGroups((prev) =>
       prev.map((g) => (g.id === id ? { ...g, colour } : g))
     )
@@ -349,6 +405,8 @@ function App() {
   // omitted, we adopt whatever group the destination neighbours are in so
   // grouped tabs stay contiguous.
   const moveSong = (draggedId, beforeId, targetGroupId) => {
+    if (draggedId === beforeId) return
+    pushSongHistory()
     setSongs((prev) => {
       const dragged = prev.find((s) => s.id === draggedId)
       if (!dragged) return prev
@@ -380,6 +438,7 @@ function App() {
   // very end. Members keep their relative order — only the block's position
   // in the tab strip changes.
   const moveGroup = (groupId, beforeSongId) => {
+    pushSongHistory()
     setSongs((prev) => {
       const members = prev.filter((s) => s.groupId === groupId)
       if (members.length === 0) return prev
@@ -405,6 +464,10 @@ function App() {
     })
   }
   const assignSongToGroup = (songId, groupId) => {
+    const current = songs.find((s) => s.id === songId)
+    if (!current) return
+    if ((current.groupId ?? null) === (groupId ?? null)) return
+    pushSongHistory()
     setSongs((prev) => {
       const target = prev.find((s) => s.id === songId)
       if (!target) return prev
@@ -522,6 +585,31 @@ function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [view, selectedId])
+
+  // Ctrl/Cmd + Z / Y for song-level undo/redo when in matrix view (where
+  // PianoRoll isn't mounted). In roll view PianoRoll owns the shortcut and
+  // routes overflow back here via onFallbackUndo / onFallbackRedo props.
+  useEffect(() => {
+    if (view !== 'matrix') return
+    const onKey = (e) => {
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      const meta = e.ctrlKey || e.metaKey
+      if (meta && (e.code === 'KeyZ' || (e.key || '').toLowerCase() === 'z')) {
+        e.preventDefault()
+        if (e.shiftKey) redoSongState()
+        else undoSongState()
+      } else if (
+        meta &&
+        (e.code === 'KeyY' || (e.key || '').toLowerCase() === 'y')
+      ) {
+        e.preventDefault()
+        redoSongState()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view, songs, songGroups, activeSongId])
 
   const scaleNameEntryOf = (id) => {
     const data = scaleNames[id]
@@ -989,6 +1077,8 @@ function App() {
             onMoveSong={moveSong}
             onMoveGroup={moveGroup}
             onAssignSongToGroup={assignSongToGroup}
+            onFallbackUndo={undoSongState}
+            onFallbackRedo={redoSongState}
             initialTracks={activeSong?.tracks}
             initialActiveTrackId={activeSong?.activeTrackId}
             onPersistTracks={(tracks, activeTrackId) =>
