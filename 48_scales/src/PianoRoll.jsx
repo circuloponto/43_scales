@@ -501,6 +501,10 @@ export default function PianoRoll({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       playStateRef.current = null
+      // Silence any voices the scheduler had already queued into the Web
+      // Audio graph — otherwise switching songs mid-playback keeps the
+      // previous song's oscillators ringing until their scheduled stop.
+      killScheduledVoices()
     }
   }, [])
 
