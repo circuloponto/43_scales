@@ -3112,11 +3112,22 @@
 
 /* Scale picker trigger — inline text button that sits next to the settings
    gear and opens the show/hide-scales popover. */
+/* Vertical column sandwiched between .matrix and .panel — hosts the
+   matrix-collapse arrow and the Scales picker button. Negative side
+   margins collapse the 36px .frame gap into a single ~18px on each side
+   so the toolbar reads as belonging to the divider between them. */
+.matrix-toolbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+  flex-shrink: 0;
+  margin-left: -18px;
+  margin-right: -18px;
+}
 .scale-picker-trigger {
-  position: absolute;
-  top: 18px;
-  right: 200px;
-  z-index: 11;
   padding: 4px 10px;
   height: 28px;
   background: transparent;
@@ -3137,8 +3148,8 @@
 }
 .scale-picker-popover {
   position: absolute;
-  top: 52px;
-  right: 200px;
+  top: 68px;
+  left: 0;
   z-index: 30;
   width: 300px;
   max-height: 70vh;
@@ -3253,10 +3264,6 @@
 /* Matrix collapse — a chevron button that slides the matrix off to the
    left so the info panel gets the full width. Persisted per-session. */
 .matrix-collapse-toggle {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  z-index: 11;
   display: inline-flex;
   align-items: center;
   justify-content: center;

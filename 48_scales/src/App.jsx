@@ -1171,114 +1171,6 @@ function App() {
       <div className={`frame ${matrixCollapsed ? 'matrix-collapsed' : ''}`}>
         <button
           type="button"
-          className="matrix-collapse-toggle"
-          onClick={() => setMatrixCollapsed((v) => !v)}
-          aria-label={
-            matrixCollapsed ? 'show scale matrix' : 'hide scale matrix'
-          }
-          title={
-            matrixCollapsed
-              ? 'Show the scale matrix'
-              : 'Hide the scale matrix (focus on the info panel)'
-          }
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              transform: matrixCollapsed ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.2s var(--ease)',
-            }}
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="scale-picker-trigger"
-          onClick={() => setScalePickerOpen((v) => !v)}
-          aria-label="pick which scales to show"
-          title="Choose which scales appear in the matrix"
-        >
-          Scales
-        </button>
-        {scalePickerOpen && (
-          <div
-            className="scale-picker-popover"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="scale-picker-header">
-              <span className="scale-picker-title">Show scales</span>
-              <div className="scale-picker-actions">
-                <button
-                  type="button"
-                  className="scale-picker-action"
-                  onClick={() => setHiddenScaleIds(new Set())}
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  className="scale-picker-action"
-                  onClick={() =>
-                    setHiddenScaleIds(
-                      new Set(scales.filter((s) => s.notes.length > 0).map((s) => s.id))
-                    )
-                  }
-                >
-                  Deselect all
-                </button>
-                <button
-                  type="button"
-                  className="scale-picker-close"
-                  onClick={() => setScalePickerOpen(false)}
-                  aria-label="close"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <ul className="scale-picker-list">
-              {scales
-                .filter((s) => s.notes.length > 0)
-                .map((s) => {
-                  const checked = !hiddenScaleIds.has(s.id)
-                  return (
-                    <li key={s.id} className="scale-picker-row">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            setHiddenScaleIds((prev) => {
-                              const next = new Set(prev)
-                              if (e.target.checked) next.delete(s.id)
-                              else next.add(s.id)
-                              return next
-                            })
-                          }}
-                        />
-                        <span className="scale-picker-row-id">
-                          {padId(s.id)}
-                        </span>
-                        <span className="scale-picker-row-name">
-                          {scaleNameOf(s.id)}
-                        </span>
-                      </label>
-                    </li>
-                  )
-                })}
-            </ul>
-          </div>
-        )}
-        <button
-          type="button"
           className="settings-trigger"
           onClick={() => setSettingsOpen(true)}
           aria-label="open settings"
@@ -1482,6 +1374,119 @@ function App() {
               </div>
             )
           })}
+        </div>
+
+        <div className="matrix-toolbar">
+          <button
+            type="button"
+            className="matrix-collapse-toggle"
+            onClick={() => setMatrixCollapsed((v) => !v)}
+            aria-label={
+              matrixCollapsed ? 'show scale matrix' : 'hide scale matrix'
+            }
+            title={
+              matrixCollapsed
+                ? 'Show the scale matrix'
+                : 'Hide the scale matrix (focus on the info panel)'
+            }
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transform: matrixCollapsed ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.2s var(--ease)',
+              }}
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="scale-picker-trigger"
+            onClick={() => setScalePickerOpen((v) => !v)}
+            aria-label="pick which scales to show"
+            title="Choose which scales appear in the matrix"
+          >
+            Scales
+          </button>
+          {scalePickerOpen && (
+            <div
+              className="scale-picker-popover"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="scale-picker-header">
+                <span className="scale-picker-title">Show scales</span>
+                <div className="scale-picker-actions">
+                  <button
+                    type="button"
+                    className="scale-picker-action"
+                    onClick={() => setHiddenScaleIds(new Set())}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="scale-picker-action"
+                    onClick={() =>
+                      setHiddenScaleIds(
+                        new Set(
+                          scales.filter((s) => s.notes.length > 0).map((s) => s.id)
+                        )
+                      )
+                    }
+                  >
+                    Deselect all
+                  </button>
+                  <button
+                    type="button"
+                    className="scale-picker-close"
+                    onClick={() => setScalePickerOpen(false)}
+                    aria-label="close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <ul className="scale-picker-list">
+                {scales
+                  .filter((s) => s.notes.length > 0)
+                  .map((s) => {
+                    const checked = !hiddenScaleIds.has(s.id)
+                    return (
+                      <li key={s.id} className="scale-picker-row">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setHiddenScaleIds((prev) => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.delete(s.id)
+                                else next.add(s.id)
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="scale-picker-row-id">
+                            {padId(s.id)}
+                          </span>
+                          <span className="scale-picker-row-name">
+                            {scaleNameOf(s.id)}
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
+              </ul>
+            </div>
+          )}
         </div>
 
         <aside className="panel" ref={panelRef}>
