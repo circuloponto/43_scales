@@ -1653,6 +1653,9 @@ export default function PianoRoll({
     // gate on target vs currentTarget — if a note handler ran first, this
     // one won't fire at all. Reaching here means the click / drag started
     // on empty grid space (in-scale or out-of-scale), so always proceed.
+    // Ctrl at mousedown momentarily inverts the "allow out of scale" mode
+    // for this gesture — see the note-place path below.
+    const ctrlHeld = e.ctrlKey || e.metaKey
     // Right-click on the grid: shift+right starts a delete-marquee; plain
     // right-click without shift just suppresses the browser context menu
     // and does nothing.
@@ -1895,17 +1898,19 @@ export default function PianoRoll({
         // Shift+click on empty space: preserve the current selection so the
         // user can keep building it across separate gestures.
         if (additive) return
-        // Click on empty space → add note. By default only on in-scale rows;
-        // the Settings toggle "Allow notes outside the scale" lifts that gate.
-        // On a blocked out-of-scale row we quietly no-op — don't wipe the
-        // existing selection just because the click landed there. That lets
-        // the user tap those rows to start a drag-select without losing
-        // whatever they already had picked. Belt-and-braces: even if
-        // something upstream forgot to gate, we double-check the resolved
-        // midi via inScale before writing to the notes map.
-        if (!isInScale && !allowOutOfScale) return
-        if (!allowOutOfScale && !inScale(midi % 12)) return
-        const key = `${beat}-${midi}`
+        // Click on empty space → add note. Whether out-of-scale rows are
+        // allowed = the Settings toggle XOR whether Ctrl was held on the
+        // click. Snap-on + Ctrl → allow this chromatic placement.
+        // Snap-off + Ctrl → block this chromatic placement (i.e. force
+        // scale-snap for just this click). If blocked, the note lands on
+        // the nearest in-scale row so the click always produces something
+        // — matches where the hover indicator was sitting.
+        const effectiveAllowOOS = allowOutOfScale ? !ctrlHeld : ctrlHeld
+        const placeMidi =
+          !effectiveAllowOOS && !inScale(midi % 12)
+            ? nearestScaleMidi(midi)
+            : midi
+        const key = `${beat}-${placeMidi}`
         pushHistory()
         const newLength = defaultNoteLengthRef.current
         setNotes((prev) => {
@@ -1913,7 +1918,7 @@ export default function PianoRoll({
           next.set(key, newLength)
           return next
         })
-        playOneNote(midi, undefined, 0.3)
+        playOneNote(placeMidi, undefined, 0.3)
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
@@ -2148,10 +2153,13 @@ export default function PianoRoll({
       //    was toggled on), fall back to chromatic movement for the group
       //    so it can be dragged freely rather than being snapped to an
       //    unrelated in-scale pitch that jumps.
+      // Ctrl inverts the current snap mode for the whole drag: snap-on +
+      // Ctrl drags chromatically, snap-off + Ctrl re-snaps to scale.
+      const effectiveAllowOOS = allowOutOfScale ? !mv.ctrlKey : mv.ctrlKey
       const groupHasOutOfScale =
-        !allowOutOfScale &&
+        !effectiveAllowOOS &&
         drag.group.some((g) => midiToScaleStep(g.originalMidi) == null)
-      const chromatic = allowOutOfScale || groupHasOutOfScale
+      const chromatic = effectiveAllowOOS || groupHasOutOfScale
       const rowsPerStep = chromatic
         ? 1
         : scale.notes.length > 0
@@ -3500,7 +3508,13 @@ export default function PianoRoll({
                             0,
                             Math.min(totalBeats - 1, beat)
                           )
-                          const hoverMidi = allowOutOfScale
+                          // Ctrl held inverts the current snap mode for
+                          // the hover indicator too, so its position always
+                          // matches where a click will actually land.
+                          const effectiveAllowOOS = allowOutOfScale
+                            ? !(e.ctrlKey || e.metaKey)
+                            : e.ctrlKey || e.metaKey
+                          const hoverMidi = effectiveAllowOOS
                             ? midi
                             : nearestScaleMidi(midi)
                           setHoveredCell((cur) =>
