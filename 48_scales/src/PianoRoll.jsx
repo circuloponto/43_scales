@@ -1900,8 +1900,11 @@ export default function PianoRoll({
         // On a blocked out-of-scale row we quietly no-op — don't wipe the
         // existing selection just because the click landed there. That lets
         // the user tap those rows to start a drag-select without losing
-        // whatever they already had picked.
+        // whatever they already had picked. Belt-and-braces: even if
+        // something upstream forgot to gate, we double-check the resolved
+        // midi via inScale before writing to the notes map.
         if (!isInScale && !allowOutOfScale) return
+        if (!allowOutOfScale && !inScale(midi % 12)) return
         const key = `${beat}-${midi}`
         pushHistory()
         const newLength = defaultNoteLengthRef.current
@@ -3485,6 +3488,11 @@ export default function PianoRoll({
                           // it into both the general hover indicator and the
                           // template preview anchor (when a template is
                           // queued). Snaps to whole beats unless free mode.
+                          // When scale-snap is on (allowOutOfScale=false),
+                          // the hover row also snaps to the nearest in-scale
+                          // midi so the indicator visibly "skips" past the
+                          // out-of-scale rows that a click there would
+                          // refuse to place a note on anyway.
                           const rect = e.currentTarget.getBoundingClientRect()
                           let beat = (e.clientX - rect.left) / BEAT_WIDTH
                           if (!freeMode) beat = Math.floor(beat)
@@ -3492,10 +3500,15 @@ export default function PianoRoll({
                             0,
                             Math.min(totalBeats - 1, beat)
                           )
+                          const hoverMidi = allowOutOfScale
+                            ? midi
+                            : nearestScaleMidi(midi)
                           setHoveredCell((cur) =>
-                            cur && cur.beat === beat && cur.midi === midi
+                            cur &&
+                            cur.beat === beat &&
+                            cur.midi === hoverMidi
                               ? cur
-                              : { beat, midi }
+                              : { beat, midi: hoverMidi }
                           )
                           if (pendingTemplate) {
                             setTemplateHover((cur) =>
