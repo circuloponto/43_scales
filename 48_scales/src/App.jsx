@@ -1781,17 +1781,11 @@ function App() {
                           <div className="chord-pair-name">
                             {noteName(resolved.leftRoot)} {pair.left}
                           </div>
-                          <div className="chord-pair-notes">
-                            {resolved.leftNotes.map((pc) => noteName(pc)).join(' ')}
-                          </div>
                         </div>
                         <div className="chord-pair-distance">{pair.distance}</div>
                         <div className="chord-pair-side chord-right">
                           <div className="chord-pair-name">
                             {noteName(resolved.rightRoot)} {pair.right}
-                          </div>
-                          <div className="chord-pair-notes">
-                            {resolved.rightNotes.map((pc) => noteName(pc)).join(' ')}
                           </div>
                         </div>
                       </div>
