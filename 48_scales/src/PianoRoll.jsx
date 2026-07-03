@@ -1581,8 +1581,10 @@ export default function PianoRoll({
   }
 
   const handleRowMouseDown = (e, midi) => {
-    // Ignore mousedown on a child note — it has its own drag handler.
-    if (e.target !== e.currentTarget) return
+    // Notes propagate their own pointerdown as stopped, so we don't need to
+    // gate on target vs currentTarget — if a note handler ran first, this
+    // one won't fire at all. Reaching here means the click / drag started
+    // on empty grid space (in-scale or out-of-scale), so always proceed.
     // Right-click on the grid: shift+right starts a delete-marquee; plain
     // right-click without shift just suppresses the browser context menu
     // and does nothing.
@@ -1685,25 +1687,63 @@ export default function PianoRoll({
     // Snapshot the existing selection so a shift+marquee can union with it
     // even after we re-render.
     const baseSelection = additive ? new Set(selectedKeys) : null
-    const trackRect = e.currentTarget.getBoundingClientRect()
+    const trackEl = e.currentTarget
+    const trackRect = trackEl.getBoundingClientRect()
     const rowIdx = MIDI_HIGH - midi
     const startContentX = e.clientX - trackRect.left
     const startContentY = rowIdx * ROW_HEIGHT + (e.clientY - trackRect.top)
     const initialX = e.clientX
     const initialY = e.clientY
+    const pointerId = e.pointerId
+    // Capture the pointer on the beats-track. This has two effects that
+    // together fix the "marquee only works once or twice" bug we were seeing
+    // on out-of-scale rows: (1) subsequent pointer events go to this
+    // element even if the pointer leaves it — no more lost drags when the
+    // pointer wanders off the row's narrow 21 px strip; (2) the browser
+    // fires a guaranteed pointerup / pointercancel on the same target so
+    // our cleanup always runs even if the user releases off-screen or the
+    // browser cancels for any reason.
+    try {
+      trackEl.setPointerCapture?.(pointerId)
+    } catch {}
 
     let beat = startContentX / BEAT_WIDTH
     if (!freeMode) beat = Math.floor(beat)
     beat = Math.max(0, Math.min(totalBeats - 0.001, beat))
     let moved = false
+    // Track scroll offset the container was at when the drag started, so
+    // that if the container scrolls mid-drag the marquee's rectangle grows
+    // with the newly-visible content instead of detaching from the pointer.
+    const scrollContainer = scrollRef.current
+    const initialScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0
+    const initialScrollTop = scrollContainer ? scrollContainer.scrollTop : 0
+    // Gentle edge auto-scroll. 1 px per frame at the outer edge, ramps down
+    // linearly to 0 at the inner edge of a 24 px band. At 60fps that's a
+    // 60 px/sec crawl — slow enough to see every note the marquee crosses,
+    // fast enough to reach the end of a long passage without lifting the
+    // pointer. Only ticks when the pointer sits inside the band.
+    const EDGE_BAND = 24
+    const MAX_EDGE_PX = 1
+    let lastPointer = { clientX: e.clientX, clientY: e.clientY }
+    let scrollAf = null
 
-    const move = (mv) => {
-      const dx = mv.clientX - initialX
-      const dy = mv.clientY - initialY
-      if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+    const updateMarquee = () => {
+      const dx = lastPointer.clientX - initialX
+      const dy = lastPointer.clientY - initialY
+      // Very small threshold so the marquee visualises on the first frame
+      // of any drag — the user gets immediate confirmation the row accepted
+      // the gesture, especially on out-of-scale rows where nothing else
+      // (cursor swap aside) changes on mousedown.
+      if (!moved && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
       moved = true
-      const curX = startContentX + dx
-      const curY = startContentY + dy
+      const scrollDx = scrollContainer
+        ? scrollContainer.scrollLeft - initialScrollLeft
+        : 0
+      const scrollDy = scrollContainer
+        ? scrollContainer.scrollTop - initialScrollTop
+        : 0
+      const curX = startContentX + dx + scrollDx
+      const curY = startContentY + dy + scrollDy
       const m = {
         x1: Math.max(0, Math.min(startContentX, curX)),
         y1: Math.max(0, Math.min(startContentY, curY)),
@@ -1714,10 +1754,73 @@ export default function PianoRoll({
       setMarquee(m)
     }
 
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
+    const stepScroll = () => {
+      scrollAf = null
+      if (!scrollContainer) return
+      const rect = scrollContainer.getBoundingClientRect()
+      const px = lastPointer.clientX
+      const py = lastPointer.clientY
+      let dx = 0
+      let dy = 0
+      if (px < rect.left + EDGE_BAND) {
+        const t = Math.min(1, (rect.left + EDGE_BAND - px) / EDGE_BAND)
+        dx = -MAX_EDGE_PX * t
+      } else if (px > rect.right - EDGE_BAND) {
+        const t = Math.min(1, (px - (rect.right - EDGE_BAND)) / EDGE_BAND)
+        dx = MAX_EDGE_PX * t
+      }
+      if (py < rect.top + EDGE_BAND) {
+        const t = Math.min(1, (rect.top + EDGE_BAND - py) / EDGE_BAND)
+        dy = -MAX_EDGE_PX * t
+      } else if (py > rect.bottom - EDGE_BAND) {
+        const t = Math.min(1, (py - (rect.bottom - EDGE_BAND)) / EDGE_BAND)
+        dy = MAX_EDGE_PX * t
+      }
+      if (dx === 0 && dy === 0) return
+      scrollContainer.scrollLeft = Math.max(
+        0,
+        Math.min(
+          scrollContainer.scrollWidth - scrollContainer.clientWidth,
+          scrollContainer.scrollLeft + dx
+        )
+      )
+      scrollContainer.scrollTop = Math.max(
+        0,
+        Math.min(
+          scrollContainer.scrollHeight - scrollContainer.clientHeight,
+          scrollContainer.scrollTop + dy
+        )
+      )
+      updateMarquee()
+      scrollAf = requestAnimationFrame(stepScroll)
+    }
+
+    const move = (mv) => {
+      if (mv.pointerId !== pointerId) return
+      lastPointer = { clientX: mv.clientX, clientY: mv.clientY }
+      updateMarquee()
+      if (!scrollContainer || scrollAf != null) return
+      const rect = scrollContainer.getBoundingClientRect()
+      const nearEdge =
+        mv.clientX < rect.left + EDGE_BAND ||
+        mv.clientX > rect.right - EDGE_BAND ||
+        mv.clientY < rect.top + EDGE_BAND ||
+        mv.clientY > rect.bottom - EDGE_BAND
+      if (nearEdge) scrollAf = requestAnimationFrame(stepScroll)
+    }
+
+    const up = (uv) => {
+      if (uv && uv.pointerId !== pointerId) return
+      if (scrollAf != null) {
+        cancelAnimationFrame(scrollAf)
+        scrollAf = null
+      }
+      trackEl.removeEventListener('pointermove', move)
+      trackEl.removeEventListener('pointerup', up)
+      trackEl.removeEventListener('pointercancel', up)
+      try {
+        trackEl.releasePointerCapture?.(pointerId)
+      } catch {}
       if (!moved) {
         // Right-click without drag — do nothing (and never place a note).
         if (isRightClick) return
@@ -1726,10 +1829,11 @@ export default function PianoRoll({
         if (additive) return
         // Click on empty space → add note. By default only on in-scale rows;
         // the Settings toggle "Allow notes outside the scale" lifts that gate.
-        if (!isInScale && !allowOutOfScale) {
-          setSelectedKeys(new Set())
-          return
-        }
+        // On a blocked out-of-scale row we quietly no-op — don't wipe the
+        // existing selection just because the click landed there. That lets
+        // the user tap those rows to start a drag-select without losing
+        // whatever they already had picked.
+        if (!isInScale && !allowOutOfScale) return
         const key = `${beat}-${midi}`
         pushHistory()
         const newLength = defaultNoteLengthRef.current
@@ -1746,8 +1850,12 @@ export default function PianoRoll({
           const [beatStr, midiStr] = key.split('-')
           const noteBeat = Number(beatStr)
           const noteMidi = Number(midiStr)
+          // Use the note's actual length so long notes (or short free-mode
+          // ones) intersect the marquee at their true horizontal extent.
+          // Falls back to 1 beat for entries whose length isn't tracked.
+          const noteLen = notes.get(key) ?? 1
           const nx1 = noteBeat * BEAT_WIDTH
-          const nx2 = nx1 + BEAT_WIDTH
+          const nx2 = nx1 + noteLen * BEAT_WIDTH
           const ny1 = (MIDI_HIGH - noteMidi) * ROW_HEIGHT
           const ny2 = ny1 + ROW_HEIGHT
           return nx1 < m.x2 && nx2 > m.x1 && ny1 < m.y2 && ny2 > m.y1
@@ -1779,9 +1887,9 @@ export default function PianoRoll({
       }
     }
 
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
+    trackEl.addEventListener('pointermove', move)
+    trackEl.addEventListener('pointerup', up)
+    trackEl.addEventListener('pointercancel', up)
   }
 
   const handleNoteMouseDown = (e, key, beat, midi, length = 1) => {
@@ -1808,16 +1916,61 @@ export default function PianoRoll({
       return
     }
 
-    // Shift+click on a note toggles its membership in the selection without
-    // dragging or deleting — lets the user build up a selection by clicking
-    // notes one at a time alongside any earlier marquee picks.
+    // Shift on a note is dual-purpose: a bare click toggles the note in the
+    // selection (build-up mode), while a shift-DRAG hands off to the row's
+    // marquee handler so the user can sweep additional notes starting from
+    // one they're already hovering. This is the "drag from a note to select
+    // more" gesture — otherwise the note's move handler swallows the drag.
     if (e.shiftKey) {
-      setSelectedKeys((prev) => {
-        const next = new Set(prev)
-        if (next.has(key)) next.delete(key)
-        else next.add(key)
-        return next
-      })
+      const initX = e.clientX
+      const initY = e.clientY
+      const rowTrack = e.currentTarget.parentElement
+      let handedOff = false
+      const detect = (mv) => {
+        if (handedOff) return
+        if (Math.abs(mv.clientX - initX) < 3 && Math.abs(mv.clientY - initY) < 3) return
+        handedOff = true
+        window.removeEventListener('pointermove', detect)
+        window.removeEventListener('pointerup', end)
+        window.removeEventListener('pointercancel', end)
+        // Re-dispatch the original mousedown onto the parent beats-track so
+        // handleRowMouseDown fires with shift held → additive marquee starts
+        // from the same on-screen point. We use the current pointer position
+        // so the marquee's origin lines up with where the user actually is.
+        if (!rowTrack) return
+        handleRowMouseDown(
+          {
+            target: rowTrack,
+            currentTarget: rowTrack,
+            clientX: initX,
+            clientY: initY,
+            pointerId: e.pointerId,
+            pointerType: e.pointerType,
+            button: 0,
+            shiftKey: true,
+            altKey: false,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+          },
+          midi
+        )
+      }
+      const end = () => {
+        window.removeEventListener('pointermove', detect)
+        window.removeEventListener('pointerup', end)
+        window.removeEventListener('pointercancel', end)
+        if (handedOff) return
+        // Plain shift+click on the note — toggle selection.
+        setSelectedKeys((prev) => {
+          const next = new Set(prev)
+          if (next.has(key)) next.delete(key)
+          else next.add(key)
+          return next
+        })
+      }
+      window.addEventListener('pointermove', detect)
+      window.addEventListener('pointerup', end)
+      window.addEventListener('pointercancel', end)
       return
     }
 
@@ -1919,7 +2072,16 @@ export default function PianoRoll({
       //    step, so each scale degree spans rowsPerStep rows.
       //  - When the "allow notes outside the scale" setting is on, drag
       //    moves freely in semitones (one row per semitone), no snapping.
-      const rowsPerStep = allowOutOfScale
+      //  - Special case: if ANY note in the drag group already sits on an
+      //    out-of-scale pitch (e.g. left over from when allow-out-of-scale
+      //    was toggled on), fall back to chromatic movement for the group
+      //    so it can be dragged freely rather than being snapped to an
+      //    unrelated in-scale pitch that jumps.
+      const groupHasOutOfScale =
+        !allowOutOfScale &&
+        drag.group.some((g) => midiToScaleStep(g.originalMidi) == null)
+      const chromatic = allowOutOfScale || groupHasOutOfScale
+      const rowsPerStep = chromatic
         ? 1
         : scale.notes.length > 0
         ? 12 / scale.notes.length
@@ -1931,7 +2093,7 @@ export default function PianoRoll({
         const offscreen = nb < 0
         if (!offscreen) nb = Math.min(totalBeats - 0.001, nb)
         let nm
-        if (allowOutOfScale) {
+        if (chromatic) {
           nm = g.originalMidi + stepDelta
         } else {
           const gStep = midiToScaleStep(g.originalMidi)

@@ -2514,11 +2514,12 @@
   cursor: crosshair;
 }
 
+/* Out-of-scale rows still accept marquee drags for selection; only note
+   placement is gated. Use crosshair so it reads as "draggable" rather than
+   the previous not-allowed which suggested nothing worked here. */
 .grid-row:not(.in) .beats-track {
-  cursor: not-allowed;
+  cursor: crosshair;
 }
-/* When the Settings toggle "Allow notes outside the scale" is on, out-of-
-   scale rows accept clicks like any other row — drop the not-allowed cursor. */
 .roll-view.allow-oos .grid-row:not(.in) .beats-track {
   cursor: pointer;
 }
