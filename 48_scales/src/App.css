@@ -1020,6 +1020,31 @@
   font-size: 12px;
   color: var(--mute);
 }
+/* Delta group chip inside the hero caption. Both groups share the accent
+   colour but differ in weight so the symbol is distinguishable at a
+   glance. Alpha reads slightly heavier, Beta a touch lighter — matches
+   how the two symbols visually sit at 12px. */
+.hero-delta {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  margin: 0 2px;
+  white-space: nowrap;
+}
+.hero-delta-alpha {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.hero-delta-beta {
+  background: color-mix(in srgb, #ff6b9a 20%, transparent);
+  border-color: color-mix(in srgb, #ff6b9a 45%, transparent);
+}
 
 /* ---------- Play ---------- */
 

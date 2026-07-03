@@ -36,6 +36,33 @@ function padId(id) {
   return String(id).padStart(2, '0')
 }
 
+// Delta groups partition the 48 scales into two families. Everything below
+// / above these lists follows the user's canonical spec; unassigned scales
+// (44..48 placeholders) return null.
+const DELTA_ALPHA_IDS = new Set([
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  12,
+  14, 15, 16, 17, 18, 19,
+  21, 23,
+  27, 28, 29, 30, 31,
+  36,
+])
+const DELTA_BETA_IDS = new Set([
+  11, 13,
+  20, 22, 24, 25, 26,
+  32, 33, 34, 35,
+  37, 38, 39, 40, 41, 42, 43,
+])
+function deltaGroupOf(scaleId) {
+  if (DELTA_ALPHA_IDS.has(scaleId)) {
+    return { key: 'alpha', symbol: '∝', label: 'Alpha' }
+  }
+  if (DELTA_BETA_IDS.has(scaleId)) {
+    return { key: 'beta', symbol: 'β', label: 'Beta' }
+  }
+  return null
+}
+
 // Each glyph in the original SVG is actually two sub-symbols separated by ~25
 // viewBox units of empty space. We close that gap at render time: anything past
 // SPLIT_X gets pulled leftward by SHIFT, and the viewBox is trimmed by the same.
@@ -1653,7 +1680,23 @@ function App() {
                       aria-label={`Name for scale ${scale.id}`}
                     />
                     <span className="hero-caption">
-                      rooted in {NOTE_DISPLAY[root]}
+                      #{padId(scale.id)}
+                      {(() => {
+                        const dg = deltaGroupOf(scale.id)
+                        return dg ? (
+                          <>
+                            {' · '}
+                            <span
+                              className={`hero-delta hero-delta-${dg.key}`}
+                              title={`Delta group ${dg.label} (${dg.symbol})`}
+                            >
+                              Δ {dg.label} ({dg.symbol})
+                            </span>
+                          </>
+                        ) : null
+                      })()}
+                      {' · rooted in '}
+                      {NOTE_DISPLAY[root]}
                     </span>
                   </div>
                   <div className="hero-controls">
