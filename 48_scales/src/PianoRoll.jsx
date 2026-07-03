@@ -124,11 +124,15 @@ const BLACK_PC_TO_ABOVE_WHITE_IDX = { 10: 0, 8: 1, 6: 2, 3: 4, 1: 5 }
 // Geometry. Whites are 36 px tall, blacks 24 px, centered on the boundary
 // between two whites. Octave height = 7 × 36 = 12 × 21 = 252 px,
 // so the keyboard column and the 21 px grid rows share total height.
-const ROW_HEIGHT = 21
-const WHITE_HEIGHT = 36
-const BLACK_HEIGHT = 24
-const OCTAVE_KBD_HEIGHT = WHITE_HEIGHT * 7
-const BEAT_WIDTH = 28
+// Row height + beat width are `let` so the roll can scale in and out via
+// ctrl/shift + wheel. The base values live in *_BASE constants; the render
+// syncs the mutable copies from the current zoom state on every pass so
+// every consumer — component code, module-level helpers, JSX styles —
+// reads the same up-to-date value.
+const ROW_HEIGHT_BASE = 21
+const BEAT_WIDTH_BASE = 28
+let ROW_HEIGHT = ROW_HEIGHT_BASE
+let BEAT_WIDTH = BEAT_WIDTH_BASE
 
 // MIDI range — full 88-key piano: A0 to C8.
 const MIDI_LOW = 21 // A0
@@ -192,7 +196,9 @@ function midiToOctave(midi) {
 // White keys fill the column's full width; black keys are narrower and
 // right-aligned, so the layout still reads as a piano without the visual
 // overlap drift that came from mixing white-key spacing with semitone rows.
-const KBD_COLUMN_HEIGHT = (MIDI_HIGH - MIDI_LOW + 1) * ROW_HEIGHT
+// Recomputed on every render (see zoom sync) so vertical zoom scales the
+// keyboard column as well as the grid.
+let KBD_COLUMN_HEIGHT = (MIDI_HIGH - MIDI_LOW + 1) * ROW_HEIGHT
 
 function kbdPosition(midi) {
   const pc = midi % 12
@@ -510,6 +516,64 @@ export default function PianoRoll({
   const [swingPct, setSwingPct] = useState(initialSwing ?? DEFAULT_SWING)
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
+  // Roll zoom (horizontal + vertical, independent). 1 = default. Bounded to
+  // sensible min/max so the user can't accidentally zoom out to zero. Ctrl +
+  // wheel adjusts zoomX; Shift + wheel adjusts zoomY.
+  const [zoomX, setZoomX] = useState(1)
+  const [zoomY, setZoomY] = useState(1)
+  const ZOOM_MIN = 0.3
+  const ZOOM_MAX = 4
+  // Wheel-driven zoom. Attached imperatively so we can pass { passive:false }
+  // and preventDefault the scroll — React's onWheel is passive in modern
+  // browsers, which blocks preventDefault. Zoom pivots on the cursor: we
+  // adjust scrollLeft/scrollTop after the zoom so the point under the mouse
+  // stays under the mouse (Figma / Illustrator behaviour).
+  useEffect(() => {
+    const sc = scrollRef.current
+    if (!sc) return
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) return
+      e.preventDefault()
+      const rect = sc.getBoundingClientRect()
+      const cursorContentX = sc.scrollLeft + (e.clientX - rect.left)
+      const cursorContentY = sc.scrollTop + (e.clientY - rect.top)
+      const factor = Math.pow(1.0015, -e.deltaY)
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        setZoomY((z) => {
+          const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor))
+          if (nz === z) return z
+          // Preserve the cursor's content-space Y after the scale change.
+          requestAnimationFrame(() => {
+            sc.scrollTop = Math.max(
+              0,
+              cursorContentY * (nz / z) - (e.clientY - rect.top)
+            )
+          })
+          return nz
+        })
+      } else {
+        setZoomX((z) => {
+          const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor))
+          if (nz === z) return z
+          requestAnimationFrame(() => {
+            sc.scrollLeft = Math.max(
+              0,
+              cursorContentX * (nz / z) - (e.clientX - rect.left)
+            )
+          })
+          return nz
+        })
+      }
+    }
+    sc.addEventListener('wheel', onWheel, { passive: false })
+    return () => sc.removeEventListener('wheel', onWheel)
+  }, [])
+  // Push the current zoom multipliers into the module-level pixel constants
+  // so every downstream consumer — helper functions, JSX styles, drag/hit
+  // math — reads the same scaled value on this render pass.
+  BEAT_WIDTH = BEAT_WIDTH_BASE * zoomX
+  ROW_HEIGHT = ROW_HEIGHT_BASE * zoomY
+  KBD_COLUMN_HEIGHT = (MIDI_HIGH - MIDI_LOW + 1) * ROW_HEIGHT
   const [metronome, setMetronome] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState(() => new Set())
   // Template waiting to be placed by the user's next grid click. Carries
@@ -3390,6 +3454,7 @@ export default function PianoRoll({
                       className={`grid-row ${isWhite ? 'white' : 'black'} ${
                         isOctave ? 'octave' : ''
                       } ${isIn ? 'in' : ''} ${isRoot ? 'is-root' : ''} ${chordClassFor(pc)}`}
+                      style={{ height: ROW_HEIGHT }}
                     >
                       <div
                         className={`beats-track ${freeMode ? 'free' : ''}`}
