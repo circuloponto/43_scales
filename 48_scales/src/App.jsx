@@ -1680,7 +1680,30 @@ function App() {
                       aria-label={`Name for scale ${scale.id}`}
                     />
                     <span className="hero-caption">
-                      #{padId(scale.id)}
+                      Scale #{padId(scale.id)}
+                      {(() => {
+                        // Longest run of chromatic-consecutive notes in the
+                        // scale — length of the longest sequence n, n+1,
+                        // n+2, … all present (mod 12, so the 11 → 0 wrap
+                        // counts). For each scale note, walk forward
+                        // through the pc set until it breaks; take the max.
+                        const set = new Set(scale.notes)
+                        let maxRun = 0
+                        for (const start of scale.notes) {
+                          let len = 0
+                          while (
+                            set.has((start + len) % 12) &&
+                            len < scale.notes.length
+                          ) len++
+                          if (len > maxRun) maxRun = len
+                        }
+                        return (
+                          <>
+                            {' · Chromatic '}
+                            {maxRun}
+                          </>
+                        )
+                      })()}
                       {(() => {
                         const dg = deltaGroupOf(scale.id)
                         return dg ? (
