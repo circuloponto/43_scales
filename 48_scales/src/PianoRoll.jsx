@@ -881,6 +881,20 @@ export default function PianoRoll({
     return ctx
   }
 
+  // Audition a single note using the active track's synth + envelope, so
+  // input clicks / drags sound like whatever the user picked in the track
+  // sidebar (not always a triangle wave). Falls through to playOneNote with
+  // the resolved oscType / voice pulled from tracks[activeTrackId].
+  const auditionNote = (midi, duration = 0.22, peakGain = 0.22) => {
+    const t = tracksRef.current.find((tk) => tk.id === activeTrackId)
+      ?? tracksRef.current[0]
+    playOneNote(midi, undefined, duration, peakGain, t?.synth ?? 'triangle', {
+      attackMs: t?.attackMs,
+      releaseMs: t?.releaseMs,
+      detuneCents: t?.detuneCents,
+    })
+  }
+
   const playOneNote = (
     midi,
     startAt,
@@ -1745,7 +1759,7 @@ export default function PianoRoll({
         try { trackEl.releasePointerCapture?.(e.pointerId) } catch {}
         const finalLength = notesRef.current.get(currentKey)
         if (finalLength != null) defaultNoteLengthRef.current = finalLength
-        playOneNote(midi, undefined, 0.3)
+        auditionNote(midi, 0.3, 0.3)
       }
       trackEl.addEventListener('pointermove', move)
       trackEl.addEventListener('pointerup', up)
@@ -1918,7 +1932,7 @@ export default function PianoRoll({
           next.set(key, newLength)
           return next
         })
-        playOneNote(placeMidi, undefined, 0.3)
+        auditionNote(placeMidi, 0.3, 0.3)
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
@@ -2227,7 +2241,7 @@ export default function PianoRoll({
       }
 
       if (newAnchorMidi !== drag.lastMidi) {
-        playOneNote(newAnchorMidi, undefined, 0.2)
+        auditionNote(newAnchorMidi, 0.2, 0.2)
         drag.lastMidi = newAnchorMidi
       }
     }
@@ -2251,7 +2265,7 @@ export default function PianoRoll({
       // and audition the note. Deletion is handled by right-click / long-press.
       if (!drag.hasMoved && !drag.isGroup) {
         setSelectedKeys(new Set([drag.group[0].currentKey]))
-        playOneNote(midi, undefined, 0.3)
+        auditionNote(midi, 0.3, 0.3)
       }
       dragRef.current = null
     }
