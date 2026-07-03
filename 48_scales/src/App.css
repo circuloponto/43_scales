@@ -2599,6 +2599,18 @@
   pointer-events: none;
 }
 
+/* Cursor-follow hover cell — a translucent white outline over the beat +
+   midi row the pointer is on, so it's obvious where a click will land. */
+.grid-hover-cell {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  z-index: 3;
+  box-sizing: border-box;
+}
+
 /* Loop region on the timeline */
 .timeline-loop {
   position: absolute;

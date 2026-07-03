@@ -620,6 +620,10 @@ export default function PianoRoll({
   useEffect(() => {
     if (!pendingTemplate) setTemplateHover(null)
   }, [pendingTemplate])
+  // General cursor hover — a single grid cell under the pointer, drawn as a
+  // thin outlined rectangle so the user knows exactly which beat + midi row
+  // a click would land on. Cleared on mouseleave of the grid area.
+  const [hoveredCell, setHoveredCell] = useState(null) // { beat, midi } | null
   useEffect(() => {
     if (!tabMenu && !groupMenu) return
     const close = () => {
@@ -3406,9 +3410,10 @@ export default function PianoRoll({
               <div
                 className="grid-area"
                 ref={gridAreaRef}
-                onMouseLeave={
-                  pendingTemplate ? () => setTemplateHover(null) : undefined
-                }
+                onMouseLeave={() => {
+                  setHoveredCell(null)
+                  if (pendingTemplate) setTemplateHover(null)
+                }}
               >
                 {loop && (
                   <div
@@ -3416,6 +3421,21 @@ export default function PianoRoll({
                     style={{
                       left: `${loop.start * BEAT_WIDTH}px`,
                       width: `${(loop.end - loop.start) * BEAT_WIDTH}px`,
+                    }}
+                  />
+                )}
+                {hoveredCell && !marquee && (
+                  <div
+                    className="grid-hover-cell"
+                    style={{
+                      left: `${hoveredCell.beat * BEAT_WIDTH}px`,
+                      top: `${
+                        (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
+                      }px`,
+                      width: `${
+                        (freeMode ? 0.25 : 1) * BEAT_WIDTH
+                      }px`,
+                      height: `${ROW_HEIGHT}px`,
                     }}
                   />
                 )}
@@ -3460,29 +3480,31 @@ export default function PianoRoll({
                         className={`beats-track ${freeMode ? 'free' : ''}`}
                         style={{ width: totalBeats * BEAT_WIDTH }}
                         onPointerDown={(e) => handleRowMouseDown(e, midi)}
-                        onMouseMove={
-                          pendingTemplate
-                            ? (e) => {
-                                // Cheap per-row anchor tracking: convert
-                                // pointer X to a beat and pass midi from the
-                                // closure. Only wired when a template is
-                                // queued to avoid firing this on every
-                                // mousemove in the roll.
-                                const rect = e.currentTarget.getBoundingClientRect()
-                                let beat = (e.clientX - rect.left) / BEAT_WIDTH
-                                if (!freeMode) beat = Math.floor(beat)
-                                beat = Math.max(
-                                  0,
-                                  Math.min(totalBeats - 1, beat)
-                                )
-                                setTemplateHover((cur) =>
-                                  cur && cur.beat === beat && cur.midi === midi
-                                    ? cur
-                                    : { beat, midi }
-                                )
-                              }
-                            : undefined
-                        }
+                        onMouseMove={(e) => {
+                          // Compute the beat under the cursor once and feed
+                          // it into both the general hover indicator and the
+                          // template preview anchor (when a template is
+                          // queued). Snaps to whole beats unless free mode.
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          let beat = (e.clientX - rect.left) / BEAT_WIDTH
+                          if (!freeMode) beat = Math.floor(beat)
+                          beat = Math.max(
+                            0,
+                            Math.min(totalBeats - 1, beat)
+                          )
+                          setHoveredCell((cur) =>
+                            cur && cur.beat === beat && cur.midi === midi
+                              ? cur
+                              : { beat, midi }
+                          )
+                          if (pendingTemplate) {
+                            setTemplateHover((cur) =>
+                              cur && cur.beat === beat && cur.midi === midi
+                                ? cur
+                                : { beat, midi }
+                            )
+                          }
+                        }}
                       >
                         {rowPreview.map((p, idx) => (
                           <div
