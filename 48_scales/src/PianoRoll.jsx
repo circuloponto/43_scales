@@ -3457,8 +3457,17 @@ export default function PianoRoll({
                       top: `${
                         (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
                       }px`,
+                      // Mirror the length a click would produce: the
+                      // running "last note length" the note-place / drag
+                      // handlers write into defaultNoteLengthRef. That way
+                      // flipping to Free placement keeps the hover box the
+                      // same size as the last note the user drew rather
+                      // than snapping back to the free-mode minimum.
                       width: `${
-                        (freeMode ? 0.25 : 1) * BEAT_WIDTH
+                        Math.max(
+                          freeMode ? 0.25 : 1,
+                          defaultNoteLengthRef.current ?? 1
+                        ) * BEAT_WIDTH
                       }px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
