@@ -707,6 +707,29 @@ function App() {
     if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [selectedId])
 
+  // Which scale ids the user has hidden from the matrix. Persisted so a
+  // curated shortlist (e.g. only pentatonic scales) survives reloads. Kept
+  // near the top of the state block because the matrix-view keyboard nav
+  // effect below reads it in its filter.
+  const [hiddenScaleIds, setHiddenScaleIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('eightFold.hiddenScaleIds')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return new Set(parsed.map(Number))
+      }
+    } catch {}
+    return new Set()
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'eightFold.hiddenScaleIds',
+        JSON.stringify([...hiddenScaleIds])
+      )
+    } catch {}
+  }, [hiddenScaleIds])
+
   // Matrix-view keyboard navigation. Arrow keys step through the scales,
   // Home/End jump to the first / last, Esc clears. Skips when focus is on
   // an editable element so renaming a scale doesn't hijack the keys.
@@ -715,7 +738,11 @@ function App() {
     const onKey = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
-      const visible = scales.filter((s) => s.notes && s.notes.length > 0)
+      // Only navigate through scales the user actually has on-screen — anything
+      // hidden via the Scales picker is skipped by arrow / Home / End.
+      const visible = scales.filter(
+        (s) => s.notes && s.notes.length > 0 && !hiddenScaleIds.has(s.id)
+      )
       if (visible.length === 0) return
       if (e.code === 'Escape') {
         if (selectedId !== null) setSelectedId(null)
@@ -739,7 +766,7 @@ function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, selectedId])
+  }, [view, selectedId, hiddenScaleIds])
 
   // Ctrl/Cmd + Z / Y for song-level undo/redo when in matrix view (where
   // PianoRoll isn't mounted). In roll view PianoRoll owns the shortcut and
@@ -1040,26 +1067,6 @@ function App() {
   const concrete = scale
     ? rootedNotes.map((n) => (n + root) % 12)
     : []
-  // Which scale ids the user has hidden from the matrix. Persisted so a
-  // curated shortlist (e.g. only pentatonic scales) survives reloads.
-  const [hiddenScaleIds, setHiddenScaleIds] = useState(() => {
-    try {
-      const raw = localStorage.getItem('eightFold.hiddenScaleIds')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) return new Set(parsed.map(Number))
-      }
-    } catch {}
-    return new Set()
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'eightFold.hiddenScaleIds',
-        JSON.stringify([...hiddenScaleIds])
-      )
-    } catch {}
-  }, [hiddenScaleIds])
   const [scalePickerOpen, setScalePickerOpen] = useState(false)
   useEffect(() => {
     if (!scalePickerOpen) return
