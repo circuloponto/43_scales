@@ -236,6 +236,15 @@ function App() {
   }
   const [settings, setSettings] = useState(loadSettings)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  useEffect(() => {
+    if (!shortcutsOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShortcutsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [shortcutsOpen])
   // Per-component note name array + helper, derived from the active accidental
   // preference. All places that used the old module-level NOTE_DISPLAY[pc] or
   // pcName(pc) now go through these so the toggle flips every note label in
@@ -1205,6 +1214,15 @@ function App() {
       <div className={`frame ${matrixCollapsed ? 'matrix-collapsed' : ''}`}>
         <button
           type="button"
+          className="shortcuts-trigger"
+          onClick={() => setShortcutsOpen(true)}
+          aria-label="keyboard shortcuts"
+          title="Keyboard shortcuts"
+        >
+          ?
+        </button>
+        <button
+          type="button"
           className="settings-trigger"
           onClick={() => setSettingsOpen(true)}
           aria-label="open settings"
@@ -2095,6 +2113,96 @@ function App() {
         </div>
       )}
 
+      {shortcutsOpen && (
+        <div className="modal-backdrop" onClick={() => setShortcutsOpen(false)}>
+          <div
+            className="modal shortcuts-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="settings-modal-header">
+              <h3>Keyboard shortcuts</h3>
+              <button
+                type="button"
+                className="finder-modal-close"
+                onClick={() => setShortcutsOpen(false)}
+                aria-label="close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="modal-sub">
+              All shortcuts are active in the piano roll unless noted.
+            </p>
+            {[
+              {
+                title: 'Playback',
+                items: [
+                  ['Space', 'Play / pause'],
+                  ['Enter', 'Reset playhead to beat 0 (stop first)'],
+                ],
+              },
+              {
+                title: 'Edit',
+                items: [
+                  ['Ctrl / ⌘ + Z', 'Undo'],
+                  ['Ctrl / ⌘ + Shift + Z, Ctrl + Y', 'Redo'],
+                  ['Ctrl / ⌘ + A', 'Select all notes'],
+                  ['Ctrl / ⌘ + C', 'Copy selection'],
+                  ['Ctrl / ⌘ + V', 'Paste at playhead (or origin beat)'],
+                  ['Delete / Backspace', 'Delete selected notes'],
+                  ['Escape', 'Clear selection / cancel template / drop loop'],
+                ],
+              },
+              {
+                title: 'Transform selection',
+                items: [
+                  ['Shift + H', 'Flip horizontally (mirror in time)'],
+                  ['Shift + V', 'Flip vertically (mirror in pitch)'],
+                  ['[ / ]', 'Grow / shrink selection by one scale step'],
+                  ['T', 'Toggle Rotate mode (↑ / ↓ rotate pitches)'],
+                  ['Arrow keys', 'Move selection by one step / beat'],
+                  ['T + ↑ / ↓', 'Rotate the selection’s pitches'],
+                ],
+              },
+              {
+                title: 'Grid & placement',
+                items: [
+                  ['Alt + click + drag', 'Insert a note and drag its length'],
+                  ['Right-click on note', 'Delete the note (or whole selection)'],
+                  ['Long-press on touch', 'Delete a note'],
+                  [
+                    'Ctrl (held on click / drag)',
+                    'Invert scale-snap mode momentarily',
+                  ],
+                  ['Shift + drag from note', 'Start a marquee from that note'],
+                  ['Ctrl / ⌘ + wheel', 'Zoom horizontally'],
+                  ['Shift + wheel', 'Zoom vertically'],
+                ],
+              },
+              {
+                title: 'Matrix view',
+                items: [
+                  ['Arrow keys / Home / End', 'Navigate through visible scales'],
+                  ['Escape', 'Clear scale selection'],
+                ],
+              },
+            ].map((section) => (
+              <div key={section.title} className="shortcuts-section">
+                <div className="shortcuts-section-title">{section.title}</div>
+                <ul className="shortcuts-list">
+                  {section.items.map(([keys, desc]) => (
+                    <li key={keys} className="shortcuts-row">
+                      <span className="shortcuts-keys">{keys}</span>
+                      <span className="shortcuts-desc">{desc}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {settingsOpen && (
         <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
           <div
@@ -2248,38 +2356,89 @@ function App() {
               </div>
 
               <div className="scale-settings-field-label">All Names:</div>
-              {entries.length === 0 ? (
-                <div className="hint">{`Scale ${scale.id} (Default, selected)`}</div>
-              ) : (
+              {(() => {
+                // When the scale has no persisted entries yet, synthesize a
+                // virtual default one so the list — including its pattern
+                // strip — renders from the very first open of the modal.
+                // No state mutation: only cosmetic.
+                const displayEntries =
+                  entries.length === 0
+                    ? [{ id: '__default', name: `Scale ${scale.id}`, modeStep: null }]
+                    : entries
+                const displayDefaultId =
+                  entries.length === 0 ? '__default' : defaultEntryId
+                const displaySelectedId =
+                  entries.length === 0 ? '__default' : selectedEntryId
+                return (
                 <ul className="scale-settings-list">
-                  {entries.map((e) => {
-                    const isDefault = e.id === defaultEntryId
-                    const isSelected = e.id === selectedEntryId
+                  {displayEntries.map((e) => {
+                    const isDefault = e.id === displayDefaultId
+                    const isSelected = e.id === displaySelectedId
                     const tags = []
                     if (isDefault) tags.push('Default')
                     if (isSelected) tags.push('selected')
+                    // Root pc for this entry's modeStep (1-indexed position
+                    // in sortedNotes). When the entry has no modeStep
+                    // override — i.e. the default entry as it ships — fall
+                    // back to the scale's canonical intrinsic root
+                    // (rootSteps[id-1]) so the default line still shows
+                    // *its* root visually rather than an unmarked strip.
+                    const rsDefault = rootSteps[scale.id - 1]
+                    const defaultRootPc =
+                      rsDefault && scale.notes[rsDefault - 1] != null
+                        ? scale.notes[rsDefault - 1]
+                        : null
+                    const entryRootPc =
+                      e.modeStep && sortedNotes[e.modeStep - 1] != null
+                        ? sortedNotes[e.modeStep - 1]
+                        : defaultRootPc
                     return (
                       <li key={e.id} className="scale-settings-entry">
-                        <span className="scale-settings-entry-name">
-                          {e.name}
-                          {tags.length > 0 && ` (${tags.join(', ')})`}
-                        </span>
-                        {!isDefault && (
-                          <button
-                            type="button"
-                            className="scale-settings-remove"
-                            onClick={() => removeScaleName(scale.id, e.id)}
-                            aria-label={`remove ${e.name}`}
-                            title="Remove this alias"
-                          >
-                            ×
-                          </button>
-                        )}
+                        <div className="scale-settings-entry-head">
+                          <span className="scale-settings-entry-name">
+                            {e.name}
+                            {tags.length > 0 && ` (${tags.join(', ')})`}
+                          </span>
+                          {!isDefault && (
+                            <button
+                              type="button"
+                              className="scale-settings-remove"
+                              onClick={() => removeScaleName(scale.id, e.id)}
+                              aria-label={`remove ${e.name}`}
+                              title="Remove this alias"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        <div className="scale-settings-entry-pattern">
+                          {Array.from({ length: 12 }, (_, c) => {
+                            const inScale = scale.notes.includes(c)
+                            const isRoot =
+                              entryRootPc != null && entryRootPc === c
+                            return (
+                              <span
+                                key={c}
+                                className={`scale-settings-cell readonly ${
+                                  inScale ? 'on' : 'off'
+                                } ${isRoot ? 'picked' : ''}`}
+                                title={
+                                  isRoot
+                                    ? 'Root for this name'
+                                    : inScale
+                                    ? 'In scale'
+                                    : ''
+                                }
+                              />
+                            )
+                          })}
+                        </div>
                       </li>
                     )
                   })}
                 </ul>
-              )}
+                )
+              })()}
 
               {addingAlias ? (
                 <div className="scale-settings-form">

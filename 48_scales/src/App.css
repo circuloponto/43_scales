@@ -3135,6 +3135,97 @@
   border-color: var(--mute);
 }
 
+/* Question-mark help trigger — sits next to the settings gear and opens
+   the keyboard-shortcuts reference modal. */
+.shortcuts-trigger {
+  position: absolute;
+  top: 18px;
+  right: 200px;
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.shortcuts-trigger:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.shortcuts-modal {
+  width: 520px;
+  max-width: calc(100vw - 24px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 40%, transparent) transparent;
+}
+.shortcuts-modal::-webkit-scrollbar {
+  width: 8px;
+}
+.shortcuts-modal::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 40%, transparent);
+  border-radius: 4px;
+}
+.shortcuts-section {
+  margin-top: 12px;
+}
+.shortcuts-section-title {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.shortcuts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shortcuts-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.shortcuts-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.shortcuts-keys {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 3px 6px;
+  display: inline-block;
+  text-align: center;
+  white-space: nowrap;
+}
+.shortcuts-desc {
+  color: var(--fg);
+}
+
 /* Scale picker trigger — inline text button that sits next to the settings
    gear and opens the show/hide-scales popover. */
 /* Vertical column sandwiched between .matrix and .panel — hosts the
@@ -3603,18 +3694,42 @@
 }
 .scale-settings-entry {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 2px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
   font-family: var(--sans);
   font-size: 13px;
   color: var(--fg);
+}
+.scale-settings-entry-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .scale-settings-entry-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+/* Read-only mini pattern below each entry name that shows which pc is the
+   root for that alias. Uses the same colour scheme as the picker but is
+   half-height so it doesn't dominate the list. */
+.scale-settings-entry-pattern {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+  height: 12px;
+}
+.scale-settings-cell.readonly {
+  aspect-ratio: unset;
+  height: 12px;
+  cursor: default;
+  border-radius: 3px;
 }
 .scale-settings-remove {
   background: transparent;

@@ -2562,6 +2562,10 @@ export default function PianoRoll({
         swungEnd: applySwingBeat(endBeat, swing),
         endBeat,
         offsetBeat: startBeat,
+        // Store scheduleRange so a live edit during one-shot playback can
+        // re-schedule the remainder from the current playhead, matching the
+        // loop-mode behaviour.
+        scheduleRange,
       }
       setPlayheadBeat(startBeat)
     }
@@ -2677,45 +2681,61 @@ export default function PianoRoll({
     }
   }
 
-  // Live re-schedule during loop playback: kill queued voices, then
-  // schedule the remainder of the current iteration starting at the
-  // playhead. Used when notes change so edits are heard immediately
-  // rather than at the next iteration boundary.
-  const liveRescheduleLoop = () => {
+  // Live re-schedule while playing: kill queued voices and re-schedule the
+  // remainder of the current iteration (loop) or range (one-shot) starting
+  // at the playhead. Handles BOTH modes so a live edit (flip selection,
+  // note move, delete, etc.) is heard immediately rather than at the next
+  // loop boundary or — worse — never in one-shot playback.
+  const liveReschedule = () => {
     const st = playStateRef.current
-    if (!st || st.mode !== 'loop' || !st.scheduleRange) return
+    if (!st || !st.scheduleRange) return
     const ctx = audioCtxRef.current
     if (!ctx) return
     const now = ctx.currentTime
-    const elapsed = now - st.startTime
-    const firstIterDur = st.firstIterEndTime - st.startTime
-    let currentSwungBeat
-    let iterEndTime
-    if (elapsed < firstIterDur) {
-      currentSwungBeat = st.swungStart + elapsed / st.cellDur
-      iterEndTime = st.firstIterEndTime
-    } else {
-      const elapsedFull = elapsed - firstIterDur
-      const nIter = Math.floor(elapsedFull / st.iterationDur)
-      const timeInIter = elapsedFull - nIter * st.iterationDur
-      currentSwungBeat = st.swungLoopStart + timeInIter / st.cellDur
-      iterEndTime = st.firstIterEndTime + (nIter + 1) * st.iterationDur
+    if (st.mode === 'loop') {
+      const elapsed = now - st.startTime
+      const firstIterDur = st.firstIterEndTime - st.startTime
+      let currentSwungBeat
+      let iterEndTime
+      if (elapsed < firstIterDur) {
+        currentSwungBeat = st.swungStart + elapsed / st.cellDur
+        iterEndTime = st.firstIterEndTime
+      } else {
+        const elapsedFull = elapsed - firstIterDur
+        const nIter = Math.floor(elapsedFull / st.iterationDur)
+        const timeInIter = elapsedFull - nIter * st.iterationDur
+        currentSwungBeat = st.swungLoopStart + timeInIter / st.cellDur
+        iterEndTime = st.firstIterEndTime + (nIter + 1) * st.iterationDur
+      }
+      killScheduledVoices()
+      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
+      st.scheduleRange(currentMusicalBeat, st.loopEnd, now)
+      st.nextIterStartTime = iterEndTime
+    } else if (st.mode === 'oneshot') {
+      const elapsed = now - st.startTime
+      const currentSwungBeat = st.swungStart + elapsed / st.cellDur
+      // Guard against re-schedules past the end of the range — nothing to
+      // do there. Also cap at endBeat so we don't schedule silence.
+      if (currentSwungBeat >= st.swungEnd) return
+      killScheduledVoices()
+      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
+      st.scheduleRange(currentMusicalBeat, st.endBeat, now)
     }
-    killScheduledVoices()
-    const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
-    st.scheduleRange(currentMusicalBeat, st.loopEnd, now)
-    st.nextIterStartTime = iterEndTime
   }
 
-  // Debounced trigger: when notes change during loop playback, wait a beat
-  // for rapid changes (drags, multi-step edits) to settle, then reschedule
-  // from the current playhead so the audio reflects the edit immediately.
+  // Debounced trigger: on ANY track change while playing — notes moved /
+  // added / deleted, synth swapped, volume / mute / solo flipped, attack /
+  // release / detune tweaked — wait a beat for rapid changes to settle,
+  // then reschedule from the current playhead so the audio reflects the
+  // edit immediately (both loop and one-shot playback). Depending on the
+  // whole tracks array catches every field the scheduler reads through
+  // tracksRef, not just the active track's notes.
   useEffect(() => {
     const st = playStateRef.current
-    if (!st || st.mode !== 'loop') return
-    const id = setTimeout(() => liveRescheduleLoop(), 60)
+    if (!st) return
+    const id = setTimeout(() => liveReschedule(), 60)
     return () => clearTimeout(id)
-  }, [notes])
+  }, [tracks])
 
   const playFromStart = () => {
     playFromBeat(0)
