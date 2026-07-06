@@ -2180,6 +2180,13 @@ function App() {
                 ],
               },
               {
+                title: 'Rhythm entry',
+                items: [
+                  ['1 – 9', 'Base subdivision: n notes per beat (2 = 8th)'],
+                  ['X, then 1 – 9', 'Multiply current length (2 then X 3 = dotted quarter)'],
+                ],
+              },
+              {
                 title: 'Matrix view',
                 items: [
                   ['Arrow keys / Home / End', 'Navigate through visible scales'],

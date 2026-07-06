@@ -699,6 +699,71 @@ export default function PianoRoll({
   // inherit it so the user can pick a duration once and keep adding notes
   // at that length without re-resizing each one.
   const defaultNoteLengthRef = useRef(1)
+  // Rhythm entry system: press a digit 1-9 to set the base subdivision
+  // (N notes per beat → each note is 1/N beat). Press X and then a digit
+  // to multiply the current length by that digit — so 2 (8th note) → X 3
+  // → 3 × 0.5 = 1.5 beat (dotted quarter). Values feed directly into
+  // defaultNoteLengthRef which the click-place handler already reads.
+  const [rhythmLength, setRhythmLength] = useState(1)
+  const [rhythmAwaitingMultiplier, setRhythmAwaitingMultiplier] = useState(false)
+  useEffect(() => {
+    defaultNoteLengthRef.current = rhythmLength
+  }, [rhythmLength])
+  // Auto-cancel the multiplier prompt if the user doesn't follow up with
+  // a digit within a couple of seconds — otherwise a stray digit later
+  // would keep multiplying instead of setting a fresh subdivision.
+  useEffect(() => {
+    if (!rhythmAwaitingMultiplier) return
+    const id = setTimeout(() => setRhythmAwaitingMultiplier(false), 2000)
+    return () => clearTimeout(id)
+  }, [rhythmAwaitingMultiplier])
+  // Human-readable label for the current rhythm value (rendered in the
+  // toolbar so the user can see what pressing a digit did). Matches
+  // musical vocabulary — dotted, double-dotted, triplets, quintuplets,
+  // sextuplets, septuplets, nonuplets — before falling back to a raw
+  // beat count for anything unusual.
+  const rhythmLabel = (() => {
+    const l = rhythmLength
+    const eq = (a, b) => Math.abs(a - b) < 1e-6
+    const powers = [
+      { v: 4, name: 'whole' },
+      { v: 2, name: 'half' },
+      { v: 1, name: 'quarter' },
+      { v: 0.5, name: '8th' },
+      { v: 0.25, name: '16th' },
+      { v: 0.125, name: '32nd' },
+      { v: 0.0625, name: '64th' },
+    ]
+    // Plain, dotted (× 1.5), double-dotted (× 1.75) variants.
+    for (const { v, name } of powers) {
+      if (eq(l, v)) return name
+      if (eq(l, v * 1.5)) return `dotted ${name}`
+      if (eq(l, v * 1.75)) return `double-dotted ${name}`
+    }
+    // Triplets: three of value X take the same time as two of X, so each
+    // triplet member is (2 × X) / 3.
+    for (const { v, name } of powers) {
+      if (eq(l, (v * 2) / 3)) return `${name} triplet`
+    }
+    // 5- / 6- / 7- / 9-tuplet subdivisions of a beat that the digit keys
+    // produce directly (5, 6, 7, 9 → N notes per beat).
+    const tuplets = [
+      { v: 1 / 5, name: '16th quintuplet' },
+      { v: 1 / 6, name: '16th sextuplet' },
+      { v: 1 / 7, name: '32nd septuplet' },
+      { v: 1 / 9, name: '32nd nonuplet' },
+    ]
+    for (const { v, name } of tuplets) {
+      if (eq(l, v)) return name
+    }
+    // Multiples of tuplets (e.g. 8th quintuplet = 2 × 16th quintuplet).
+    for (const { v, name } of tuplets) {
+      for (let m = 2; m <= 6; m++) {
+        if (eq(l, v * m)) return `${m} × ${name}`
+      }
+    }
+    return `${l.toFixed(3).replace(/\.?0+$/, '')} beats`
+  })()
   // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
   // selection's pitches instead of nudging them by a scale step.
   const tHeldRef = useRef(false)
@@ -863,6 +928,29 @@ export default function PianoRoll({
       } else if (e.code === 'ArrowLeft' && selectedKeys.size > 0) {
         e.preventDefault()
         nudgeSelection(-1, 0)
+      } else if (
+        !meta &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.code === 'KeyX' || k === 'x')
+      ) {
+        // Prime the multiplier — the next digit multiplies the current
+        // note length instead of setting a fresh subdivision.
+        e.preventDefault()
+        setRhythmAwaitingMultiplier(true)
+      } else if (
+        !meta &&
+        !e.shiftKey &&
+        !e.altKey &&
+        /^Digit[1-9]$/.test(e.code)
+      ) {
+        e.preventDefault()
+        const n = Number(e.code.slice(5))
+        setRhythmLength((cur) => {
+          if (rhythmAwaitingMultiplier) return cur * n
+          return 1 / n
+        })
+        setRhythmAwaitingMultiplier(false)
       }
     }
     window.addEventListener('keydown', handler)
@@ -2957,6 +3045,20 @@ export default function PianoRoll({
         >
           <Magnet size={14} strokeWidth={2} />
         </button>
+        <div
+          className={`rhythm-indicator ${
+            rhythmAwaitingMultiplier ? 'awaiting' : ''
+          }`}
+          title={
+            'Rhythm: press 1–9 for a subdivision (n notes/beat), then X and another digit to multiply. E.g. 2 → 8th note, X 3 → dotted quarter.'
+          }
+        >
+          <span className="rhythm-indicator-label">RHYTHM</span>
+          <span className="rhythm-indicator-value">
+            {rhythmLabel}
+            {rhythmAwaitingMultiplier && ' · ×?'}
+          </span>
+        </div>
         </div>
         <button
           className="play roll-play"
@@ -3477,18 +3579,13 @@ export default function PianoRoll({
                       top: `${
                         (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
                       }px`,
-                      // Mirror the length a click would produce: the
-                      // running "last note length" the note-place / drag
-                      // handlers write into defaultNoteLengthRef. That way
-                      // flipping to Free placement keeps the hover box the
-                      // same size as the last note the user drew rather
-                      // than snapping back to the free-mode minimum.
-                      width: `${
-                        Math.max(
-                          freeMode ? 0.25 : 1,
-                          defaultNoteLengthRef.current ?? 1
-                        ) * BEAT_WIDTH
-                      }px`,
+                      // Mirror the length a click would actually produce
+                      // exactly — no snap-mode clamp. Click-place writes
+                      // rhythmLength straight into the notes map, so the
+                      // hover width must follow the same value or the two
+                      // won't line up (an 8th-note hover would render as a
+                      // full-beat box in snap mode otherwise).
+                      width: `${(rhythmLength ?? 1) * BEAT_WIDTH}px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
                   />

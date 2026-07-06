@@ -1352,6 +1352,48 @@
   min-width: 32px;
 }
 
+/* Rhythm-entry indicator — small chip in the roll toolbar showing the
+   note length that the next click will produce. Flashes accent-coloured
+   while awaiting a multiplier digit (after X was pressed). */
+.rhythm-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-family: var(--sans);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+  cursor: help;
+  user-select: none;
+}
+.rhythm-indicator-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--mute);
+}
+.rhythm-indicator-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.rhythm-indicator.awaiting {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: rhythm-await-pulse 0.9s ease-in-out infinite;
+}
+@keyframes rhythm-await-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 /* Scale summary strip — quick reference for which pitch classes the
    current scale contains, mirroring the matrix's row. */
 .roll-scale-bar {
