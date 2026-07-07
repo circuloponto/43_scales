@@ -2229,8 +2229,9 @@ function App() {
               {
                 title: 'Rhythm entry',
                 items: [
-                  ['1 – 9', 'Base subdivision: n notes per beat (2 = 8th)'],
-                  ['X, then 1 – 9', 'Multiply current length (2 then X 3 = dotted quarter)'],
+                  ['1 – 9', 'Divide the unit (beat or bar) exactly: ÷1 = whole, ÷2 = half, ÷3 = triplet, ÷4 = quarter, ÷6 = six per unit…'],
+                  ['X, then 1 – 9', 'Set a multiplier for the note length'],
+                  ['Rhythm unit box', 'Click BEAT/BAR to choose what the division refers to'],
                 ],
               },
               {

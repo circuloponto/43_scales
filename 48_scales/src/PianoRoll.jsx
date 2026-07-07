@@ -30,6 +30,51 @@ let pendingResume = null // { beat, ctxTime } | null
 // start can overlap seamlessly.
 let sharedAudioCtx = null
 
+// Musical-note glyph for the rhythm indicator. `value` is the note
+// denominator (1 = whole, 2 = half, 4 = quarter, 8 = 8th, 16 = 16th, …).
+// Drawn as a notehead + optional stem + flags so it reads at a glance
+// regardless of font support for Unicode music symbols.
+function NoteGlyph({ value = 4, size = 16 }) {
+  const filled = value >= 4 // quarter and shorter are filled
+  const hasStem = value >= 2 // everything but the whole note
+  // 8th → 1 flag, 16th → 2, 32nd → 3, … capped so the icon stays legible.
+  const flags = value >= 8 ? Math.min(4, Math.round(Math.log2(value)) - 2) : 0
+  const headCx = 7
+  const headCy = 17
+  const stemX = 10.6
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <ellipse
+        cx={headCx}
+        cy={headCy}
+        rx="4"
+        ry="3"
+        transform={`rotate(-20 ${headCx} ${headCy})`}
+        fill={filled ? 'currentColor' : 'none'}
+        strokeWidth="1.4"
+      />
+      {hasStem && (
+        <line x1={stemX} y1={headCy - 1.5} x2={stemX} y2="4" strokeWidth="1.4" />
+      )}
+      {Array.from({ length: flags }, (_, i) => (
+        <path
+          key={i}
+          d={`M ${stemX} ${4 + i * 3.2} q 5 1.5 4.5 6`}
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  )
+}
+
 // A single song tab with HTML5 drag/drop wiring. Kept at module scope so
 // PianoRoll's giant render body stays readable; state changes come in via
 // props (dragState / setDragState) so all tabs share one drag session.
@@ -134,6 +179,11 @@ function SongTab({
 const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
+
+// One grid cell is a 16th note; a measure ("compass") is 16 cells (4/4).
+// The rhythm system divides the measure, so a whole note = one measure =
+// CELLS_PER_MEASURE cells.
+const CELLS_PER_MEASURE = 16
 
 // PC → "white index from top of octave" (0 = B, 1 = A, ..., 6 = C)
 const PC_TO_WHITE_IDX = { 11: 0, 9: 1, 7: 2, 5: 3, 4: 4, 2: 5, 0: 6 }
@@ -723,13 +773,19 @@ export default function PianoRoll({
   // inherit it so the user can pick a duration once and keep adding notes
   // at that length without re-resizing each one.
   const defaultNoteLengthRef = useRef(1)
-  // Rhythm entry system: press a digit 1-9 to set the base subdivision
-  // (N notes per beat → each note is 1/N beat). Press X and then a digit
-  // to multiply the current length by that digit — so 2 (8th note) → X 3
-  // → 3 × 0.5 = 1.5 beat (dotted quarter). Values feed directly into
-  // defaultNoteLengthRef which the click-place handler already reads.
-  const [rhythmLength, setRhythmLength] = useState(1)
+  // Rhythm entry system. The reference UNIT is either a beat (4 cells) or a
+  // bar/measure (16 cells) — toggled via `rhythmUnit`. A digit 1-9 divides
+  // that unit exactly: ÷1 = the whole unit, ÷2 = half, ÷3 = a triplet, ÷4 =
+  // a quarter, ÷6 = a sextuplet (six per unit), … so length =
+  // unitCells / n cells. Press X then a digit m for an integer multiplier.
+  // The placed length (in grid cells) = unitCells × multiplier / n.
+  const [rhythmUnit, setRhythmUnit] = useState('beat') // 'beat' | 'bar'
+  const [rhythmDenominator, setRhythmDenominator] = useState(4) // 1-9
+  const [rhythmMult, setRhythmMult] = useState(1) // integer multiplier
   const [rhythmAwaitingMultiplier, setRhythmAwaitingMultiplier] = useState(false)
+  const rhythmUnitCells = rhythmUnit === 'bar' ? CELLS_PER_MEASURE : 4
+  const rhythmBaseCells = rhythmUnitCells / rhythmDenominator
+  const rhythmLength = rhythmBaseCells * rhythmMult
   useEffect(() => {
     defaultNoteLengthRef.current = rhythmLength
   }, [rhythmLength])
@@ -741,53 +797,42 @@ export default function PianoRoll({
     const id = setTimeout(() => setRhythmAwaitingMultiplier(false), 2000)
     return () => clearTimeout(id)
   }, [rhythmAwaitingMultiplier])
-  // Human-readable label for the current rhythm value (rendered in the
-  // toolbar so the user can see what pressing a digit did). Matches
-  // musical vocabulary — dotted, double-dotted, triplets, quintuplets,
-  // sextuplets, septuplets, nonuplets — before falling back to a raw
-  // beat count for anything unusual.
-  const rhythmLabel = (() => {
-    const l = rhythmLength
-    const eq = (a, b) => Math.abs(a - b) < 1e-6
-    const powers = [
-      { v: 4, name: 'whole' },
-      { v: 2, name: 'half' },
-      { v: 1, name: 'quarter' },
-      { v: 0.5, name: '8th' },
-      { v: 0.25, name: '16th' },
-      { v: 0.125, name: '32nd' },
-      { v: 0.0625, name: '64th' },
-    ]
-    // Plain, dotted (× 1.5), double-dotted (× 1.75) variants.
-    for (const { v, name } of powers) {
-      if (eq(l, v)) return name
-      if (eq(l, v * 1.5)) return `dotted ${name}`
-      if (eq(l, v * 1.75)) return `double-dotted ${name}`
+  // Note value derived from the base length in cells (16 cells = whole).
+  // Powers of 2 get their note-value name; the rest are tuplets named by
+  // the divisor. The glyph draws the nearest power-of-2 note plus a tuplet
+  // badge — so a beat-triplet shows an 8th note with a small "3".
+  const rhythmNoteDenom = CELLS_PER_MEASURE / rhythmBaseCells // 1=whole, 2=half…
+  const isPow2 = (x) => x >= 1 && (x & (x - 1)) === 0
+  const rhythmNoteName = (() => {
+    const noteNames = {
+      1: 'whole', 2: 'half', 4: 'quarter', 8: '8th',
+      16: '16th', 32: '32nd', 64: '64th',
     }
-    // Triplets: three of value X take the same time as two of X, so each
-    // triplet member is (2 × X) / 3.
-    for (const { v, name } of powers) {
-      if (eq(l, (v * 2) / 3)) return `${name} triplet`
+    if (isPow2(rhythmDenominator) && noteNames[rhythmNoteDenom]) {
+      return noteNames[rhythmNoteDenom]
     }
-    // 5- / 6- / 7- / 9-tuplet subdivisions of a beat that the digit keys
-    // produce directly (5, 6, 7, 9 → N notes per beat).
-    const tuplets = [
-      { v: 1 / 5, name: '16th quintuplet' },
-      { v: 1 / 6, name: '16th sextuplet' },
-      { v: 1 / 7, name: '32nd septuplet' },
-      { v: 1 / 9, name: '32nd nonuplet' },
-    ]
-    for (const { v, name } of tuplets) {
-      if (eq(l, v)) return name
+    const tupletNames = {
+      3: 'triplet', 5: 'quintuplet', 6: 'sextuplet',
+      7: 'septuplet', 9: 'nonuplet',
     }
-    // Multiples of tuplets (e.g. 8th quintuplet = 2 × 16th quintuplet).
-    for (const { v, name } of tuplets) {
-      for (let m = 2; m <= 6; m++) {
-        if (eq(l, v * m)) return `${m} × ${name}`
-      }
-    }
-    return `${l.toFixed(3).replace(/\.?0+$/, '')} beats`
+    return tupletNames[rhythmDenominator] ?? `÷${rhythmDenominator}`
   })()
+  const rhythmGlyphValue = Math.pow(
+    2,
+    Math.max(0, Math.floor(Math.log2(rhythmNoteDenom)))
+  )
+  const rhythmTuplet = isPow2(rhythmDenominator) ? null : rhythmDenominator
+  // Snap a raw beat (grid cells) to the current rhythm's division grid so
+  // notes — including tuplets — land on evenly-spaced positions. Snapping
+  // to the base division (not the multiplied length) means e.g. a bar ÷6
+  // grid gives six positions across the measure, so pressing 6 lets you
+  // place six notes that fill the bar. Free mode bypasses snapping.
+  const snapPlacementBeat = (raw) => {
+    const clamp = (v) => Math.max(0, Math.min(totalBeats - 0.001, v))
+    if (freeMode) return clamp(raw)
+    const step = rhythmBaseCells > 0 ? rhythmBaseCells : 1
+    return clamp(Math.round(raw / step) * step)
+  }
   // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
   // selection's pitches instead of nudging them by a scale step.
   const tHeldRef = useRef(false)
@@ -1027,8 +1072,8 @@ export default function PianoRoll({
         !e.altKey &&
         (e.code === 'KeyX' || k === 'x')
       ) {
-        // Prime the multiplier — the next digit multiplies the current
-        // note length instead of setting a fresh subdivision.
+        // Prime the multiplier — the next digit sets the multiplier
+        // instead of a fresh base note value.
         e.preventDefault()
         setRhythmAwaitingMultiplier(true)
       } else if (
@@ -1039,10 +1084,14 @@ export default function PianoRoll({
       ) {
         e.preventDefault()
         const n = Number(e.code.slice(5))
-        setRhythmLength((cur) => {
-          if (rhythmAwaitingMultiplier) return cur * n
-          return 1 / n
-        })
+        if (rhythmAwaitingMultiplier) {
+          // X then digit → set the multiplier (keeps the base note value).
+          setRhythmMult(n)
+        } else {
+          // Plain digit → set the beat division and reset the multiplier.
+          setRhythmDenominator(n)
+          setRhythmMult(1)
+        }
         setRhythmAwaitingMultiplier(false)
       }
     }
@@ -1996,9 +2045,9 @@ export default function PianoRoll({
       trackEl.setPointerCapture?.(pointerId)
     } catch {}
 
-    let beat = startContentX / BEAT_WIDTH
-    if (!freeMode) beat = Math.floor(beat)
-    beat = Math.max(0, Math.min(totalBeats - 0.001, beat))
+    // Snap the click to the rhythm's division grid (tuplets included) so
+    // placed notes tile cleanly. Free mode leaves it continuous.
+    let beat = snapPlacementBeat(startContentX / BEAT_WIDTH)
     let moved = false
     // Track scroll offset the container was at when the drag started, so
     // that if the container scrolls mid-drag the marquee's rectangle grows
@@ -3162,18 +3211,38 @@ export default function PianoRoll({
           <Magnet size={14} strokeWidth={2} />
         </button>
         <div
-          className={`rhythm-indicator ${
-            rhythmAwaitingMultiplier ? 'awaiting' : ''
-          }`}
+          className="rhythm-cluster"
           title={
-            'Rhythm: press 1–9 for a subdivision (n notes/beat), then X and another digit to multiply. E.g. 2 → 8th note, X 3 → dotted quarter.'
+            'Rhythm — pick the unit (beat or bar), then press 1-9 to divide it exactly (÷1 = whole unit, ÷2 = half, ÷3 = triplet, ÷6 = six per unit, …). Press X then a digit to set a multiplier.'
           }
         >
-          <span className="rhythm-indicator-label">RHYTHM</span>
-          <span className="rhythm-indicator-value">
-            {rhythmLabel}
-            {rhythmAwaitingMultiplier && ' · ×?'}
-          </span>
+          <button
+            type="button"
+            className="rhythm-unit-box"
+            onClick={() =>
+              setRhythmUnit((u) => (u === 'beat' ? 'bar' : 'beat'))
+            }
+            title="Toggle whether the division refers to a beat or a bar"
+          >
+            {rhythmUnit === 'bar' ? 'BAR' : 'BEAT'}
+          </button>
+          <div className="rhythm-box">
+            <span className="rhythm-box-div">÷{rhythmDenominator}</span>
+            <span className="rhythm-box-name">{rhythmNoteName}</span>
+          </div>
+          <div className="rhythm-note-icon">
+            <NoteGlyph value={rhythmGlyphValue} size={18} />
+            {rhythmTuplet && (
+              <span className="rhythm-note-tuplet">{rhythmTuplet}</span>
+            )}
+          </div>
+          <div
+            className={`rhythm-mult-box ${
+              rhythmAwaitingMultiplier ? 'awaiting' : ''
+            }`}
+          >
+            ×{rhythmAwaitingMultiplier ? '?' : rhythmMult}
+          </div>
         </div>
         </div>
         <button
@@ -3758,11 +3827,11 @@ export default function PianoRoll({
                           // out-of-scale rows that a click there would
                           // refuse to place a note on anyway.
                           const rect = e.currentTarget.getBoundingClientRect()
-                          let beat = (e.clientX - rect.left) / BEAT_WIDTH
-                          if (!freeMode) beat = Math.floor(beat)
-                          beat = Math.max(
-                            0,
-                            Math.min(totalBeats - 1, beat)
+                          // Snap to the rhythm division grid so the hover
+                          // box lands exactly where a click would place the
+                          // note (tuplets included).
+                          const beat = snapPlacementBeat(
+                            (e.clientX - rect.left) / BEAT_WIDTH
                           )
                           // Ctrl held inverts the current snap mode for
                           // the hover indicator too, so its position always

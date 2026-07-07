@@ -1352,37 +1352,98 @@
   min-width: 32px;
 }
 
-/* Rhythm-entry indicator — small chip in the roll toolbar showing the
-   note length that the next click will produce. Flashes accent-coloured
-   while awaiting a multiplier digit (after X was pressed). */
-.rhythm-indicator {
+/* Rhythm-entry cluster — three chips: the note-value box (÷n + name), a
+   note-glyph icon, and the multiplier box. The multiplier flashes accent
+   while awaiting its digit (after X was pressed). */
+.rhythm-cluster {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
+  align-items: stretch;
+  gap: 4px;
   font-family: var(--sans);
-  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
   cursor: help;
   user-select: none;
 }
-.rhythm-indicator-label {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--mute);
+.rhythm-unit-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
 }
-.rhythm-indicator-value {
+.rhythm-unit-box:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.rhythm-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.rhythm-box-div {
   font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.rhythm-box-name {
   font-size: 11px;
   color: var(--fg);
   white-space: nowrap;
 }
-.rhythm-indicator.awaiting {
+.rhythm-note-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--fg);
+}
+/* Tuplet badge for non-power-of-2 divisions (3, 5, 6, 7, 9). */
+.rhythm-note-tuplet {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+.rhythm-mult-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.rhythm-mult-box.awaiting {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
   animation: rhythm-await-pulse 0.9s ease-in-out infinite;
 }
 @keyframes rhythm-await-pulse {
