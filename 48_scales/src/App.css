@@ -24,6 +24,17 @@
   font-feature-settings: 'tnum', 'ss01', 'cv11';
   overflow: hidden;
   --cell: calc(((100dvh - 24px - 47 * 2px) / 48) * 1.5);
+  /* Disable accidental text selection everywhere — this is a direct-
+     manipulation UI (drag notes, tabs, sliders), not a document. Inputs and
+     textareas re-enable it below so typing / editing still works. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.app input,
+.app textarea,
+.app [contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .frame {
