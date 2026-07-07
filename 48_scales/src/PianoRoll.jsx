@@ -657,6 +657,9 @@ export default function PianoRoll({
   const [exportFeedback, setExportFeedback] = useState('')
   const [chordModalOpen, setChordModalOpen] = useState(false)
   // Floating pitch label that follows the cursor while hovering a row-note.
+  // Carries the hovered note's `key` so we can dismiss the label if that
+  // note is deleted out from under the cursor (delete removes the DOM node
+  // before its onMouseLeave can fire, otherwise the label would stick).
   const [notePitchTip, setNotePitchTip] = useState(null)
   // Mobile-only UI state. Desktop ignores these via CSS.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -880,6 +883,15 @@ export default function PianoRoll({
     const step = rhythmBaseCells > 0 ? rhythmBaseCells : 1
     return clamp(Math.round(raw / step) * step)
   }
+  // Dismiss the floating pitch label the instant its note is deleted —
+  // covers every delete path (right-click, Delete key, long-press, marquee)
+  // since they all mutate `notes`. Skipped while a drag is in flight so a
+  // note being moved (its key changes) doesn't flicker the label off.
+  useEffect(() => {
+    if (notePitchTip && !dragRef.current && !notes.has(notePitchTip.key)) {
+      setNotePitchTip(null)
+    }
+  }, [notes, notePitchTip])
   // `T` is a held modifier: while it's down, ArrowUp/Down rotate the
   // selection's pitches instead of nudging them by a scale step.
   const tHeldRef = useRef(false)
@@ -3926,6 +3938,7 @@ export default function PianoRoll({
                                 label: midiPitchLabel(midi),
                                 x: e.clientX,
                                 y: e.clientY,
+                                key,
                               })
                             }
                             onMouseMove={(e) =>
@@ -3933,6 +3946,7 @@ export default function PianoRoll({
                                 label: midiPitchLabel(midi),
                                 x: e.clientX,
                                 y: e.clientY,
+                                key,
                               })
                             }
                             onMouseLeave={() => setNotePitchTip(null)}
