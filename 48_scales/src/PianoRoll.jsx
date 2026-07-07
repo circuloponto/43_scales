@@ -11,6 +11,25 @@ import { resolveChordPair, pcName } from './chordVocab'
 // or track and pasted into another.
 let sharedClipboard = null
 
+// Module-scope tab-switch resume slot. React state can't carry this across
+// the unmount → mount seam reliably because the outgoing tab's cleanup and
+// the incoming tab's mount effect happen in the same commit — any
+// setState from cleanup would only be visible on the NEXT render, which
+// is after the new mount effect fires. A plain module variable is
+// synchronous and survives the seam so the new tab's mount effect sees it
+// immediately. Carries the musical beat AND the audio-clock time at which
+// it was captured, so the incoming tab can advance the beat by however
+// long the remount actually took and stay perfectly in time.
+let pendingResume = null // { beat, ctxTime } | null
+
+// Module-scope AudioContext, shared by every PianoRoll instance. Because
+// tab switches remount PianoRoll (key={activeSongId}), a per-instance
+// context would be re-created on every switch — its clock would reset and
+// there'd be an init pop / gap. A single persistent context keeps the
+// clock continuous so the outgoing song's tail and the incoming song's
+// start can overlap seamlessly.
+let sharedAudioCtx = null
+
 // A single song tab with HTML5 drag/drop wiring. Kept at module scope so
 // PianoRoll's giant render body stays readable; state changes come in via
 // props (dragState / setDragState) so all tabs share one drag session.
@@ -420,6 +439,7 @@ export default function PianoRoll({
   initialLoop = null,
   initialTotalBeats = null,
   onPersistPlayback,
+  tabSwitchPlayback = 'stop',
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
   const useFlats = !!settings.useFlats
@@ -659,6 +679,10 @@ export default function PianoRoll({
     setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
   }
   const audioCtxRef = useRef(null)
+  // Keep the per-instance ref pointing at the shared module context (if one
+  // exists yet) so code paths that read audioCtxRef.current before the
+  // first getAudioContext() call still find the live context.
+  if (sharedAudioCtx) audioCtxRef.current = sharedAudioCtx
   const playStateRef = useRef(null)
   const rafRef = useRef(null)
   const scheduledVoicesRef = useRef([])
@@ -826,15 +850,84 @@ export default function PianoRoll({
     persistPlaybackRef.current?.({ bpm, swing: swingPct, loop, totalBeats })
   }, [bpm, swingPct, loop, totalBeats])
 
+  // Latest playhead + play-state, mirrored into a ref so the unmount
+  // cleanup can read them without stale-closure issues. Updated every
+  // render from the current values.
+  const playheadBeatRef = useRef(0)
+  const isPlayingRef = useRef(false)
+  useEffect(() => {
+    if (playheadBeat != null) playheadBeatRef.current = playheadBeat
+  }, [playheadBeat])
+  useEffect(() => {
+    isPlayingRef.current = playStateRef.current != null
+  })
+
+  // Keep the tabSwitchPlayback prop in a ref so the unmount cleanup sees
+  // the freshest value even if the prop's identity ping-pongs on the way
+  // out. React would otherwise snapshot the value at effect setup.
+  const tabSwitchPlaybackRef = useRef(tabSwitchPlayback)
+  tabSwitchPlaybackRef.current = tabSwitchPlayback
+
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      // If the user asked for cross-tab continue and playback was active,
+      // stash the current beat + audio-clock time in the module-level slot
+      // so the incoming tab's mount effect can pick up exactly where we
+      // left off. React state wouldn't work here: a setState from cleanup
+      // only lands on the next render, after the new mount effect runs.
+      const wasPlaying = playStateRef.current != null
+      const continuing =
+        tabSwitchPlaybackRef.current === 'continue' && wasPlaying
       playStateRef.current = null
-      // Silence any voices the scheduler had already queued into the Web
-      // Audio graph — otherwise switching songs mid-playback keeps the
-      // previous song's oscillators ringing until their scheduled stop.
-      killScheduledVoices()
+      if (continuing && sharedAudioCtx) {
+        pendingResume = {
+          beat: playheadBeatRef.current ?? 0,
+          ctxTime: sharedAudioCtx.currentTime,
+        }
+        // Crossfade instead of a hard cut: let the outgoing song's voices
+        // fade over ~120 ms so their tail overlaps the incoming song's
+        // start (which the new mount schedules immediately). The result
+        // reads as continuous rather than a stop-then-start gap.
+        fadeOutScheduledVoices(0.12)
+      } else {
+        // Normal teardown — silence queued voices quickly.
+        killScheduledVoices()
+      }
     }
+  }, [])
+
+  // On mount, if the module slot has a pending resume, auto-start playback
+  // at the captured beat — advanced by however long the remount actually
+  // took — so the timeline stays continuous. The new notes start with the
+  // scheduler's small lead, overlapping the outgoing song's fade tail for
+  // a gapless handoff.
+  //
+  // The slot is consumed INSIDE the rAF, not before scheduling it. Under
+  // React StrictMode the mount → cleanup → mount cycle would otherwise
+  // consume it on the first mount, have its rAF cancelled by the cleanup,
+  // then find an empty slot on the real second mount — so playback would
+  // never start in dev. Reading the slot lazily lets the surviving mount's
+  // rAF pick it up.
+  useEffect(() => {
+    if (pendingResume == null) return
+    const id = requestAnimationFrame(() => {
+      const slot = pendingResume
+      if (slot == null) return
+      pendingResume = null
+      const ctx = getAudioContext()
+      // playFromBeat's internal lead (see startBase = currentTime + 0.05).
+      const LEAD = 0.05
+      const cellDur = beatDurForBpm(bpm)
+      // How much audio-clock time passed between capture and this note
+      // actually sounding (remount time + the scheduler lead). Advance the
+      // beat by that so we don't drop or repeat any beats.
+      const elapsed = Math.max(0, ctx.currentTime + LEAD - slot.ctxTime)
+      const advancedBeat = (slot.beat ?? 0) + elapsed / cellDur
+      try { playFromBeat(advancedBeat) } catch {}
+    })
+    return () => cancelAnimationFrame(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -960,13 +1053,15 @@ export default function PianoRoll({
   })
 
   const getAudioContext = () => {
-    if (!audioCtxRef.current) {
+    if (!sharedAudioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext
-      audioCtxRef.current = new Ctx()
+      sharedAudioCtx = new Ctx()
     }
-    const ctx = audioCtxRef.current
-    if (ctx.state === 'suspended') ctx.resume()
-    return ctx
+    // Point the per-instance ref at the shared context so every existing
+    // `audioCtxRef.current` read keeps working unchanged.
+    audioCtxRef.current = sharedAudioCtx
+    if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume()
+    return sharedAudioCtx
   }
 
   // Audition a single note using the active track's synth + envelope, so
@@ -1055,6 +1150,27 @@ export default function PianoRoll({
       try { osc.stop(now + 0.03) } catch {}
       try { osc.disconnect() } catch {}
       try { gain.disconnect() } catch {}
+    }
+  }
+
+  // Softer variant of killScheduledVoices: ramps voices down over `fadeSec`
+  // instead of the abrupt 20 ms cut. Used for the cross-tab handoff so the
+  // outgoing song's tail overlaps the incoming song's first notes and there
+  // is no audible gap. Voices belong to the shared context and keep playing
+  // even after this instance unmounts.
+  const fadeOutScheduledVoices = (fadeSec = 0.12) => {
+    const voices = scheduledVoicesRef.current
+    scheduledVoicesRef.current = []
+    const ctx = sharedAudioCtx || audioCtxRef.current
+    if (!ctx) return
+    const now = ctx.currentTime
+    for (const { osc, gain } of voices) {
+      try {
+        gain.gain.cancelScheduledValues(now)
+        gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec)
+      } catch {}
+      try { osc.stop(now + fadeSec + 0.02) } catch {}
     }
   }
 

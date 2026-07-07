@@ -3552,6 +3552,34 @@
   transform: translateX(16px);
   background: var(--accent);
 }
+/* Segmented control — two-option pill for the tab-switch playback mode. */
+.settings-segmented {
+  display: inline-flex;
+  flex-shrink: 0;
+  background: var(--off);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 2px;
+}
+.settings-segmented-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.settings-segmented-btn:hover {
+  color: var(--fg);
+}
+.settings-segmented-btn.on {
+  background: color-mix(in srgb, var(--accent) 35%, var(--off) 65%);
+  color: var(--fg);
+}
 .finder-modal-header {
   display: flex;
   align-items: center;

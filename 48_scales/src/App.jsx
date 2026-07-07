@@ -223,7 +223,18 @@ function App() {
       return fallback
     }
   }
-  const DEFAULT_SETTINGS = { allowOutOfScale: false, useFlats: false }
+  const DEFAULT_SETTINGS = {
+    allowOutOfScale: false,
+    useFlats: false,
+    // When true, tempo / swing / loop / beat count are shared across every
+    // song tab instead of persisting per-song. Toggling on adopts whatever
+    // the currently-active song has as the new global values.
+    universalPlayback: false,
+    // What happens to audio when the user switches song tabs:
+    // 'stop'     — playback stops when the tab changes (current default).
+    // 'continue' — playback resumes on the new tab at the same beat.
+    tabSwitchPlayback: 'stop',
+  }
   const loadSettings = () => {
     try {
       const v = localStorage.getItem('eightFold.settings')
@@ -288,6 +299,19 @@ function App() {
     { id: makeSongId(), name: 'Song 1', tracks: null, activeTrackId: null },
   ])
   const [activeSongId, setActiveSongId] = useState(() => songs[0].id)
+  // Universal playback (shared tempo / swing / loop / beat count across
+  // every song) — only consulted when settings.universalPlayback is on.
+  // Null fields fall through to the module defaults on first render.
+  const [universalPlayback, setUniversalPlayback] = useState({
+    bpm: null,
+    swing: null,
+    loop: null,
+    totalBeats: null,
+  })
+  // Cross-tab playback resume lives at module scope inside PianoRoll
+  // itself — a plain module variable that survives the unmount → mount
+  // seam without going through React's render cycle. See
+  // `pendingResumeBeat` in PianoRoll.jsx.
   const activeSong = songs.find((s) => s.id === activeSongId) ?? songs[0]
   // Ref-tracked activeSongId so `updateActiveSong` always writes to the
   // currently-active song even if the closure was captured on a previous
@@ -1328,11 +1352,34 @@ function App() {
             onPersistTracks={(tracks, activeTrackId) =>
               updateActiveSong({ tracks, activeTrackId })
             }
-            initialBpm={activeSong?.bpm}
-            initialSwing={activeSong?.swing}
-            initialLoop={activeSong?.loop}
-            initialTotalBeats={activeSong?.totalBeats}
-            onPersistPlayback={(patch) => updateActiveSong(patch)}
+            initialBpm={
+              settings.universalPlayback
+                ? universalPlayback.bpm ?? activeSong?.bpm
+                : activeSong?.bpm
+            }
+            initialSwing={
+              settings.universalPlayback
+                ? universalPlayback.swing ?? activeSong?.swing
+                : activeSong?.swing
+            }
+            initialLoop={
+              settings.universalPlayback
+                ? universalPlayback.loop ?? activeSong?.loop
+                : activeSong?.loop
+            }
+            initialTotalBeats={
+              settings.universalPlayback
+                ? universalPlayback.totalBeats ?? activeSong?.totalBeats
+                : activeSong?.totalBeats
+            }
+            onPersistPlayback={(patch) => {
+              if (settings.universalPlayback) {
+                setUniversalPlayback((cur) => ({ ...cur, ...patch }))
+              } else {
+                updateActiveSong(patch)
+              }
+            }}
+            tabSwitchPlayback={settings.tabSwitchPlayback}
           />
         ) : (
         <>
@@ -2276,6 +2323,74 @@ function App() {
               >
                 <span className="settings-switch-knob" />
               </button>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <div className="settings-row-label">
+                  Shared tempo / swing / loop across tabs
+                </div>
+                <div className="settings-row-sub">
+                  When on, changing tempo, swing, the beat count, or the
+                  loop region in one tab applies the same value to every
+                  other tab. Off — each tab keeps its own settings.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.universalPlayback}
+                className={`settings-switch ${
+                  settings.universalPlayback ? 'on' : ''
+                }`}
+                onClick={() =>
+                  setSettings((s) => ({
+                    ...s,
+                    universalPlayback: !s.universalPlayback,
+                  }))
+                }
+              >
+                <span className="settings-switch-knob" />
+              </button>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <div className="settings-row-label">
+                  Playback on tab switch
+                </div>
+                <div className="settings-row-sub">
+                  Stop — playback stops when you switch song tabs. Continue
+                  — playback resumes on the new tab at the same beat.
+                </div>
+              </div>
+              <div className="settings-segmented">
+                <button
+                  type="button"
+                  className={`settings-segmented-btn ${
+                    settings.tabSwitchPlayback === 'stop' ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    setSettings((s) => ({ ...s, tabSwitchPlayback: 'stop' }))
+                  }
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  className={`settings-segmented-btn ${
+                    settings.tabSwitchPlayback === 'continue' ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      tabSwitchPlayback: 'continue',
+                    }))
+                  }
+                >
+                  Continue
+                </button>
+              </div>
             </div>
 
             <div className="settings-row settings-row-column">
