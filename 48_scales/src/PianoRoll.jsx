@@ -822,6 +822,53 @@ export default function PianoRoll({
     Math.max(0, Math.floor(Math.log2(rhythmNoteDenom)))
   )
   const rhythmTuplet = isPow2(rhythmDenominator) ? null : rhythmDenominator
+  // Multi-digit entry via type-ahead accumulation: a digit applies live,
+  // and a second digit typed within RHYTHM_TYPE_WINDOW ms extends the
+  // number (1 then 2 → 12). After the window closes (or on any non-digit
+  // action) the next digit starts fresh. `kind` tracks whether we're
+  // building the divisor or the multiplier; `pendingKind` is set by X so
+  // the following digit routes to the multiplier.
+  const RHYTHM_TYPE_WINDOW = 800
+  const RHYTHM_MAX_DIV = 64
+  const RHYTHM_MAX_MULT = 32
+  const rhythmBufRef = useRef({ kind: null, str: '', t: 0 })
+  const rhythmBufTimerRef = useRef(null)
+  const rhythmPendingKindRef = useRef(null)
+  const feedRhythmDigit = (d) => {
+    const now = Date.now()
+    const buf = rhythmBufRef.current
+    // Resolve which value this digit builds: an explicit X-primed kind
+    // wins, else continue the live buffer if still in the window, else a
+    // fresh divisor entry.
+    const kind =
+      rhythmPendingKindRef.current ||
+      (buf.kind && now - buf.t < RHYTHM_TYPE_WINDOW ? buf.kind : 'div')
+    rhythmPendingKindRef.current = null
+    const continuing =
+      buf.kind === kind && now - buf.t < RHYTHM_TYPE_WINDOW && buf.str !== ''
+    let str = continuing ? buf.str + String(d) : String(d)
+    let num = parseInt(str, 10)
+    // A lone leading 0 is meaningless (÷0 / ×0) — ignore it entirely.
+    if (!continuing && d === 0) return
+    if (!Number.isFinite(num) || num < 1) num = 1
+    const max = kind === 'mult' ? RHYTHM_MAX_MULT : RHYTHM_MAX_DIV
+    if (num > max) {
+      num = max
+      str = String(max)
+    }
+    rhythmBufRef.current = { kind, str, t: now }
+    if (kind === 'mult') {
+      setRhythmMult(num)
+      setRhythmAwaitingMultiplier(false)
+    } else {
+      setRhythmDenominator(num)
+      setRhythmMult(1)
+    }
+    if (rhythmBufTimerRef.current) clearTimeout(rhythmBufTimerRef.current)
+    rhythmBufTimerRef.current = setTimeout(() => {
+      rhythmBufRef.current = { kind: null, str: '', t: 0 }
+    }, RHYTHM_TYPE_WINDOW)
+  }
   // Snap a raw beat (grid cells) to the current rhythm's division grid so
   // notes — including tuplets — land on evenly-spaced positions. Snapping
   // to the base division (not the multiplied length) means e.g. a bar ÷6
@@ -1072,27 +1119,20 @@ export default function PianoRoll({
         !e.altKey &&
         (e.code === 'KeyX' || k === 'x')
       ) {
-        // Prime the multiplier — the next digit sets the multiplier
+        // Prime the multiplier — the next digit(s) set the multiplier
         // instead of a fresh base note value.
         e.preventDefault()
         setRhythmAwaitingMultiplier(true)
+        rhythmPendingKindRef.current = 'mult'
+        rhythmBufRef.current = { kind: null, str: '', t: 0 }
       } else if (
         !meta &&
         !e.shiftKey &&
         !e.altKey &&
-        /^Digit[1-9]$/.test(e.code)
+        /^Digit[0-9]$/.test(e.code)
       ) {
         e.preventDefault()
-        const n = Number(e.code.slice(5))
-        if (rhythmAwaitingMultiplier) {
-          // X then digit → set the multiplier (keeps the base note value).
-          setRhythmMult(n)
-        } else {
-          // Plain digit → set the beat division and reset the multiplier.
-          setRhythmDenominator(n)
-          setRhythmMult(1)
-        }
-        setRhythmAwaitingMultiplier(false)
+        feedRhythmDigit(Number(e.code.slice(5)))
       }
     }
     window.addEventListener('keydown', handler)
@@ -3213,7 +3253,7 @@ export default function PianoRoll({
         <div
           className="rhythm-cluster"
           title={
-            'Rhythm — pick the unit (beat or bar), then press 1-9 to divide it exactly (÷1 = whole unit, ÷2 = half, ÷3 = triplet, ÷6 = six per unit, …). Press X then a digit to set a multiplier.'
+            'Rhythm — pick the unit (beat or bar), then type a number to divide it exactly (÷1 = whole unit, ÷2 = half, ÷3 = triplet, ÷6 = six per unit, …). Type digits quickly for multi-digit values (1 2 → ÷12). Press X then a number to set a multiplier.'
           }
         >
           <button

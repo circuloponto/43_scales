@@ -2229,8 +2229,9 @@ function App() {
               {
                 title: 'Rhythm entry',
                 items: [
-                  ['1 – 9', 'Divide the unit (beat or bar) exactly: ÷1 = whole, ÷2 = half, ÷3 = triplet, ÷4 = quarter, ÷6 = six per unit…'],
-                  ['X, then 1 – 9', 'Set a multiplier for the note length'],
+                  ['Type a number', 'Divide the unit (beat or bar): ÷1 = whole, ÷2 = half, ÷3 = triplet, ÷4 = quarter, ÷6 = six per unit…'],
+                  ['Type digits fast', 'Multi-digit values: 1 2 in quick succession → ÷12'],
+                  ['X, then a number', 'Set a multiplier for the note length'],
                   ['Rhythm unit box', 'Click BEAT/BAR to choose what the division refers to'],
                 ],
               },
