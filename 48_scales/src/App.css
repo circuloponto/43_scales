@@ -1568,7 +1568,8 @@
   max-width: 220px;
   z-index: 1;
   transition: color 0.12s var(--ease), background 0.12s var(--ease),
-    border-color 0.12s var(--ease), padding 0.12s var(--ease);
+    border-color 0.12s var(--ease), padding 0.12s var(--ease),
+    transform 0.18s var(--ease);
 }
 .song-tab:hover {
   color: var(--fg);
@@ -1747,20 +1748,32 @@
   box-shadow: inset 0 -2px 0 var(--group-colour);
 }
 
-/* Drag feedback + drop indicators. */
+/* Drag feedback (pointer-based). The dragged tab lifts and follows the
+   cursor (translateX set inline, no transition); the OTHER tabs slide via
+   transform to open a gap at the drop target — the Chrome-style reorder. */
 .song-tab.dragging {
-  opacity: 0.5;
+  opacity: 0.92;
+  cursor: grabbing;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
 }
-.song-tab.drop-before {
-  box-shadow: inset 2px 0 0 var(--accent);
+.song-tabs-list.dragging-active {
+  cursor: grabbing;
+}
+/* One-frame transition kill on drop so reordered tabs snap to their final
+   slots without the leftover transform animating (the release flick). */
+.song-tabs-list.settling .song-tab {
+  transition: none !important;
 }
 .song-tab-drop-tail {
+  /* Widens while dragging so the last slide-gap has a comfortable landing
+     zone; the slide itself signals the drop position, so no marker line. */
   width: 6px;
   align-self: stretch;
   flex-shrink: 0;
+  transition: width 0.18s var(--ease);
 }
-.song-tab-drop-tail.active {
-  box-shadow: inset 2px 0 0 var(--accent);
+.song-tabs-list:has(.song-tab.dragging) .song-tab-drop-tail {
+  width: 28px;
 }
 
 /* ---------- Tab context menu (right-click on a song tab or group strip) ---------- */
@@ -2633,6 +2646,8 @@
       color-mix(in srgb, var(--mute) 35%, transparent) 1px,
       transparent 1px
     );
+  /* background-size is set inline so the grid lines scale with the zoom;
+     fallback here keeps them sensible if the inline value is missing. */
   background-size: 28px 100%, 112px 100%;
   background-position: 0 0, 0 0;
   background-repeat: repeat-x, repeat-x;

@@ -2223,7 +2223,8 @@ function App() {
                   ],
                   ['Shift + drag from note', 'Start a marquee from that note'],
                   ['Ctrl / ⌘ + wheel', 'Zoom horizontally'],
-                  ['Shift + wheel', 'Zoom vertically'],
+                  ['Ctrl / ⌘ + Shift + wheel', 'Zoom vertically'],
+                  ['Shift + wheel', 'Scroll horizontally'],
                 ],
               },
               {

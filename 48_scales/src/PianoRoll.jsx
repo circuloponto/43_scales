@@ -80,72 +80,38 @@ function NoteGlyph({ value = 4, size = 16 }) {
 // props (dragState / setDragState) so all tabs share one drag session.
 function SongTab({
   song,
-  index,
   isActive,
   canClose,
-  onSelect,
   onRename,
   onRemove,
   onContextMenu,
-  dragState,
-  setDragState,
-  onDropBefore,
-  songs,
+  isDragging,
+  dx = 0,
+  shift = 0,
+  onPointerDownTab,
   groupColour,
 }) {
-  const isDragging = dragState.draggingId === song.id
-  const indicatorBefore = dragState.draggingId && dragState.overBeforeId === song.id
+  // While dragging, the tab follows the cursor (translateX by dx) and lifts
+  // above the others with no transition so it tracks 1:1. Otherwise it
+  // slides to the drop-gap via `shift` with the CSS transition.
+  const style = {
+    ...(groupColour ? { '--group-colour': groupColour } : {}),
+    ...(isDragging
+      ? { transform: `translateX(${dx}px)`, transition: 'none', zIndex: 20 }
+      : shift
+      ? { transform: `translateX(${shift}px)` }
+      : {}),
+  }
   return (
     <div
       role="tab"
       aria-selected={isActive}
+      data-song-id={song.id}
       className={`song-tab ${isActive ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${
-        indicatorBefore ? 'drop-before' : ''
-      } ${groupColour ? 'in-group' : ''}`}
-      style={groupColour ? { '--group-colour': groupColour } : undefined}
-      draggable
-      onDragStart={(e) => {
-        // Firefox needs a payload before it will fire subsequent drag
-        // events. Everything else uses our React state.
-        e.dataTransfer.effectAllowed = 'move'
-        try { e.dataTransfer.setData('text/plain', song.id) } catch {}
-        setDragState({ draggingId: song.id, kind: 'tab', overBeforeId: null })
-      }}
-      onDragEnd={() =>
-        setDragState({ draggingId: null, kind: null, overBeforeId: null })
-      }
-      onDragOver={(e) => {
-        if (!dragState.draggingId) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        const rect = e.currentTarget.getBoundingClientRect()
-        const midX = rect.left + rect.width / 2
-        // Left half → drop before this tab; right half → drop before next
-        // sibling (or at tail if last). Chrome's tab bar behaves the same.
-        if (e.clientX < midX) {
-          if (dragState.overBeforeId !== song.id) {
-            setDragState((s) => ({ ...s, overBeforeId: song.id }))
-          }
-        } else {
-          const next = songs[index + 1]
-          const nextId = next ? next.id : '__tail'
-          if (dragState.overBeforeId !== nextId) {
-            setDragState((s) => ({ ...s, overBeforeId: nextId }))
-          }
-        }
-      }}
-      onDrop={(e) => {
-        if (!dragState.draggingId) return
-        e.preventDefault()
-        e.stopPropagation()
-        const target = dragState.overBeforeId === '__tail'
-          ? null
-          : dragState.overBeforeId
-        onDropBefore(target)
-      }}
-      onClick={() => {
-        if (!isActive && onSelect) onSelect(song.id)
-      }}
+        groupColour ? 'in-group' : ''
+      }`}
+      style={style}
+      onPointerDown={(e) => onPointerDownTab?.(e, song)}
       onDoubleClick={() => {
         if (!onRename) return
         const next = window.prompt('Rename song', song.name)
@@ -162,6 +128,7 @@ function SongTab({
         <button
           type="button"
           className="song-tab-close"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             onRemove(song.id)
@@ -587,8 +554,9 @@ export default function PianoRoll({
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
   // Roll zoom (horizontal + vertical, independent). 1 = default. Bounded to
-  // sensible min/max so the user can't accidentally zoom out to zero. Ctrl +
-  // wheel adjusts zoomX; Shift + wheel adjusts zoomY.
+  // sensible min/max so the user can't accidentally zoom out to zero.
+  // Ctrl + wheel → horizontal zoom; Ctrl + Shift + wheel → vertical zoom.
+  // Shift + wheel scrolls horizontally (see the wheel handler).
   const [zoomX, setZoomX] = useState(1)
   const [zoomY, setZoomY] = useState(1)
   const ZOOM_MIN = 0.3
@@ -601,34 +569,60 @@ export default function PianoRoll({
   useEffect(() => {
     const sc = scrollRef.current
     if (!sc) return
+    // Fixed, non-scaling offsets of the scroll content: the sticky keyboard
+    // column on the left (52 px) and the sticky timeline on top (26 px).
+    // Only the region PAST these offsets scales with zoom, so the cursor
+    // pivot must subtract them — otherwise the content drifts out from
+    // under the timeline as you zoom.
+    const LEFT_COL = 52
+    const TOP_ROW = 26
     const onWheel = (e) => {
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) return
+      const meta = e.ctrlKey || e.metaKey
+      // Modifier map:
+      //  Ctrl/⌘             → horizontal zoom
+      //  Ctrl/⌘ + Shift     → vertical zoom
+      //  Shift              → horizontal scroll
+      //  (none)             → native vertical scroll
+      if (!meta && !e.shiftKey) return
       e.preventDefault()
       const rect = sc.getBoundingClientRect()
-      const cursorContentX = sc.scrollLeft + (e.clientX - rect.left)
-      const cursorContentY = sc.scrollTop + (e.clientY - rect.top)
+      const cursorViewX = e.clientX - rect.left
+      const cursorViewY = e.clientY - rect.top
       const factor = Math.pow(1.0015, -e.deltaY)
-      if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      if (!meta && e.shiftKey) {
+        // Shift + wheel → scroll horizontally. Trackpads send horizontal
+        // intent as deltaX; a plain wheel sends deltaY — use whichever is
+        // larger in magnitude.
+        const delta =
+          Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+        sc.scrollLeft = Math.max(
+          0,
+          Math.min(sc.scrollWidth - sc.clientWidth, sc.scrollLeft + delta)
+        )
+      } else if (meta && e.shiftKey) {
+        // Ctrl/⌘ + Shift → vertical zoom, pivoting on the cursor row.
         setZoomY((z) => {
           const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor))
           if (nz === z) return z
-          // Preserve the cursor's content-space Y after the scale change.
+          const r = nz / z
           requestAnimationFrame(() => {
             sc.scrollTop = Math.max(
               0,
-              cursorContentY * (nz / z) - (e.clientY - rect.top)
+              TOP_ROW + (sc.scrollTop + cursorViewY - TOP_ROW) * r - cursorViewY
             )
           })
           return nz
         })
       } else {
+        // Ctrl/⌘ → horizontal zoom, pivoting on the cursor beat.
         setZoomX((z) => {
           const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor))
           if (nz === z) return z
+          const r = nz / z
           requestAnimationFrame(() => {
             sc.scrollLeft = Math.max(
               0,
-              cursorContentX * (nz / z) - (e.clientX - rect.left)
+              LEFT_COL + (sc.scrollLeft + cursorViewX - LEFT_COL) * r - cursorViewX
             )
           })
           return nz
@@ -676,7 +670,14 @@ export default function PianoRoll({
     draggingId: null,
     kind: null,
     overBeforeId: null,
+    width: 0,
+    dx: 0,
   })
+  const songTabsListRef = useRef(null)
+  // True for one frame right after a tab drop so the reordered tabs snap to
+  // their final slots without the leftover translateX briefly animating (the
+  // "flick"). CSS disables tab transitions while this is set.
+  const [tabSettling, setTabSettling] = useState(false)
   // Floating context menus on the song-tab bar. `tabMenu` opens on
   // right-click of a song tab (group-management actions); `groupMenu` opens
   // on right-click of a group strip. Coordinates are viewport pixels.
@@ -730,6 +731,75 @@ export default function PianoRoll({
       onMoveSong?.(draggingId, beforeId, undefined)
     }
     setTabDrag({ draggingId: null, kind: null, overBeforeId: null })
+  }
+
+  // Pointer-based tab drag (replaces the fragile HTML5 DnD). The tab follows
+  // the cursor via translateX; the other tabs slide to open a gap. Below the
+  // move threshold a pointerup is treated as a plain click (select tab).
+  const handleTabPointerDown = (e, song) => {
+    if (e.button != null && e.button !== 0) return // left button only
+    // Let the close button / anything interactive handle its own pointerdown.
+    if (e.target?.closest?.('.song-tab-close')) return
+    const tabEl = e.currentTarget
+    const startX = e.clientX
+    const width = tabEl.offsetWidth
+    const pointerId = e.pointerId
+    let dragging = false
+    let currentBeforeId = '__tail'
+    try { tabEl.setPointerCapture?.(pointerId) } catch {}
+
+    const computeBeforeId = (clientX) => {
+      const list = songTabsListRef.current
+      if (!list) return '__tail'
+      const cx = clientX - list.getBoundingClientRect().left
+      // offsetLeft is the LAYOUT position — unaffected by the sliding
+      // transforms — so targeting stays stable while tabs animate.
+      for (const el of list.querySelectorAll('.song-tab')) {
+        if (el.dataset.songId === song.id) continue
+        const mid = el.offsetLeft + el.offsetWidth / 2
+        if (cx < mid) return el.dataset.songId
+      }
+      return '__tail'
+    }
+
+    const move = (mv) => {
+      if (mv.pointerId !== pointerId) return
+      const dx = mv.clientX - startX
+      if (!dragging) {
+        if (Math.abs(dx) < 4) return
+        dragging = true
+      }
+      currentBeforeId = computeBeforeId(mv.clientX)
+      setTabDrag({
+        draggingId: song.id,
+        kind: 'tab',
+        overBeforeId: currentBeforeId,
+        width,
+        dx,
+      })
+    }
+    const up = (uv) => {
+      if (uv.pointerId !== pointerId) return
+      tabEl.removeEventListener('pointermove', move)
+      tabEl.removeEventListener('pointerup', up)
+      tabEl.removeEventListener('pointercancel', up)
+      try { tabEl.releasePointerCapture?.(pointerId) } catch {}
+      if (dragging) {
+        const target = currentBeforeId === '__tail' ? null : currentBeforeId
+        onMoveSong?.(song.id, target, undefined)
+        // Suppress tab transitions for one frame so the reorder + transform
+        // reset apply instantly at the new layout positions (no flick), then
+        // re-enable them.
+        setTabSettling(true)
+        requestAnimationFrame(() => setTabSettling(false))
+      } else if (song.id !== activeSongId) {
+        onSelectSong?.(song.id)
+      }
+      setTabDrag({ draggingId: null, kind: null, overBeforeId: null, width: 0, dx: 0 })
+    }
+    tabEl.addEventListener('pointermove', move)
+    tabEl.addEventListener('pointerup', up)
+    tabEl.addEventListener('pointercancel', up)
   }
   const audioCtxRef = useRef(null)
   // Keep the per-instance ref pointing at the shared module context (if one
@@ -3332,12 +3402,72 @@ export default function PianoRoll({
       <div className="song-tabs" role="tablist" aria-label="songs">
         {/* The baseline lives on .song-tabs-list so it only spans the
             actual tabs, not the trailing + button or padding. */}
-        <div className="song-tabs-list">
+        <div
+          ref={songTabsListRef}
+          className={`song-tabs-list ${
+            tabDrag.draggingId ? 'dragging-active' : ''
+          } ${tabSettling ? 'settling' : ''}`}
+          onDragOver={(e) => {
+            // Group-pill drags still use HTML5 DnD; targeting is computed
+            // from stable layout positions here. (Song tabs use a pointer
+            // drag — see handleTabPointerDown.)
+            if (tabDrag.kind !== 'group' || !tabDrag.draggingId) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            const list = e.currentTarget
+            const cx = e.clientX - list.getBoundingClientRect().left
+            let beforeId = '__tail'
+            for (const el of list.querySelectorAll('.song-tab')) {
+              const id = el.dataset.songId
+              const mid = el.offsetLeft + el.offsetWidth / 2
+              if (cx < mid) {
+                beforeId = id
+                break
+              }
+            }
+            if (tabDrag.overBeforeId !== beforeId) {
+              setTabDrag((s) => ({ ...s, overBeforeId: beforeId }))
+            }
+          }}
+          onDrop={(e) => {
+            if (tabDrag.kind !== 'group' || !tabDrag.draggingId) return
+            e.preventDefault()
+            const target =
+              tabDrag.overBeforeId === '__tail' ? null : tabDrag.overBeforeId
+            handleDropBefore(target)
+          }}
+        >
           {(() => {
             // Walk songs in order. Whenever we enter a new group, drop an
             // inline pill before its members. Collapsed groups render only
             // the pill (with a member-count badge) and skip their tabs. All
             // tabs and pills live in the same flex row.
+            //
+            // Chrome-style live sliding: while a tab is dragged, the other
+            // tabs translate by the dragged tab's width to open a gap at the
+            // drop target, animated via a CSS transform transition. The
+            // dragged tab itself goes invisible in place. `shiftForIndex`
+            // returns the px offset for each song index.
+            const dragMeta = (() => {
+              if (tabDrag.kind !== 'tab' || !tabDrag.draggingId) return null
+              const di = songs.findIndex((s) => s.id === tabDrag.draggingId)
+              if (di === -1) return null
+              let ti
+              if (tabDrag.overBeforeId == null) ti = null
+              else if (tabDrag.overBeforeId === '__tail') ti = songs.length
+              else ti = songs.findIndex((s) => s.id === tabDrag.overBeforeId)
+              return { di, ti, width: tabDrag.width || 0 }
+            })()
+            const shiftForIndex = (i) => {
+              if (!dragMeta || dragMeta.ti == null || i === dragMeta.di) return 0
+              const { di, ti, width } = dragMeta
+              if (di < ti) {
+                if (i > di && i < ti) return -width
+              } else if (i >= ti && i < di) {
+                return width
+              }
+              return 0
+            }
             const nodes = []
             let prevGroupId = null
             for (let i = 0; i < songs.length; i++) {
@@ -3484,17 +3614,21 @@ export default function PianoRoll({
                 <SongTab
                   key={song.id}
                   song={song}
-                  index={i}
                   isActive={song.id === activeSongId}
                   canClose={songs.length > 1}
-                  onSelect={onSelectSong}
                   onRename={onRenameSong}
                   onRemove={onRemoveSong}
                   onContextMenu={setTabMenu}
-                  dragState={tabDrag}
-                  setDragState={setTabDrag}
-                  onDropBefore={handleDropBefore}
-                  songs={songs}
+                  isDragging={
+                    tabDrag.kind === 'tab' && tabDrag.draggingId === song.id
+                  }
+                  dx={
+                    tabDrag.kind === 'tab' && tabDrag.draggingId === song.id
+                      ? tabDrag.dx
+                      : 0
+                  }
+                  shift={shiftForIndex(i)}
+                  onPointerDownTab={handleTabPointerDown}
                   groupColour={group?.colour ?? null}
                 />
               )
@@ -3866,7 +4000,14 @@ export default function PianoRoll({
                     >
                       <div
                         className={`beats-track ${freeMode ? 'free' : ''}`}
-                        style={{ width: totalBeats * BEAT_WIDTH }}
+                        style={{
+                          width: totalBeats * BEAT_WIDTH,
+                          // Grid lines must scale with the horizontal zoom
+                          // so cell / beat lines stay aligned with the notes
+                          // and the timeline ticks. One line per cell
+                          // (BEAT_WIDTH) and a heavier one per beat (4 cells).
+                          backgroundSize: `${BEAT_WIDTH}px 100%, ${BEAT_WIDTH * 4}px 100%`,
+                        }}
                         onPointerDown={(e) => handleRowMouseDown(e, midi)}
                         onMouseMove={(e) => {
                           // Compute the beat under the cursor once and feed
