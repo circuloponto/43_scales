@@ -1959,67 +1959,75 @@ export default function PianoRoll({
     setSelectedKeys(newSel)
   }
 
-  const growSelection = () => {
+  // Proportional time-stretch of the selection about its earliest onset.
+  // Every note's start-offset from the anchor AND its length scale by the
+  // same factor, so the gaps between notes scale right along with the note
+  // lengths — the musical shape is preserved, nothing overlaps or stacks,
+  // and the whole thing can shrink toward tiny blips or grow indefinitely.
+  // dir = +1 grows (×FACTOR), -1 shrinks (÷FACTOR).
+  const stretchSelection = (dir) => {
     if (selectedKeys.size === 0) return
-    pushHistory()
+    // Factor 2 → each press doubles / halves both lengths and gaps, so the
+    // note values track the rhythm selector's musical durations (…16th, 8th,
+    // quarter, half, whole…) while the whole pattern scales proportionally.
+    const FACTOR = 2
+    const FLOOR = 1 / 32 // finest note length in cells
+    const factor = dir > 0 ? FACTOR : 1 / FACTOR
+    const cur = notesRef.current
+    const items = []
+    for (const key of selectedKeys) {
+      const [bStr, midiStr] = key.split('-')
+      items.push({
+        key,
+        beat: Number(bStr),
+        midi: Number(midiStr),
+        len: cur.get(key) ?? 1,
+      })
+    }
+    const anchor = Math.min(...items.map((it) => it.beat))
+    // First pass: compute the stretched notes and the furthest end beat.
+    const results = []
+    let maxEnd = 0
+    for (const it of items) {
+      let newBeat = anchor + (it.beat - anchor) * factor
+      const newLen = Math.max(FLOOR, it.len * factor)
+      if (newBeat < 0) newBeat = 0
+      results.push({ oldKey: it.key, newBeat, newLen, midi: it.midi })
+      if (newBeat + newLen > maxEnd) maxEnd = newBeat + newLen
+    }
+    // If the selection grew past the timeline, extend it (rounded up to a
+    // whole measure, capped at MAX_BEATS) so every note stays visible.
+    let effectiveTotal = totalBeats
+    if (maxEnd > totalBeats) {
+      effectiveTotal = Math.min(MAX_BEATS, Math.ceil(maxEnd / 16) * 16)
+      if (effectiveTotal !== totalBeats) setTotalBeats(effectiveTotal)
+    }
     const newSel = new Set()
     setNotes((prev) => {
       const next = new Map(prev)
-      for (const key of selectedKeys) next.delete(key)
-      for (const key of selectedKeys) {
-        const [bStr, midiStr] = key.split('-')
-        const oldBeat = Number(bStr)
-        const oldLength = notesRef.current.get(key) ?? 1
-        const grownLeft = Math.max(0, oldBeat - 1)
-        const grownEnd = Math.min(totalBeats, oldBeat + oldLength + 1)
-        const newKey = `${grownLeft}-${midiStr}`
-        next.set(newKey, grownEnd - grownLeft)
-        newSel.add(newKey)
+      for (const it of items) next.delete(it.key)
+      for (const r of results) {
+        let nb = r.newBeat
+        let nl = r.newLen
+        // Only clamp if we hit the hard MAX_BEATS ceiling.
+        if (nb + nl > effectiveTotal) nl = Math.max(FLOOR, effectiveTotal - nb)
+        const nk = `${nb}-${r.midi}`
+        next.set(nk, nl)
+        newSel.add(nk)
       }
       return next
     })
     setSelectedKeys(newSel)
   }
-
-  // Shrink each selected note symmetrically — beat + 1 on the left and
-  // length - 2 on the right. Stops shrinking when the note is at minimum
-  // length so we don't drop it.
+  const growSelection = () => {
+    if (selectedKeys.size === 0) return
+    pushHistory()
+    stretchSelection(1)
+  }
   const shrinkSelection = () => {
     if (selectedKeys.size === 0) return
     pushHistory()
-    const newSel = new Set()
-    const minLen = freeMode ? 0.25 : 1
-    setNotes((prev) => {
-      const next = new Map(prev)
-      for (const key of selectedKeys) next.delete(key)
-      for (const key of selectedKeys) {
-        const [bStr, midiStr] = key.split('-')
-        const oldBeat = Number(bStr)
-        const oldLength = notesRef.current.get(key) ?? 1
-        // If length is already at min, leave the note unchanged. Otherwise
-        // squeeze a cell off each end if there's room; if only one side has
-        // room, squeeze that side.
-        if (oldLength <= minLen) {
-          next.set(`${oldBeat}-${midiStr}`, oldLength)
-          newSel.add(`${oldBeat}-${midiStr}`)
-          continue
-        }
-        let newBeat = oldBeat
-        let newLength = oldLength
-        if (newLength - 2 >= minLen) {
-          newBeat = oldBeat + 1
-          newLength = oldLength - 2
-        } else {
-          // Only one cell to shave off — take it from the right.
-          newLength = oldLength - 1
-        }
-        const newKey = `${newBeat}-${midiStr}`
-        next.set(newKey, newLength)
-        newSel.add(newKey)
-      }
-      return next
-    })
-    setSelectedKeys(newSel)
+    stretchSelection(-1)
   }
 
   const pasteNotes = () => {

@@ -2205,7 +2205,7 @@ function App() {
                 items: [
                   ['Shift + H', 'Flip horizontally (mirror in time)'],
                   ['Shift + V', 'Flip vertically (mirror in pitch)'],
-                  ['[ / ]', 'Grow / shrink selection by one scale step'],
+                  ['] / [', 'Stretch / compress selection in time (lengths + gaps scale together)'],
                   ['T', 'Toggle Rotate mode (↑ / ↓ rotate pitches)'],
                   ['Arrow keys', 'Move selection by one step / beat'],
                   ['T + ↑ / ↓', 'Rotate the selection’s pitches'],
