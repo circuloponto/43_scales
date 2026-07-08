@@ -1902,14 +1902,28 @@ export default function PianoRoll({
     const newSel = new Set()
     setNotes((prev) => {
       const next = new Map(prev)
+      // Horizontal nudge moves the whole selection as a rigid group. On the
+      // RIGHT we clamp the delta so the group stops at totalBeats as a unit
+      // (no stacking). On the LEFT we allow notes to cross beat 0 — anything
+      // whose start goes negative disappears off-screen, matching the mouse
+      // drag. (pushHistory above makes it Ctrl+Z-undoable.)
+      let beatDeltaEff = beatDelta
+      if (beatDelta > 0) {
+        let maxEnd = -Infinity
+        for (const k of selectedKeys) {
+          const [bStr] = k.split('-')
+          const len = prev.get(k) ?? 1
+          if (Number(bStr) + len > maxEnd) maxEnd = Number(bStr) + len
+        }
+        beatDeltaEff = Math.min(totalBeats - maxEnd, beatDeltaEff)
+      }
       const moves = []
       for (const k of selectedKeys) {
         const [bStr, midiStr] = k.split('-')
         const oldBeat = Number(bStr)
         const oldMidi = Number(midiStr)
         const len = prev.get(k) ?? 1
-        let newBeat = oldBeat + beatDelta
-        newBeat = Math.max(0, Math.min(totalBeats - len, newBeat))
+        const newBeat = oldBeat + beatDeltaEff
         let newMidi = oldMidi
         if (stepDelta !== 0) {
           if (allowOutOfScale) {
@@ -1925,10 +1939,18 @@ export default function PianoRoll({
           }
         }
         newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
-        moves.push({ oldKey: k, newKey: `${newBeat}-${newMidi}`, length: len })
+        // A note whose start crosses left of beat 0 disappears off-screen —
+        // drop it from the map and the selection (no newKey).
+        const gone = newBeat < 0
+        moves.push({
+          oldKey: k,
+          newKey: gone ? null : `${newBeat}-${newMidi}`,
+          length: len,
+        })
       }
       for (const m of moves) next.delete(m.oldKey)
       for (const m of moves) {
+        if (m.newKey == null) continue
         next.set(m.newKey, m.length)
         newSel.add(m.newKey)
       }
