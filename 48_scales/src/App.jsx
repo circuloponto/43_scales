@@ -41,6 +41,28 @@ const CHORD_ORDERS = {
   opposites: OPPOSITES_ORDER,
 }
 
+// Visual grouping within each order — how many rows are in each cluster, top
+// to bottom, mirroring the boxed groups in the reference image. The section
+// renders extra vertical space between groups. Sizes must sum to 10.
+//   Borrowing (left column):  4 singles, then three pairs.
+//   Opposites (right column): a single, a triple, a pair, then a quad.
+const CHORD_GROUP_SIZES = {
+  borrowing: [4, 2, 2, 2],
+  opposites: [1, 4, 5],
+}
+// Partition a flat order (index list) into groups per the given sizes. Any
+// leftover rows (if sizes don't sum to the length) become a final group.
+function partitionChordOrder(order, sizes) {
+  const groups = []
+  let pos = 0
+  for (const n of sizes) {
+    groups.push(order.slice(pos, pos + n))
+    pos += n
+  }
+  if (pos < order.length) groups.push(order.slice(pos))
+  return groups
+}
+
 function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12)
 }
@@ -2002,11 +2024,21 @@ function App() {
                         </svg>
                       </button>
                     </div>
-                    {(CHORD_ORDERS[chordOrder] ?? BORROWING_ORDER).map((shapeIdx, idx) => {
-                      const shape = CHORD_SHAPES[shapeIdx]
-                      const useShape = chordsInverted
-                        ? invertShape(shape)
-                        : shape
+                    {(() => {
+                      const order = CHORD_ORDERS[chordOrder] ?? BORROWING_ORDER
+                      const groups = partitionChordOrder(
+                        order,
+                        CHORD_GROUP_SIZES[chordOrder] ?? [order.length]
+                      )
+                      let running = 0
+                      return groups.map((group, groupIdx) => (
+                        <div key={groupIdx} className="chord-pattern-group">
+                          {group.map((shapeIdx) => {
+                            const idx = running++
+                            const shape = CHORD_SHAPES[shapeIdx]
+                            const useShape = chordsInverted
+                              ? invertShape(shape)
+                              : shape
                       const canonicalSet = new Set(useShape)
                       // All 8 rotations of the pattern within the 8-note
                       // scale, deduped by POSITION SET (not chord PCs).
@@ -2098,7 +2130,10 @@ function App() {
                           </div>
                         </div>
                       )
-                    })}
+                          })}
+                        </div>
+                      ))
+                    })()}
                   </div>
                 )
               })()}
