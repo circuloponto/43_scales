@@ -1222,10 +1222,10 @@
 }
 
 .roll-title {
-  flex: 1;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .roll-number {
@@ -1327,52 +1327,198 @@
   border-color: var(--accent);
 }
 
-/* Time signature control in the roll toolbar. */
+/* Transport pill (opens the Roll settings modal) + overflow menu. */
+.roll-overflow {
+  position: relative;
+  display: inline-flex;
+}
+.roll-transport-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.roll-transport-btn:hover {
+  border-color: var(--mute);
+}
+.roll-transport-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.roll-transport-tempo {
+  font-size: 13px;
+  font-weight: 600;
+}
+.roll-transport-dot {
+  color: var(--mute);
+}
+.roll-transport-sig {
+  font-size: 12px;
+  color: var(--mute);
+}
+
+/* Roll settings modal (M key / transport pill). */
+.roll-params-modal {
+  width: 640px;
+  max-width: calc(100vw - 24px);
+}
+.roll-params-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 32px;
+  margin-top: 16px;
+}
+.roll-params-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.roll-params-section-title {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+/* Two-column grid: labels in col 1, boxes in col 2. Every field's box fills
+   the same col-2 width, so the time-sig boxes span exactly the Tempo box's
+   width and line up on both edges. `display: contents` on the field wrappers
+   drops their label + box straight into the grid. */
+.roll-params-fields {
+  display: grid;
+  grid-template-columns: 52px 100px;
+  align-items: center;
+  gap: 12px 10px;
+}
+.roll-params-fields .beats-control,
+.roll-params-fields .time-sig {
+  display: contents;
+}
+.roll-params-fields .beats-input,
+.roll-params-fields .time-sig-fields {
+  width: 100%;
+  box-sizing: border-box;
+}
+.roll-params-rhythm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.roll-params-rhythm-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg);
+}
+.roll-params-rhythm-value {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.roll-params-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.roll-overflow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.roll-overflow-btn:hover,
+.roll-overflow-btn.on {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+/* Scoped so it beats the later `.tab-context-menu { position: fixed }` rule
+   (the menu carries both classes for its item styling). */
+.roll-overflow .roll-overflow-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+  min-width: 190px;
+  z-index: 40;
+}
+
+/* Time signature — matches the NumberField look: a muted label beside a
+   bordered mono box holding the num / den, with native select chrome
+   stripped so it reads as a clean musical fraction. */
 .time-sig {
   display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
   user-select: none;
+  flex-shrink: 0;
 }
 .time-sig-label {
   font-family: var(--sans);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--mute);
 }
+/* No outer border. The two num / den boxes together span one Tempo-box
+   width (60px content + 16px padding + 2px border = 78px), split evenly. */
 .time-sig-fields {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  width: 78px;
 }
-.time-sig-select {
+.time-sig-input {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 2px;
+  appearance: textfield;
+  -moz-appearance: textfield;
   background: transparent;
   border: 1px solid var(--hairline);
   border-radius: 4px;
   color: var(--fg);
   font-family: var(--mono);
-  font-size: 12px;
-  padding: 2px 2px;
-  cursor: pointer;
-  transition: border-color 0.12s var(--ease);
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s var(--ease);
 }
-.time-sig-select:hover {
+.time-sig-input:hover {
   border-color: var(--mute);
 }
-.time-sig-select:focus {
-  outline: none;
+.time-sig-input:focus {
   border-color: var(--accent);
 }
-.time-sig-select option {
-  background: #000;
-  color: var(--fg);
+.time-sig-input::-webkit-outer-spin-button,
+.time-sig-input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 .time-sig-slash {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 15px;
   color: var(--mute);
+  transform: skewX(-14deg);
 }
 
 .mode-toggle {
@@ -4071,8 +4217,16 @@
 .roll-toolbar-toggle {
   display: none;
 }
+/* Desktop: the inline controls (tempo, swing, capture, loop, snap, rhythm,
+   ⋯) sit in a tight left-aligned row right after the title; Play is pushed
+   to the far right via its own margin-left:auto. The ≤480px block overrides
+   this into the hamburger dropdown. */
 .roll-toolbar-sub {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 /* ============================================================

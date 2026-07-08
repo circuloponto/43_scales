@@ -353,6 +353,53 @@ function NumberField({
   )
 }
 
+// Small type-to-edit integer field for the time signature (numerator /
+// denominator). Commits on Enter / blur, clamps to [min, max], Escape
+// reverts. No dropdown — just type.
+function TimeSigInput({ value, min, max, onCommit, ariaLabel }) {
+  const [draft, setDraft] = useState(String(value))
+  const focusedRef = useRef(false)
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(String(value))
+  }, [value])
+  const commit = () => {
+    const v = Math.round(Number(draft))
+    if (Number.isFinite(v)) {
+      const c = Math.max(min, Math.min(max, v))
+      onCommit(c)
+      setDraft(String(c))
+    } else {
+      setDraft(String(value))
+    }
+  }
+  return (
+    <input
+      type="number"
+      className="time-sig-input"
+      value={draft}
+      min={min}
+      max={max}
+      aria-label={ariaLabel}
+      onFocus={(e) => {
+        focusedRef.current = true
+        e.target.select()
+      }}
+      onBlur={() => {
+        focusedRef.current = false
+        commit()
+      }}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.target.blur()
+        else if (e.key === 'Escape') {
+          setDraft(String(value))
+          e.target.blur()
+        }
+      }}
+    />
+  )
+}
+
 function PlayIcon() {
   return (
     <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
@@ -717,6 +764,17 @@ export default function PianoRoll({
   // on right-click of a group strip. Coordinates are viewport pixels.
   const [tabMenu, setTabMenu] = useState(null)
   const [groupMenu, setGroupMenu] = useState(null)
+  // `paramsOpen` is the centered "Roll settings" modal holding every option;
+  // opened by the ⋯ button or the M key. Escape (and its backdrop) close it.
+  const [paramsOpen, setParamsOpen] = useState(false)
+  useEffect(() => {
+    if (!paramsOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setParamsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [paramsOpen])
   // Inline-editable group name state. Only one pill can be in edit mode at a
   // time; the input starts prefilled with the current name and commits on
   // Enter / blur (Esc cancels without saving).
@@ -1243,6 +1301,10 @@ export default function PianoRoll({
           tHeldRef.current = !tHeldRef.current
           setTHeld(tHeldRef.current)
         }
+      } else if (e.code === 'KeyM') {
+        // Toggle the full Roll settings modal.
+        e.preventDefault()
+        setParamsOpen((v) => !v)
       } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
         e.preventDefault()
         if (tHeldRef.current) rotateSelection(1)
@@ -2988,13 +3050,15 @@ export default function PianoRoll({
       }
       if (metronomeRef.current) {
         // Click on every beat of the current time signature, accenting the
-        // downbeat (start of each measure).
+        // downbeat. Iterate by beat index so odd/non-dyadic denominators
+        // (fractional cells per beat) still line up.
         const cpb = cellsPerBeat
-        const cpm = cellsPerMeasure
-        const first = Math.ceil(rangeStart / cpb) * cpb
-        for (let b = first; b < rangeEnd; b += cpb) {
+        let k = Math.ceil(rangeStart / cpb - 1e-9)
+        for (; k * cpb < rangeEnd; k++) {
+          const b = k * cpb
+          if (b < rangeStart - 1e-9) continue
           const clickTime = scheduleStartTime + (b - rangeStart) * cellDur
-          playClick(clickTime, b % cpm === 0)
+          playClick(clickTime, k % timeSig.num === 0)
         }
       }
     }
@@ -3354,6 +3418,8 @@ export default function PianoRoll({
           </svg>
         </button>
         <div className="roll-toolbar-sub">
+        {/* Frequently-used controls live inline; everything else is in the
+            Roll settings modal (M key or the ⋯ button). */}
         <NumberField
           label="Tempo"
           value={bpm}
@@ -3370,49 +3436,6 @@ export default function PianoRoll({
           sensitivity={0.25}
           onCommit={setSwingPct}
         />
-        <NumberField
-          label="Beats"
-          value={totalBeats}
-          min={MIN_BEATS}
-          max={MAX_BEATS}
-          step={4}
-          sensitivity={2}
-          onCommit={setTotalBeats}
-        />
-        <div className="time-sig" title="Time signature (beats per measure / beat value)">
-          <span className="time-sig-label">Time</span>
-          <div className="time-sig-fields">
-            <select
-              className="time-sig-select"
-              value={timeSig.num}
-              onChange={(e) =>
-                setTimeSig((t) => ({ ...t, num: Number(e.target.value) }))
-              }
-              aria-label="beats per measure"
-            >
-              {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <span className="time-sig-slash">/</span>
-            <select
-              className="time-sig-select"
-              value={timeSig.den}
-              onChange={(e) =>
-                setTimeSig((t) => ({ ...t, den: Number(e.target.value) }))
-              }
-              aria-label="beat note value"
-            >
-              {[2, 4, 8, 16].map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
         <button
           type="button"
           className="mode-toggle icon-toggle"
@@ -3424,25 +3447,6 @@ export default function PianoRoll({
           title="Save current pattern as a scale-degree template"
         >
           <Camera size={16} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          className={`mode-toggle ${chordModalOpen ? 'on' : ''}`}
-          onClick={() => setChordModalOpen((v) => !v)}
-          aria-pressed={chordModalOpen}
-          title="Open the chord palette — drag chords onto the chord lane"
-        >
-          Chords
-        </button>
-        <button
-          type="button"
-          className={`mode-toggle icon-toggle ${metronome ? 'on' : ''}`}
-          onClick={() => setMetronome((v) => !v)}
-          aria-pressed={metronome}
-          aria-label="metronome"
-          title="Metronome click on every quarter note (straight, ignores swing)"
-        >
-          <Metronome size={16} strokeWidth={1.8} />
         </button>
         <button
           type="button"
@@ -3519,6 +3523,21 @@ export default function PianoRoll({
             ×{rhythmAwaitingMultiplier ? '?' : rhythmMult}
           </div>
         </div>
+        {/* Opens the full Roll settings modal (same as the M key). */}
+        <button
+          type="button"
+          className={`roll-overflow-btn ${paramsOpen ? 'on' : ''}`}
+          onClick={() => setParamsOpen((v) => !v)}
+          title="Roll settings — all options (M)"
+          aria-label="roll settings"
+          aria-haspopup="dialog"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="3" cy="8" r="1.4" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+            <circle cx="13" cy="8" r="1.4" fill="currentColor" />
+          </svg>
+        </button>
         </div>
         <button
           className="play roll-play"
@@ -4035,23 +4054,31 @@ export default function PianoRoll({
                     }}
                   />
                 )}
-                {Array.from({ length: totalBeats }, (_, b) => {
-                  // A tick per beat of the current time signature; a labelled
-                  // measure tick at each downbeat.
-                  if (b % cellsPerBeat !== 0) return null
-                  const isMeasure = b % cellsPerMeasure === 0
-                  return (
-                    <div
-                      key={b}
-                      className={`timeline-tick ${
-                        isMeasure ? 'measure' : 'beat'
-                      }`}
-                      style={{ left: `${b * BEAT_WIDTH}px` }}
-                    >
-                      {isMeasure ? Math.floor(b / cellsPerMeasure) + 1 : ''}
-                    </div>
-                  )
-                })}
+                {(() => {
+                  // Iterate by beat INDEX (not integer cells) so odd / non-
+                  // dyadic denominators — where a beat spans a fractional
+                  // number of cells — still place ticks correctly. A labelled
+                  // measure tick lands on every `num`-th beat (the downbeat).
+                  const ticks = []
+                  const beatCount = Math.ceil(totalBeats / cellsPerBeat)
+                  for (let k = 0; k < beatCount; k++) {
+                    const cell = k * cellsPerBeat
+                    if (cell >= totalBeats) break
+                    const isMeasure = k % timeSig.num === 0
+                    ticks.push(
+                      <div
+                        key={k}
+                        className={`timeline-tick ${
+                          isMeasure ? 'measure' : 'beat'
+                        }`}
+                        style={{ left: `${cell * BEAT_WIDTH}px` }}
+                      >
+                        {isMeasure ? Math.floor(k / timeSig.num) + 1 : ''}
+                      </div>
+                    )
+                  }
+                  return ticks
+                })()}
               </div>
             </div>
             <div className="roll-content">
@@ -4465,6 +4492,212 @@ export default function PianoRoll({
           )}
         </aside>
       </div>
+
+      {paramsOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setParamsOpen(false)}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div
+            className="modal roll-params-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="settings-modal-header">
+              <h3>Roll settings</h3>
+              <button
+                type="button"
+                className="finder-modal-close"
+                onClick={() => setParamsOpen(false)}
+                aria-label="close roll settings"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="roll-params-grid">
+              {/* Timing */}
+              <section className="roll-params-section">
+                <div className="roll-params-section-title">Timing</div>
+                <div className="roll-params-fields">
+                  <NumberField
+                    label="Tempo"
+                    value={bpm}
+                    min={MIN_BPM}
+                    max={MAX_BPM}
+                    sensitivity={0.5}
+                    onCommit={setBpm}
+                  />
+                  <NumberField
+                    label="Swing"
+                    value={swingPct}
+                    min={MIN_SWING}
+                    max={MAX_SWING}
+                    sensitivity={0.25}
+                    onCommit={setSwingPct}
+                  />
+                  <NumberField
+                    label="Beats"
+                    value={totalBeats}
+                    min={MIN_BEATS}
+                    max={MAX_BEATS}
+                    step={4}
+                    sensitivity={2}
+                    onCommit={setTotalBeats}
+                  />
+                  <div
+                    className="time-sig"
+                    title="Time signature — type beats per measure / beat value"
+                  >
+                    <span className="time-sig-label">Time</span>
+                    <div className="time-sig-fields">
+                      <TimeSigInput
+                        value={timeSig.num}
+                        min={1}
+                        max={32}
+                        ariaLabel="beats per measure"
+                        onCommit={(n) =>
+                          setTimeSig((t) => ({ ...t, num: n }))
+                        }
+                      />
+                      <span className="time-sig-slash">/</span>
+                      <TimeSigInput
+                        value={timeSig.den}
+                        min={1}
+                        max={32}
+                        ariaLabel="beat note value"
+                        onCommit={(d) =>
+                          setTimeSig((t) => ({ ...t, den: d }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Grid & input */}
+              <section className="roll-params-section">
+                <div className="roll-params-section-title">Grid & input</div>
+                <div className="settings-row">
+                  <div className="settings-row-text">
+                    <div className="settings-row-label">Snap to grid</div>
+                    <div className="settings-row-sub">
+                      Notes snap to the rhythm grid. Off = free placement.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!freeMode}
+                    className={`settings-switch ${!freeMode ? 'on' : ''}`}
+                    onClick={() => setFreeMode((v) => !v)}
+                  >
+                    <span className="settings-switch-knob" />
+                  </button>
+                </div>
+                <div className="roll-params-rhythm">
+                  <div className="settings-row-label">Rhythm</div>
+                  <div className="roll-params-rhythm-readout">
+                    <button
+                      type="button"
+                      className="rhythm-unit-box"
+                      onClick={() =>
+                        setRhythmUnit((u) => (u === 'beat' ? 'bar' : 'beat'))
+                      }
+                      title="Toggle whether the division refers to a beat or a bar"
+                    >
+                      {rhythmUnit === 'bar' ? 'BAR' : 'BEAT'}
+                    </button>
+                    <span className="roll-params-rhythm-value">
+                      ÷{rhythmDenominator} {rhythmNoteName}
+                      {rhythmMult > 1 ? ` ×${rhythmMult}` : ''}
+                    </span>
+                    <NoteGlyph value={rhythmGlyphValue} size={18} />
+                  </div>
+                  <div className="settings-row-sub">
+                    Type a number to divide the unit; X then a number for a
+                    multiplier.
+                  </div>
+                </div>
+              </section>
+
+              {/* Playback */}
+              <section className="roll-params-section">
+                <div className="roll-params-section-title">Playback</div>
+                <div className="settings-row">
+                  <div className="settings-row-text">
+                    <div className="settings-row-label">Metronome</div>
+                    <div className="settings-row-sub">
+                      Click on each beat, accenting the downbeat.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={metronome}
+                    className={`settings-switch ${metronome ? 'on' : ''}`}
+                    onClick={() => setMetronome((v) => !v)}
+                  >
+                    <span className="settings-switch-knob" />
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-text">
+                    <div className="settings-row-label">Loop</div>
+                    <div className="settings-row-sub">
+                      Drag on the timeline to set a region.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="settings-action"
+                    disabled={!loop && !lastLoopRef.current}
+                    onClick={() => {
+                      if (loop) {
+                        setLoop(null)
+                        if (playStateRef.current?.mode === 'loop')
+                          stopPlayback(false)
+                      } else if (lastLoopRef.current) {
+                        setLoop(lastLoopRef.current)
+                      }
+                    }}
+                  >
+                    {loop ? 'Clear' : 'Restore'}
+                  </button>
+                </div>
+              </section>
+
+              {/* Tools */}
+              <section className="roll-params-section">
+                <div className="roll-params-section-title">Tools</div>
+                <div className="roll-params-actions">
+                  <button
+                    type="button"
+                    className="settings-action"
+                    onClick={() => {
+                      setParamsOpen(false)
+                      setCaptureName('')
+                      setCaptureOpen(true)
+                    }}
+                  >
+                    Capture template
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-action"
+                    onClick={() => {
+                      setParamsOpen(false)
+                      setChordModalOpen(true)
+                    }}
+                  >
+                    Chords palette
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
 
       {captureOpen && (
         <div
