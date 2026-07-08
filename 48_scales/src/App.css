@@ -823,11 +823,39 @@
 .chord-patterns-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 10px;
 }
 .chord-patterns-header .label {
   margin-bottom: 0;
+  margin-right: auto;
+}
+
+.chord-order-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.chord-order-btn {
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.chord-order-btn + .chord-order-btn {
+  border-left: 1px solid var(--hairline);
+}
+.chord-order-btn:hover {
+  color: var(--fg);
+}
+.chord-order-btn.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .chord-invert {

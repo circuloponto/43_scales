@@ -16,17 +16,30 @@ const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭
 // Ten 4-of-8 chord shape patterns. Each is a list of 1-indexed scale-degree
 // positions inside an 8-note scale.
 const CHORD_SHAPES = [
-  [1, 2, 3, 4],
-  [1, 2, 3, 5],
-  [1, 2, 3, 6],
-  [1, 2, 3, 7],
-  [1, 2, 4, 5],
-  [1, 2, 4, 6],
-  [1, 2, 4, 6],
-  [1, 2, 4, 6],
-  [1, 2, 4, 7],
   [1, 3, 5, 7],
+  [1, 2, 4, 6],
+  [1, 2, 3, 5],
+  [1, 2, 3, 7],
+  [1, 2, 5, 7],
+  [1, 2, 4, 7],
+  [1, 2, 3, 6],
+  [1, 2, 5, 6],
+  [1, 2, 4, 5],
+  [1, 2, 3, 4],
+  
 ]
+const BORROWING_ORDER = [0, 5, 7, 9, 1, 4, 2, 3, 6, 8]
+// Display orders for the ten chord shapes, as index lists into CHORD_SHAPES.
+// 'Opposites' is the canonical list reversed (last → first). 'Borrowing' is
+// the order shown in the reference image (top → bottom).
+const OPPOSITES_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+// TODO(borrowing): confirm this matches the image row-by-row. Each number is
+// an index into CHORD_SHAPES above. Edit this single array to fix the order.
+
+const CHORD_ORDERS = {
+  borrowing: BORROWING_ORDER,
+  opposites: OPPOSITES_ORDER,
+}
 
 function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12)
@@ -986,6 +999,10 @@ function App() {
   // Chord-shapes section: false → show the original 4 filled positions of
   // each pattern; true → show the inverse (the 4 unfilled positions).
   const [chordsInverted, setChordsInverted] = useState(false)
+  // Ordering of the ten chord shapes in the section. 'borrowing' (default) =
+  // the order from the reference image; 'opposites' = the canonical list
+  // reversed. See BORROWING_ORDER / OPPOSITES_ORDER (module scope).
+  const [chordOrder, setChordOrder] = useState('borrowing')
   // Scale degree the user is hovering on a bottom mode-dot. Used to preview
   // which note would become the matrix tile-strip's highlighted root if they
   // clicked it. Null when not hovering.
@@ -1935,6 +1952,26 @@ function App() {
                   <div className="section chord-patterns-section">
                     <div className="chord-patterns-header">
                       <span className="label">Chords</span>
+                      <div className="chord-order-toggle">
+                        <button
+                          type="button"
+                          className={`chord-order-btn ${chordOrder === 'borrowing' ? 'on' : ''}`}
+                          onClick={() => setChordOrder('borrowing')}
+                          aria-pressed={chordOrder === 'borrowing'}
+                          title="Order the chord shapes by the borrowing sequence"
+                        >
+                          Borrowing
+                        </button>
+                        <button
+                          type="button"
+                          className={`chord-order-btn ${chordOrder === 'opposites' ? 'on' : ''}`}
+                          onClick={() => setChordOrder('opposites')}
+                          aria-pressed={chordOrder === 'opposites'}
+                          title="Order the chord shapes by opposites (reversed)"
+                        >
+                          Opposites
+                        </button>
+                      </div>
                       <button
                         type="button"
                         className={`chord-invert ${chordsInverted ? 'on' : ''}`}
@@ -1965,7 +2002,8 @@ function App() {
                         </svg>
                       </button>
                     </div>
-                    {CHORD_SHAPES.map((shape, idx) => {
+                    {(CHORD_ORDERS[chordOrder] ?? BORROWING_ORDER).map((shapeIdx, idx) => {
+                      const shape = CHORD_SHAPES[shapeIdx]
                       const useShape = chordsInverted
                         ? invertShape(shape)
                         : shape
