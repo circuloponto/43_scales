@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Magnet, Camera, Repeat, Metronome } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -178,7 +178,9 @@ const TOP_OCTAVE = Math.floor(MIDI_HIGH / 12) - 1 // 8
 
 const DEFAULT_BEATS = 64
 const MIN_BEATS = 8
-const MAX_BEATS = 512
+// Upper bound on the auto-extending timeline. High enough to feel unbounded
+// while still capping runaway growth (2048 cells = 128 measures of 4/4).
+const MAX_BEATS = 2048
 const DEFAULT_BPM = 120
 const MIN_BPM = 40
 const MAX_BPM = 300
@@ -612,6 +614,30 @@ export default function PianoRoll({
   )
   const cellsPerBeat = CELLS_PER_WHOLE / timeSig.den
   const cellsPerMeasure = timeSig.num * cellsPerBeat
+  // Ableton-style auto-extending timeline: the grid grows in whole-measure
+  // chunks as the user scrolls to the right edge or drags/places notes past
+  // the current end. `totalBeatsRef` mirrors state so live pointer handlers
+  // (which close over a stale `totalBeats`) can read/extend the real length.
+  const totalBeatsRef = useRef(totalBeats)
+  useEffect(() => {
+    totalBeatsRef.current = totalBeats
+  }, [totalBeats])
+  // Grow the timeline so `endBeat` fits (rounded up to a measure), capped at
+  // MAX_BEATS. Updates the ref synchronously so a single pointer handler can
+  // extend and immediately clamp against the new length. Returns the length.
+  const growBeatsForEnd = (endBeat) => {
+    const cur = totalBeatsRef.current
+    if (endBeat <= cur - 1) return cur
+    const grown = Math.min(
+      MAX_BEATS,
+      Math.ceil((endBeat + 1) / cellsPerMeasure) * cellsPerMeasure
+    )
+    if (grown > cur) {
+      totalBeatsRef.current = grown
+      setTotalBeats(grown)
+    }
+    return totalBeatsRef.current
+  }
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
   // Roll zoom (horizontal + vertical, independent). 1 = default. Bounded to
@@ -902,6 +928,148 @@ export default function PianoRoll({
   const rafRef = useRef(null)
   const scheduledVoicesRef = useRef([])
   const scrollRef = useRef(null)
+  // Custom DAW-style horizontal scrollbar. `hbar` holds the thumb geometry as
+  // fractions of the scroll range (pos = left edge, size = visible portion).
+  // Dragging the thumb body scrolls; dragging either end grip resizes the
+  // thumb, which maps to a horizontal zoom anchored on the opposite edge.
+  const [hbar, setHbar] = useState({ pos: 0, size: 1 })
+  const hbarTrackRef = useRef(null)
+  // Last horizontal scroll position — used to distinguish an actual rightward
+  // scroll (which may extend the timeline) from the edge merely becoming
+  // visible after a zoom-out (which must NOT extend it).
+  const lastScrollLeftRef = useRef(0)
+  // True while the user is dragging the custom scrollbar (thumb or a grip).
+  // Interacting with the scrollbar must NEVER add beats — the timeline only
+  // grows from scrolling the grid itself or dragging notes past the end.
+  const hbarInteractingRef = useRef(false)
+  // Fixed (non-scaling) left offset of the scroll content — the sticky
+  // keyboard column. The grid region past it is what actually zooms, so all
+  // scrollLeft anchoring math subtracts it. Mirrors LEFT_COL in the wheel zoom.
+  const LEFT_COL = 52
+  const updateHBar = () => {
+    const sc = scrollRef.current
+    if (!sc) return
+    const sw = sc.scrollWidth || 1
+    setHbar({
+      pos: sc.scrollLeft / sw,
+      size: Math.min(1, sc.clientWidth / sw),
+    })
+  }
+  // Re-sync the thumb whenever the content width (zoom / beats / time sig) or
+  // the viewport size changes. Scroll-driven updates come from onScroll.
+  useEffect(() => {
+    updateHBar()
+    const sc = scrollRef.current
+    if (!sc || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => updateHBar())
+    ro.observe(sc)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomX, zoomY, totalBeats, timeSig])
+  // Grip-resize applies a new zoom AND a new scrollLeft together; the scroll
+  // has to land after the DOM re-renders at the new width, so it's deferred
+  // here via a pending ref applied in the layout phase.
+  const pendingHScrollRef = useRef(null)
+  useLayoutEffect(() => {
+    if (pendingHScrollRef.current != null && scrollRef.current) {
+      const sc = scrollRef.current
+      sc.scrollLeft = Math.max(
+        0,
+        Math.min(sc.scrollWidth - sc.clientWidth, pendingHScrollRef.current)
+      )
+      pendingHScrollRef.current = null
+      updateHBar()
+    }
+  })
+  // Drag the thumb body → scroll horizontally.
+  const handleHbarThumbDown = (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const sc = scrollRef.current
+    const track = hbarTrackRef.current
+    if (!sc || !track) return
+    const W = track.getBoundingClientRect().width
+    const sw0 = sc.scrollWidth
+    const cw0 = sc.clientWidth
+    const sl0 = sc.scrollLeft
+    const startX = e.clientX
+    hbarInteractingRef.current = true
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      sc.scrollLeft = Math.max(
+        0,
+        Math.min(sw0 - cw0, sl0 + (dx / W) * sw0)
+      )
+      updateHBar()
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      hbarInteractingRef.current = false
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'grabbing'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  // Drag an end grip → zoom horizontally, anchoring the opposite edge so that
+  // side of the view stays put (Ableton / DAW behaviour).
+  const handleHbarGripDown = (side) => (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const sc = scrollRef.current
+    const track = hbarTrackRef.current
+    if (!sc || !track) return
+    const W = track.getBoundingClientRect().width
+    const cw0 = sc.clientWidth
+    const sw0 = sc.scrollWidth
+    const sl0 = sc.scrollLeft
+    const bw0 = BEAT_WIDTH
+    const F = LEFT_COL
+    const size0 = Math.min(1, cw0 / sw0)
+    // Beat currently at each visible edge (grid coords, zoom-invariant).
+    const bLeft = (sl0 - F) / bw0
+    const bRight = (sl0 + cw0 - F) / bw0
+    const beats = totalBeatsRef.current
+    const startX = e.clientX
+    hbarInteractingRef.current = true
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      // Right grip: dragging right enlarges the thumb (zoom out). Left grip:
+      // dragging right shrinks it (zoom in) while the right edge stays fixed.
+      const newSize =
+        side === 'right'
+          ? Math.max(0.03, Math.min(1, size0 + dx / W))
+          : Math.max(0.03, Math.min(1, size0 - dx / W))
+      // Visible fraction → target content width → target zoom.
+      const targetSw = cw0 / newSize
+      let newZoom = (targetSw - F) / (beats * BEAT_WIDTH_BASE)
+      newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom))
+      const newBw = BEAT_WIDTH_BASE * newZoom
+      // Anchor the opposite edge by keeping its beat under the same viewport x.
+      const newSl =
+        side === 'right'
+          ? F + bLeft * newBw
+          : F + bRight * newBw - cw0
+      setZoomX(newZoom)
+      pendingHScrollRef.current = Math.max(0, newSl)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      // Release on the next frame so the trailing scroll from the final zoom
+      // apply can't slip through and add a beat.
+      requestAnimationFrame(() => {
+        hbarInteractingRef.current = false
+      })
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   const dragRef = useRef(null)
   const marqueeRef = useRef(null)
   const historyRef = useRef([])
@@ -2708,7 +2876,17 @@ export default function PianoRoll({
       // beat 0. Top bound still clamps so notes can't run past totalBeats.
       let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
       if (!freeMode) newAnchorBeat = Math.round(newAnchorBeat)
-      newAnchorBeat = Math.min(totalBeats - 0.001, newAnchorBeat)
+      // Ableton-style: dragging toward the end grows the timeline rather than
+      // clamping. Grow to fit the furthest note end in the group, then clamp
+      // the anchor to whatever length we ended up with (MAX_BEATS ceiling).
+      const rawDelta = newAnchorBeat - drag.originalBeat
+      let groupMaxEnd = -Infinity
+      for (const g of drag.group) {
+        const e = g.originalBeat + rawDelta + g.length
+        if (e > groupMaxEnd) groupMaxEnd = e
+      }
+      const curTotal = growBeatsForEnd(groupMaxEnd)
+      newAnchorBeat = Math.min(curTotal - 0.001, newAnchorBeat)
       const beatDelta = newAnchorBeat - drag.originalBeat
 
       // Vertical step:
@@ -2738,7 +2916,7 @@ export default function PianoRoll({
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
         const offscreen = nb < 0
-        if (!offscreen) nb = Math.min(totalBeats - 0.001, nb)
+        if (!offscreen) nb = Math.min(curTotal - 0.001, nb)
         let nm
         if (chromatic) {
           nm = g.originalMidi + stepDelta
@@ -2860,13 +3038,21 @@ export default function PianoRoll({
       }
       let lengthDelta = dx / BEAT_WIDTH
       if (!freeMode) lengthDelta = Math.round(lengthDelta)
+      // Ableton-style: lengthening a note past the end grows the timeline.
+      let resizeMaxEnd = -Infinity
+      for (const g of group) {
+        const e =
+          g.beat + Math.max(freeMode ? 0.25 : 1, g.originalLength + lengthDelta)
+        if (e > resizeMaxEnd) resizeMaxEnd = e
+      }
+      const curTotal = growBeatsForEnd(resizeMaxEnd)
       setNotes((prev) => {
         const next = new Map(prev)
         for (const g of group) {
           let newLength = g.originalLength + lengthDelta
           newLength = Math.max(
             freeMode ? 0.25 : 1,
-            Math.min(totalBeats - g.beat, newLength)
+            Math.min(curTotal - g.beat, newLength)
           )
           next.set(g.key, newLength)
           if (g.key === key) lastDraggedLength = newLength
@@ -4037,7 +4223,33 @@ export default function PianoRoll({
           )}
         </aside>
         <div className="roll-stage">
-          <div className="roll-scroll" ref={scrollRef}>
+          <div
+            className="roll-scroll"
+            ref={scrollRef}
+            onScroll={(e) => {
+              // Ableton-style: reaching the right edge reveals more bars. Grow
+              // one measure at a time — but ONLY when the user actively scrolls
+              // rightward into the edge on an already-overflowing timeline.
+              // Just seeing the end (e.g. after zooming out) must not add beats,
+              // so the full timeline stays visible.
+              const sc = e.currentTarget
+              const scrolledRight = sc.scrollLeft > lastScrollLeftRef.current + 0.5
+              const overflows = sc.scrollWidth - sc.clientWidth > 1
+              const atRightEdge =
+                sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - BEAT_WIDTH * 4
+              lastScrollLeftRef.current = sc.scrollLeft
+              // Dragging the scrollbar itself must never grow the timeline.
+              if (
+                !hbarInteractingRef.current &&
+                scrolledRight &&
+                overflows &&
+                atRightEdge
+              ) {
+                setTotalBeats((prev) => Math.min(MAX_BEATS, prev + cellsPerMeasure))
+              }
+              updateHBar()
+            }}
+          >
             <div className="timeline">
               <div className="timeline-corner" />
               <div
@@ -4295,6 +4507,29 @@ export default function PianoRoll({
                   )
                 })}
               </div>
+            </div>
+          </div>
+          {/* Custom horizontal scrollbar with end grips: drag the middle to
+              scroll, drag either end to zoom (anchoring the opposite edge). */}
+          <div className="roll-hscroll" ref={hbarTrackRef}>
+            <div
+              className="roll-hscroll-thumb"
+              style={{
+                left: `${hbar.pos * 100}%`,
+                width: `${hbar.size * 100}%`,
+              }}
+              onPointerDown={handleHbarThumbDown}
+            >
+              <div
+                className="roll-hscroll-grip left"
+                onPointerDown={handleHbarGripDown('left')}
+                title="Drag to zoom"
+              />
+              <div
+                className="roll-hscroll-grip right"
+                onPointerDown={handleHbarGripDown('right')}
+                title="Drag to zoom"
+              />
             </div>
           </div>
         </div>

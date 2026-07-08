@@ -2635,15 +2635,70 @@
   background: var(--frame);
   overflow: hidden;
   display: flex;
+  flex-direction: column;
 }
 
 .roll-scroll {
   flex: 1;
-  height: 100%;
-  overflow: auto;
+  min-height: 0;
+  /* Horizontal scrolling is driven by the custom grip scrollbar below and
+     the wheel handler; the native horizontal bar is hidden. Vertical stays
+     native. */
+  overflow-x: hidden;
+  overflow-y: auto;
   position: relative;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 55%, transparent) transparent;
+}
+
+/* Custom horizontal scrollbar with draggable end grips (zoom handles) */
+.roll-hscroll {
+  position: relative;
+  height: 14px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-top: 1px solid var(--hairline);
+  touch-action: none;
+}
+.roll-hscroll-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 44px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--fg) 42%, transparent);
+  border-radius: 5px;
+  cursor: grab;
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+}
+.roll-hscroll-thumb:hover {
+  background: color-mix(in srgb, var(--fg) 58%, transparent);
+}
+.roll-hscroll-thumb:active {
+  cursor: grabbing;
+}
+.roll-hscroll-grip {
+  width: 9px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  cursor: ew-resize;
+  position: relative;
+}
+.roll-hscroll-grip::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.roll-hscroll-grip:hover::after {
+  background: var(--bg);
 }
 
 .roll-scroll::-webkit-scrollbar {
