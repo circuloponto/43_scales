@@ -364,9 +364,10 @@ function TimeSigInput({ value, min, max, onCommit, ariaLabel }) {
   useEffect(() => {
     if (!focusedRef.current) setDraft(String(value))
   }, [value])
+  const maxLen = String(max).length
   const commit = () => {
     const v = Math.round(Number(draft))
-    if (Number.isFinite(v)) {
+    if (Number.isFinite(v) && draft !== '') {
       const c = Math.max(min, Math.min(max, v))
       onCommit(c)
       setDraft(String(c))
@@ -374,13 +375,18 @@ function TimeSigInput({ value, min, max, onCommit, ariaLabel }) {
       setDraft(String(value))
     }
   }
+  // A text field (not type="number") so we can read the selection — number
+  // inputs disallow selectionStart. Digit entry is handled explicitly: a key
+  // press replaces the value when the field is fully selected (fresh focus /
+  // Ctrl+A) and otherwise appends, capped to the max's digit count. This
+  // guarantees ONE press = ONE digit — no doubling from a lost selection, no
+  // auto-repeat spam from a held key.
   return (
     <input
-      type="number"
+      type="text"
+      inputMode="numeric"
       className="time-sig-input"
       value={draft}
-      min={min}
-      max={max}
       aria-label={ariaLabel}
       onFocus={(e) => {
         focusedRef.current = true
@@ -390,12 +396,30 @@ function TimeSigInput({ value, min, max, onCommit, ariaLabel }) {
         focusedRef.current = false
         commit()
       }}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => {
+        // Backspace / paste path (digit keys are consumed in onKeyDown).
+        setDraft(e.target.value.replace(/\D/g, '').slice(0, maxLen))
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') e.target.blur()
-        else if (e.key === 'Escape') {
+        if (e.repeat) {
+          e.preventDefault()
+          return
+        }
+        if (e.key === 'Enter') {
+          e.currentTarget.blur()
+          return
+        }
+        if (e.key === 'Escape') {
           setDraft(String(value))
-          e.target.blur()
+          e.currentTarget.blur()
+          return
+        }
+        if (/^\d$/.test(e.key)) {
+          e.preventDefault()
+          const el = e.currentTarget
+          const fullySelected =
+            el.selectionStart === 0 && el.selectionEnd === el.value.length
+          setDraft((d) => ((fullySelected ? '' : d) + e.key).slice(-maxLen))
         }
       }}
     />
