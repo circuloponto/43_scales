@@ -820,6 +820,28 @@ export default function PianoRoll({
   const clipboardRef = { get current() { return sharedClipboard }, set current(v) { sharedClipboard = v } }
   const notesRef = useRef(notes)
   notesRef.current = notes
+  // Off-screen holding store for notes the arrow keys have pushed left of
+  // beat 0. They aren't in the notes map (so not rendered / played) but are
+  // still "selected" — nudging right brings them back, matching the mouse
+  // drag. They're deleted for good when the selection is cleared. Each entry
+  // is { beat (< 0), midi, len }.
+  const offscreenNotesRef = useRef([])
+  // Set true by nudgeSelection so the deselect-cleanup effect can tell a
+  // selection change caused by a nudge (keep off-screen notes) from one
+  // caused by clicking / marquee / Escape (flush them).
+  const nudgeJustRanRef = useRef(false)
+  // When the selection changes for any reason OTHER than a nudge, commit the
+  // off-screen notes by deleting them for good — "only when I deselect the
+  // notes we can delete them".
+  useEffect(() => {
+    if (nudgeJustRanRef.current) {
+      nudgeJustRanRef.current = false
+      return
+    }
+    if (offscreenNotesRef.current.length > 0) {
+      offscreenNotesRef.current = []
+    }
+  }, [selectedKeys])
   // All tracks (with their notes + volume/mute/solo) — the loop scheduler
   // reads from this so live edits or volume changes show up in subsequent
   // iterations without restarting playback.
@@ -1189,7 +1211,12 @@ export default function PianoRoll({
         e.preventDefault()
         if (tHeldRef.current) rotateSelection(-1)
         else nudgeSelection(0, -1)
-      } else if (e.code === 'ArrowRight' && selectedKeys.size > 0) {
+      } else if (
+        e.code === 'ArrowRight' &&
+        (selectedKeys.size > 0 || offscreenNotesRef.current.length > 0)
+      ) {
+        // Right nudge also brings back notes parked off-screen to the left,
+        // even when the visible selection is empty.
         e.preventDefault()
         nudgeSelection(1, 0)
       } else if (e.code === 'ArrowLeft' && selectedKeys.size > 0) {
@@ -1892,70 +1919,87 @@ export default function PianoRoll({
     setSelectedKeys(newSel)
   }
 
-  // Keyboard nudge for the selection. `beatDelta` shifts horizontally on
-  // the grid; `stepDelta` shifts vertically by scale steps. Both clamp to
-  // the timeline + MIDI bounds. Notes that aren't on a scale step (free
-  // mode) fall back to ±1 semitone for stepDelta so they still move.
+  // Shift a midi by `stepDelta` scale steps (or semitones out-of-scale),
+  // clamped to the MIDI range. Shared by on-screen and off-screen nudges.
+  const nudgeMidi = (oldMidi, stepDelta) => {
+    if (stepDelta === 0) return oldMidi
+    let nm
+    if (allowOutOfScale) {
+      nm = oldMidi + stepDelta
+    } else {
+      const gStep = midiToScaleStep(oldMidi)
+      nm =
+        gStep != null
+          ? scaleStepToMidi(gStep + stepDelta)
+          : nearestScaleMidi(oldMidi + stepDelta)
+    }
+    return Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
+  }
+
+  // Keyboard nudge for the selection. `beatDelta` shifts horizontally on the
+  // grid; `stepDelta` shifts vertically by scale steps. The selection moves
+  // as a rigid group. Notes pushed left of beat 0 go to the off-screen store
+  // (still selected, not rendered); nudging right brings them back — exactly
+  // like the mouse drag. On the right the group clamps at totalBeats.
   const nudgeSelection = (beatDelta, stepDelta) => {
-    if (selectedKeys.size === 0) return
+    if (selectedKeys.size === 0 && offscreenNotesRef.current.length === 0) return
     pushHistory()
+    const cur = notesRef.current
+    const items = []
+    for (const k of selectedKeys) {
+      const [bStr, midiStr] = k.split('-')
+      items.push({
+        key: k,
+        beat: Number(bStr),
+        midi: Number(midiStr),
+        len: cur.get(k) ?? 1,
+      })
+    }
+    // Right clamp uses the on-screen notes' furthest end so the group stops
+    // at the timeline edge as a unit. Left nudges are never clamped.
+    let beatDeltaEff = beatDelta
+    if (beatDelta > 0 && items.length) {
+      let maxEnd = -Infinity
+      for (const it of items) if (it.beat + it.len > maxEnd) maxEnd = it.beat + it.len
+      beatDeltaEff = Math.min(totalBeats - maxEnd, beatDeltaEff)
+    }
     const newSel = new Set()
+    const newOffscreen = []
+    const toDelete = []
+    const toSet = []
+    // On-screen notes: those crossing left of 0 move to the off-screen store.
+    for (const it of items) {
+      toDelete.push(it.key)
+      const nb = it.beat + beatDeltaEff
+      const nm = nudgeMidi(it.midi, stepDelta)
+      if (nb < 0) {
+        newOffscreen.push({ beat: nb, midi: nm, len: it.len })
+      } else {
+        const nk = `${nb}-${nm}`
+        toSet.push([nk, it.len])
+        newSel.add(nk)
+      }
+    }
+    // Off-screen notes: those reaching >= 0 come back on-screen.
+    for (const off of offscreenNotesRef.current) {
+      const nb = off.beat + beatDeltaEff
+      const nm = nudgeMidi(off.midi, stepDelta)
+      if (nb >= 0) {
+        const nk = `${nb}-${nm}`
+        toSet.push([nk, off.len])
+        newSel.add(nk)
+      } else {
+        newOffscreen.push({ beat: nb, midi: nm, len: off.len })
+      }
+    }
     setNotes((prev) => {
       const next = new Map(prev)
-      // Horizontal nudge moves the whole selection as a rigid group. On the
-      // RIGHT we clamp the delta so the group stops at totalBeats as a unit
-      // (no stacking). On the LEFT we allow notes to cross beat 0 — anything
-      // whose start goes negative disappears off-screen, matching the mouse
-      // drag. (pushHistory above makes it Ctrl+Z-undoable.)
-      let beatDeltaEff = beatDelta
-      if (beatDelta > 0) {
-        let maxEnd = -Infinity
-        for (const k of selectedKeys) {
-          const [bStr] = k.split('-')
-          const len = prev.get(k) ?? 1
-          if (Number(bStr) + len > maxEnd) maxEnd = Number(bStr) + len
-        }
-        beatDeltaEff = Math.min(totalBeats - maxEnd, beatDeltaEff)
-      }
-      const moves = []
-      for (const k of selectedKeys) {
-        const [bStr, midiStr] = k.split('-')
-        const oldBeat = Number(bStr)
-        const oldMidi = Number(midiStr)
-        const len = prev.get(k) ?? 1
-        const newBeat = oldBeat + beatDeltaEff
-        let newMidi = oldMidi
-        if (stepDelta !== 0) {
-          if (allowOutOfScale) {
-            // Free chromatic movement when the user has opted out of the
-            // scale constraint — Arrow keys nudge by one semitone.
-            newMidi = oldMidi + stepDelta
-          } else {
-            const gStep = midiToScaleStep(oldMidi)
-            newMidi =
-              gStep != null
-                ? scaleStepToMidi(gStep + stepDelta)
-                : nearestScaleMidi(oldMidi + stepDelta)
-          }
-        }
-        newMidi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, newMidi))
-        // A note whose start crosses left of beat 0 disappears off-screen —
-        // drop it from the map and the selection (no newKey).
-        const gone = newBeat < 0
-        moves.push({
-          oldKey: k,
-          newKey: gone ? null : `${newBeat}-${newMidi}`,
-          length: len,
-        })
-      }
-      for (const m of moves) next.delete(m.oldKey)
-      for (const m of moves) {
-        if (m.newKey == null) continue
-        next.set(m.newKey, m.length)
-        newSel.add(m.newKey)
-      }
+      for (const k of toDelete) next.delete(k)
+      for (const [k, l] of toSet) next.set(k, l)
       return next
     })
+    offscreenNotesRef.current = newOffscreen
+    nudgeJustRanRef.current = true
     setSelectedKeys(newSel)
   }
 
