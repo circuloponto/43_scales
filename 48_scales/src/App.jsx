@@ -2205,6 +2205,7 @@ function App() {
                   ['Ctrl / ⌘ + A', 'Select all notes'],
                   ['Ctrl / ⌘ + C', 'Copy selection'],
                   ['Ctrl / ⌘ + V', 'Paste at playhead (or origin beat)'],
+                  ['P', 'Select notes the playhead is touching'],
                   ['Delete / Backspace', 'Delete selected notes'],
                   ['Escape', 'Clear selection / cancel template / drop loop'],
                 ],

@@ -1473,6 +1473,19 @@ export default function PianoRoll({
         // Toggle the full Roll settings modal.
         e.preventDefault()
         setParamsOpen((v) => !v)
+      } else if (e.code === 'KeyP') {
+        // Select every note the playhead is currently touching — a note counts
+        // if the playhead sits on its start or anywhere inside its span
+        // [beat, beat + length). Replaces the current selection.
+        e.preventDefault()
+        const p = playheadBeatRef.current ?? 0
+        const EPS = 1e-6
+        const hit = []
+        for (const [key, len] of notesRef.current) {
+          const b = Number(key.split('-')[0])
+          if (b <= p + EPS && p < b + len - EPS) hit.push(key)
+        }
+        setSelectedKeys(new Set(hit))
       } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
         e.preventDefault()
         if (tHeldRef.current) rotateSelection(1)
