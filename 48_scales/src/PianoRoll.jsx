@@ -147,10 +147,11 @@ const NOTE_NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯
 const NOTE_NAMES_FLAT  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
 const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
 
-// One grid cell is a 16th note; a measure ("compass") is 16 cells (4/4).
-// The rhythm system divides the measure, so a whole note = one measure =
-// CELLS_PER_MEASURE cells.
-const CELLS_PER_MEASURE = 16
+// One grid cell is a 16th note; a whole note is 16 cells. Note durations
+// are absolute (independent of time signature), so this is the fixed
+// reference for note-value math. Measure/beat lengths in cells come from
+// the time signature (cellsPerMeasure / cellsPerBeat, computed per render).
+const CELLS_PER_WHOLE = 16
 
 // PC → "white index from top of octave" (0 = B, 1 = A, ..., 6 = C)
 const PC_TO_WHITE_IDX = { 11: 0, 9: 1, 7: 2, 5: 3, 4: 4, 2: 5, 0: 6 }
@@ -455,6 +456,7 @@ export default function PianoRoll({
   initialSwing = null,
   initialLoop = null,
   initialTotalBeats = null,
+  initialTimeSig = null,
   onPersistPlayback,
   tabSwitchPlayback = 'stop',
 }) {
@@ -551,6 +553,18 @@ export default function PianoRoll({
   )
   const [bpm, setBpm] = useState(initialBpm ?? DEFAULT_BPM)
   const [swingPct, setSwingPct] = useState(initialSwing ?? DEFAULT_SWING)
+  // Time signature. `num` = beats per measure, `den` = note value that gets
+  // the beat (4 = quarter, 8 = eighth, 2 = half). Everything on the grid is
+  // still measured in 16th-note cells, so a beat spans `16 / den` cells and
+  // a measure `num × (16 / den)` cells — the timeline, grid lines, metronome
+  // and the rhythm "bar" unit all derive from these.
+  const [timeSig, setTimeSig] = useState(
+    initialTimeSig && initialTimeSig.num && initialTimeSig.den
+      ? initialTimeSig
+      : { num: 4, den: 4 }
+  )
+  const cellsPerBeat = CELLS_PER_WHOLE / timeSig.den
+  const cellsPerMeasure = timeSig.num * cellsPerBeat
   const [playheadBeat, setPlayheadBeat] = useState(null)
   const [freeMode, setFreeMode] = useState(false)
   // Roll zoom (horizontal + vertical, independent). 1 = default. Bounded to
@@ -582,8 +596,28 @@ export default function PianoRoll({
       //  Ctrl/⌘             → horizontal zoom
       //  Ctrl/⌘ + Shift     → vertical zoom
       //  Shift              → horizontal scroll
-      //  (none)             → native vertical scroll
-      if (!meta && !e.shiftKey) return
+      //  (none)             → scroll both axes (driven explicitly below so
+      //                       trackpad vertical scrolling is reliable)
+      if (!meta && !e.shiftKey) {
+        // Plain wheel / trackpad two-finger scroll. Drive the container
+        // directly in both axes so vertical scrolling works on trackpads
+        // and browsers that don't deliver native scroll here. deltaMode 1
+        // (lines) / 2 (pages) are scaled to pixels. Always attempt the
+        // scroll (scrollTop/Left auto-clamp) and only preventDefault if it
+        // actually moved, so edge cases fall through to native.
+        const vScale =
+          e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? sc.clientHeight : 1
+        const hScale =
+          e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? sc.clientWidth : 1
+        const beforeTop = sc.scrollTop
+        const beforeLeft = sc.scrollLeft
+        if (e.deltaY) sc.scrollTop = beforeTop + e.deltaY * vScale
+        if (e.deltaX) sc.scrollLeft = beforeLeft + e.deltaX * hScale
+        if (sc.scrollTop !== beforeTop || sc.scrollLeft !== beforeLeft) {
+          e.preventDefault()
+        }
+        return
+      }
       e.preventDefault()
       const rect = sc.getBoundingClientRect()
       const cursorViewX = e.clientX - rect.left
@@ -878,7 +912,7 @@ export default function PianoRoll({
   const [rhythmDenominator, setRhythmDenominator] = useState(4) // 1-9
   const [rhythmMult, setRhythmMult] = useState(1) // integer multiplier
   const [rhythmAwaitingMultiplier, setRhythmAwaitingMultiplier] = useState(false)
-  const rhythmUnitCells = rhythmUnit === 'bar' ? CELLS_PER_MEASURE : 4
+  const rhythmUnitCells = rhythmUnit === 'bar' ? cellsPerMeasure : cellsPerBeat
   const rhythmBaseCells = rhythmUnitCells / rhythmDenominator
   const rhythmLength = rhythmBaseCells * rhythmMult
   useEffect(() => {
@@ -896,7 +930,7 @@ export default function PianoRoll({
   // Powers of 2 get their note-value name; the rest are tuplets named by
   // the divisor. The glyph draws the nearest power-of-2 note plus a tuplet
   // badge — so a beat-triplet shows an 8th note with a small "3".
-  const rhythmNoteDenom = CELLS_PER_MEASURE / rhythmBaseCells // 1=whole, 2=half…
+  const rhythmNoteDenom = CELLS_PER_WHOLE / rhythmBaseCells // 1=whole, 2=half…
   const isPow2 = (x) => x >= 1 && (x & (x - 1)) === 0
   const rhythmNoteName = (() => {
     const noteNames = {
@@ -1043,8 +1077,14 @@ export default function PianoRoll({
       playbackHydratedRef.current = true
       return
     }
-    persistPlaybackRef.current?.({ bpm, swing: swingPct, loop, totalBeats })
-  }, [bpm, swingPct, loop, totalBeats])
+    persistPlaybackRef.current?.({
+      bpm,
+      swing: swingPct,
+      loop,
+      totalBeats,
+      timeSig,
+    })
+  }, [bpm, swingPct, loop, totalBeats, timeSig])
 
   // Latest playhead + play-state, mirrored into a ref so the unmount
   // cleanup can read them without stale-closure issues. Updated every
@@ -2043,7 +2083,10 @@ export default function PianoRoll({
     // whole measure, capped at MAX_BEATS) so every note stays visible.
     let effectiveTotal = totalBeats
     if (maxEnd > totalBeats) {
-      effectiveTotal = Math.min(MAX_BEATS, Math.ceil(maxEnd / 16) * 16)
+      effectiveTotal = Math.min(
+        MAX_BEATS,
+        Math.ceil(maxEnd / cellsPerMeasure) * cellsPerMeasure
+      )
       if (effectiveTotal !== totalBeats) setTotalBeats(effectiveTotal)
     }
     const newSel = new Set()
@@ -2944,12 +2987,14 @@ export default function PianoRoll({
         }
       }
       if (metronomeRef.current) {
-        const CELLS_PER_BEAT = 4
-        const CELLS_PER_MEASURE = 16
-        const first = Math.ceil(rangeStart / CELLS_PER_BEAT) * CELLS_PER_BEAT
-        for (let b = first; b < rangeEnd; b += CELLS_PER_BEAT) {
+        // Click on every beat of the current time signature, accenting the
+        // downbeat (start of each measure).
+        const cpb = cellsPerBeat
+        const cpm = cellsPerMeasure
+        const first = Math.ceil(rangeStart / cpb) * cpb
+        for (let b = first; b < rangeEnd; b += cpb) {
           const clickTime = scheduleStartTime + (b - rangeStart) * cellDur
-          playClick(clickTime, b % CELLS_PER_MEASURE === 0)
+          playClick(clickTime, b % cpm === 0)
         }
       }
     }
@@ -3334,6 +3379,40 @@ export default function PianoRoll({
           sensitivity={2}
           onCommit={setTotalBeats}
         />
+        <div className="time-sig" title="Time signature (beats per measure / beat value)">
+          <span className="time-sig-label">Time</span>
+          <div className="time-sig-fields">
+            <select
+              className="time-sig-select"
+              value={timeSig.num}
+              onChange={(e) =>
+                setTimeSig((t) => ({ ...t, num: Number(e.target.value) }))
+              }
+              aria-label="beats per measure"
+            >
+              {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span className="time-sig-slash">/</span>
+            <select
+              className="time-sig-select"
+              value={timeSig.den}
+              onChange={(e) =>
+                setTimeSig((t) => ({ ...t, den: Number(e.target.value) }))
+              }
+              aria-label="beat note value"
+            >
+              {[2, 4, 8, 16].map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <button
           type="button"
           className="mode-toggle icon-toggle"
@@ -3957,8 +4036,10 @@ export default function PianoRoll({
                   />
                 )}
                 {Array.from({ length: totalBeats }, (_, b) => {
-                  if (b % 4 !== 0) return null
-                  const isMeasure = b % 16 === 0
+                  // A tick per beat of the current time signature; a labelled
+                  // measure tick at each downbeat.
+                  if (b % cellsPerBeat !== 0) return null
+                  const isMeasure = b % cellsPerMeasure === 0
                   return (
                     <div
                       key={b}
@@ -3967,7 +4048,7 @@ export default function PianoRoll({
                       }`}
                       style={{ left: `${b * BEAT_WIDTH}px` }}
                     >
-                      {isMeasure ? Math.floor(b / 16) + 1 : ''}
+                      {isMeasure ? Math.floor(b / cellsPerMeasure) + 1 : ''}
                     </div>
                   )
                 })}
@@ -4076,11 +4157,13 @@ export default function PianoRoll({
                         className={`beats-track ${freeMode ? 'free' : ''}`}
                         style={{
                           width: totalBeats * BEAT_WIDTH,
-                          // Grid lines must scale with the horizontal zoom
-                          // so cell / beat lines stay aligned with the notes
-                          // and the timeline ticks. One line per cell
-                          // (BEAT_WIDTH) and a heavier one per beat (4 cells).
-                          backgroundSize: `${BEAT_WIDTH}px 100%, ${BEAT_WIDTH * 4}px 100%`,
+                          // Grid lines scale with the horizontal zoom and the
+                          // time signature: a light line per cell (16th) and
+                          // a heavier one per beat (cellsPerBeat cells), so
+                          // they stay aligned with the notes + timeline ticks.
+                          backgroundSize: `${BEAT_WIDTH}px 100%, ${
+                            BEAT_WIDTH * cellsPerBeat
+                          }px 100%`,
                         }}
                         onPointerDown={(e) => handleRowMouseDown(e, midi)}
                         onMouseMove={(e) => {

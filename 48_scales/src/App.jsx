@@ -307,6 +307,7 @@ function App() {
     swing: null,
     loop: null,
     totalBeats: null,
+    timeSig: null,
   })
   // Cross-tab playback resume lives at module scope inside PianoRoll
   // itself — a plain module variable that survives the unmount → mount
@@ -385,6 +386,7 @@ function App() {
         swing: src?.swing,
         loop: src?.loop,
         totalBeats: src?.totalBeats,
+        timeSig: src?.timeSig,
       },
     ])
     setActiveSongId(id)
@@ -1371,6 +1373,11 @@ function App() {
               settings.universalPlayback
                 ? universalPlayback.totalBeats ?? activeSong?.totalBeats
                 : activeSong?.totalBeats
+            }
+            initialTimeSig={
+              settings.universalPlayback
+                ? universalPlayback.timeSig ?? activeSong?.timeSig
+                : activeSong?.timeSig
             }
             onPersistPlayback={(patch) => {
               if (settings.universalPlayback) {
