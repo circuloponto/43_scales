@@ -2194,7 +2194,7 @@ function App() {
                 title: 'Playback',
                 items: [
                   ['Space', 'Play / pause'],
-                  ['Enter', 'Reset playhead to beat 0 (stop first)'],
+                  ['Enter', 'Return playhead to last start; press again for beat 0'],
                 ],
               },
               {

@@ -1316,6 +1316,9 @@ export default function PianoRoll({
   // cleanup can read them without stale-closure issues. Updated every
   // render from the current values.
   const playheadBeatRef = useRef(0)
+  // Beat that playback last started from — Enter returns the playhead here,
+  // and pressing Enter again (when already there) jumps to the beginning.
+  const lastPlayStartBeatRef = useRef(0)
   const isPlayingRef = useRef(false)
   useEffect(() => {
     if (playheadBeat != null) playheadBeatRef.current = playheadBeat
@@ -1424,12 +1427,21 @@ export default function PianoRoll({
         e.preventDefault()
         togglePlay()
       } else if (e.code === 'Enter') {
-        // Reset the playhead to beat 0. If currently playing, stop first so
-        // the rAF doesn't immediately overwrite the position. Space resumes
-        // from the new playhead.
+        // Enter returns the playhead to where playback last started; pressing
+        // it again there (or when that start was already 0) jumps to the very
+        // beginning. Stop first if playing so the rAF doesn't overwrite the
+        // position — Space then resumes from the new playhead.
         e.preventDefault()
         if (playStateRef.current) stopPlayback(false)
-        setPlayheadBeat(0)
+        const startPos = lastPlayStartBeatRef.current ?? 0
+        const cur = playheadBeatRef.current ?? 0
+        const EPS = 1e-6
+        const target =
+          startPos > EPS && Math.abs(cur - startPos) > EPS ? startPos : 0
+        setPlayheadBeat(target)
+        // Update the ref immediately so a rapid second Enter reads the new
+        // position rather than the pre-render value.
+        playheadBeatRef.current = target
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
         if (selectedKeys.size > 0) {
           e.preventDefault()
@@ -3205,6 +3217,8 @@ export default function PianoRoll({
     if (activeLoop && (startBeat < activeLoop.start || startBeat >= activeLoop.end)) {
       startBeat = activeLoop.start
     }
+    // Remember where this playback began so Enter can return the playhead here.
+    lastPlayStartBeatRef.current = startBeat
     // Schedule every melody note (and metronome click, if on) whose beat
     // falls in [rangeStart, rangeEnd), relative to scheduleStartTime as
     // t=rangeStart. Reads notes / metronome / swing from live refs at call
