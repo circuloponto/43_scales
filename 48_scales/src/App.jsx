@@ -1632,10 +1632,12 @@ function App() {
             const pair = scale
               ? chordPairs.find((p) => p.scaleId === scale.id)
               : null
-            // `rs` is a sorted-rooted position now, so pass sortedRooted so
-            // resolveChordPair's rootStep lookup lands on the right pitch.
+            // Colour the strip cells with the EXACT same chord-pair
+            // resolution shown in the "Chord pair" section below (raw scale
+            // notes + the scale's intrinsic root step), so the strip colours
+            // always match that pair instead of drifting with the mode pick.
             const resolved = pair
-              ? resolveChordPair(pair, sortedRooted, root, rs)
+              ? resolveChordPair(pair, scale.notes, root, rootSteps[scale.id - 1])
               : null
             const leftSet = new Set(resolved ? resolved.leftNotes : [])
             const rightSet = new Set(resolved ? resolved.rightNotes : [])
