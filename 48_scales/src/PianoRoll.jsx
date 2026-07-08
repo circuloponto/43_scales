@@ -1560,6 +1560,10 @@ export default function PianoRoll({
         /^Digit[0-9]$/.test(e.code)
       ) {
         e.preventDefault()
+        // Ignore auto-repeat from a held key — otherwise holding a digit spams
+        // the type-ahead accumulator (e.g. "3" → "333…"), landing on the wrong
+        // subdivision. Only the initial press counts.
+        if (e.repeat) return
         feedRhythmDigit(Number(e.code.slice(5)))
       }
     }
@@ -2964,6 +2968,12 @@ export default function PianoRoll({
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
+        // Snap each note to the current grid, not just the drag delta. Notes
+        // placed off-grid (free mode, or a different subdivision) otherwise
+        // keep their original fractional offset because only the anchor gets
+        // rounded — this pulls every note onto the live grid. On-grid notes
+        // round to themselves, so group intervals are preserved.
+        if (!freeMode) nb = Math.round(nb)
         const offscreen = nb < 0
         if (!offscreen) nb = Math.min(curTotal - 0.001, nb)
         let nm
