@@ -1259,6 +1259,33 @@ export default function PianoRoll({
     const step = rhythmBaseCells > 0 ? rhythmBaseCells : 1
     return clamp(Math.round(raw / step) * step)
   }
+  // Reflect a note length (grid cells) back into the rhythm selector so that
+  // resizing a note "captures" its length as the current value. Prefer a clean
+  // single subdivision of the current unit (÷denom, multiplier 1) — e.g. a
+  // 2-cell note under a beat unit becomes ÷2 = an 8th. If the length isn't a
+  // whole subdivision, keep the current subdivision and set the nearest whole
+  // multiplier instead, so the shown length still tracks the note.
+  const applyLengthToRhythm = (lengthCells) => {
+    if (!(lengthCells > 0)) return
+    const unitCells = rhythmUnitCells
+    const EPS = 1e-6
+    const denom = Math.round(unitCells / lengthCells)
+    if (
+      denom >= 1 &&
+      denom <= RHYTHM_MAX_DIV &&
+      Math.abs(unitCells / denom - lengthCells) < EPS
+    ) {
+      setRhythmDenominator(denom)
+      setRhythmMult(1)
+      return
+    }
+    const base = rhythmBaseCells > 0 ? rhythmBaseCells : 1
+    const mult = Math.max(
+      1,
+      Math.min(RHYTHM_MAX_MULT, Math.round(lengthCells / base))
+    )
+    setRhythmMult(mult)
+  }
   // Dismiss the floating pitch label the instant its note is deleted —
   // covers every delete path (right-click, Delete key, long-press, marquee)
   // since they all mutate `notes`. Skipped while a drag is in flight so a
@@ -3088,6 +3115,12 @@ export default function PianoRoll({
       : [{ key, beat, midi, originalLength: currentLength }]
     let snapshotPushed = false
     let lastDraggedLength = currentLength
+    // The resize increment follows the rhythm selector's subdivision, frozen
+    // at drag start. So a note grows/shrinks in steps of the current value
+    // (a 16th, an 8th, a triplet, …) added to its ORIGINAL length — you start
+    // wherever the note ends and increment by the selector's unit, even when
+    // that start isn't itself on the subdivision grid.
+    const step = !freeMode && rhythmBaseCells > 0 ? rhythmBaseCells : 1
     const move = (mv) => {
       const dx = mv.clientX - startX
       if (!snapshotPushed && Math.abs(dx) < 2) return
@@ -3096,21 +3129,23 @@ export default function PianoRoll({
         snapshotPushed = true
       }
       let lengthDelta = dx / BEAT_WIDTH
-      if (!freeMode) lengthDelta = Math.round(lengthDelta)
+      if (!freeMode) lengthDelta = Math.round(lengthDelta / step) * step
       // Ableton-style: lengthening a note past the end grows the timeline.
       let resizeMaxEnd = -Infinity
       for (const g of group) {
-        const e =
-          g.beat + Math.max(freeMode ? 0.25 : 1, g.originalLength + lengthDelta)
+        const e = g.beat + Math.max(0.25, g.originalLength + lengthDelta)
         if (e > resizeMaxEnd) resizeMaxEnd = e
       }
       const curTotal = growBeatsForEnd(resizeMaxEnd)
       setNotes((prev) => {
         const next = new Map(prev)
         for (const g of group) {
+          const minLen = freeMode
+            ? 0.25
+            : Math.max(0.25, Math.min(step, g.originalLength))
           let newLength = g.originalLength + lengthDelta
           newLength = Math.max(
-            freeMode ? 0.25 : 1,
+            minLen,
             Math.min(curTotal - g.beat, newLength)
           )
           next.set(g.key, newLength)
@@ -3124,7 +3159,11 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
-      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
+      if (snapshotPushed) {
+        defaultNoteLengthRef.current = lastDraggedLength
+        // Capture the resulting length as the rhythm selector's value.
+        applyLengthToRhythm(lastDraggedLength)
+      }
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
