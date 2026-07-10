@@ -1256,8 +1256,35 @@ export default function PianoRoll({
   const snapPlacementBeat = (raw) => {
     const clamp = (v) => Math.max(0, Math.min(totalBeats - 0.001, v))
     if (freeMode) return clamp(raw)
-    const step = rhythmBaseCells > 0 ? rhythmBaseCells : 1
-    return clamp(Math.round(raw / step) * step)
+    // Snap to the box's OWN length grid, not the rhythm subdivision. The hover
+    // box (and placed note) is `defaultNoteLength` wide, so tiling the grid at
+    // that length makes notes butt cleanly against each other AND keeps the
+    // cursor inside the box: with step == width and floor, the box always
+    // spans [floor, floor + width) — the exact interval the cursor sits in.
+    // (Using the coarser rhythm subdivision here would strand a shorter box to
+    // the cursor's left — the "previous beat" drift.)
+    const step =
+      defaultNoteLengthRef.current > 0
+        ? defaultNoteLengthRef.current
+        : rhythmBaseCells > 0
+        ? rhythmBaseCells
+        : 1
+    // Floor (not round-to-nearest) so the start is always at or left of the
+    // cursor; the epsilon absorbs float error on exact grid lines.
+    return clamp(Math.floor(raw / step + 1e-9) * step)
+  }
+  // No overlaps allowed: if a snapped placement start lands INSIDE an existing
+  // note on the row (the grid tiles from beat 0, so the floored start can fall
+  // back into the preceding note), begin at that note's end instead — the box
+  // and any placed note then start on the empty space after it.
+  const avoidLeftOverlap = (beat, rowMidi) => {
+    for (const [k, len] of notesRef.current) {
+      const sep = k.indexOf('-')
+      if (Number(k.slice(sep + 1)) !== rowMidi) continue
+      const b = Number(k.slice(0, sep))
+      if (b <= beat + 1e-9 && b + len > beat + 1e-9) return b + len
+    }
+    return beat
   }
   // Reflect a note length (grid cells) back into the rhythm selector so that
   // resizing a note "captures" its length as the current value. Prefer a clean
@@ -2353,20 +2380,15 @@ export default function PianoRoll({
     setSelectedKeys(newSel)
   }
 
-  // Proportional time-stretch of the selection about its earliest onset.
-  // Every note's start-offset from the anchor AND its length scale by the
-  // same factor, so the gaps between notes scale right along with the note
-  // lengths — the musical shape is preserved, nothing overlaps or stacks,
-  // and the whole thing can shrink toward tiny blips or grow indefinitely.
-  // dir = +1 grows (×FACTOR), -1 shrinks (÷FACTOR).
+  // Linear length increment of the selection by the rhythm selector's current
+  // value. dir = +1 grows, -1 shrinks. Each selected note's LENGTH changes by
+  // one rhythm-selector unit (a 16th, an 8th, a triplet, …) — positions stay
+  // put, so it adds/removes exactly that value each press instead of doubling.
   const stretchSelection = (dir) => {
     if (selectedKeys.size === 0) return
-    // Factor 2 → each press doubles / halves both lengths and gaps, so the
-    // note values track the rhythm selector's musical durations (…16th, 8th,
-    // quarter, half, whole…) while the whole pattern scales proportionally.
-    const FACTOR = 2
     const FLOOR = 1 / 32 // finest note length in cells
-    const factor = dir > 0 ? FACTOR : 1 / FACTOR
+    const stepCells = rhythmLength > 0 ? rhythmLength : 1
+    const delta = dir * stepCells
     const cur = notesRef.current
     const items = []
     for (const key of selectedKeys) {
@@ -2374,47 +2396,26 @@ export default function PianoRoll({
       items.push({
         key,
         beat: Number(bStr),
-        midi: Number(midiStr),
         len: cur.get(key) ?? 1,
       })
     }
-    const anchor = Math.min(...items.map((it) => it.beat))
-    // First pass: compute the stretched notes and the furthest end beat.
-    const results = []
+    // Grow the timeline (Ableton-style) if any note now reaches past the end.
     let maxEnd = 0
     for (const it of items) {
-      let newBeat = anchor + (it.beat - anchor) * factor
-      const newLen = Math.max(FLOOR, it.len * factor)
-      if (newBeat < 0) newBeat = 0
-      results.push({ oldKey: it.key, newBeat, newLen, midi: it.midi })
-      if (newBeat + newLen > maxEnd) maxEnd = newBeat + newLen
+      const nl = Math.max(FLOOR, it.len + delta)
+      if (it.beat + nl > maxEnd) maxEnd = it.beat + nl
     }
-    // If the selection grew past the timeline, extend it (rounded up to a
-    // whole measure, capped at MAX_BEATS) so every note stays visible.
-    let effectiveTotal = totalBeats
-    if (maxEnd > totalBeats) {
-      effectiveTotal = Math.min(
-        MAX_BEATS,
-        Math.ceil(maxEnd / cellsPerMeasure) * cellsPerMeasure
-      )
-      if (effectiveTotal !== totalBeats) setTotalBeats(effectiveTotal)
-    }
-    const newSel = new Set()
+    const effectiveTotal = growBeatsForEnd(maxEnd)
+    // Positions (and thus keys) are unchanged — only the length values move.
     setNotes((prev) => {
       const next = new Map(prev)
-      for (const it of items) next.delete(it.key)
-      for (const r of results) {
-        let nb = r.newBeat
-        let nl = r.newLen
-        // Only clamp if we hit the hard MAX_BEATS ceiling.
-        if (nb + nl > effectiveTotal) nl = Math.max(FLOOR, effectiveTotal - nb)
-        const nk = `${nb}-${r.midi}`
-        next.set(nk, nl)
-        newSel.add(nk)
+      for (const it of items) {
+        let nl = Math.max(FLOOR, it.len + delta)
+        nl = Math.min(nl, effectiveTotal - it.beat)
+        next.set(it.key, nl)
       }
       return next
     })
-    setSelectedKeys(newSel)
   }
   const growSelection = () => {
     if (selectedKeys.size === 0) return
@@ -2726,7 +2727,10 @@ export default function PianoRoll({
           !effectiveAllowOOS && !inScale(midi % 12)
             ? nearestScaleMidi(midi)
             : midi
-        const key = `${beat}-${placeMidi}`
+        // Start on empty space, never inside a note on this row (matches the
+        // hover box). No overlaps allowed.
+        const placeBeat = avoidLeftOverlap(beat, placeMidi)
+        const key = `${placeBeat}-${placeMidi}`
         pushHistory()
         const newLength = defaultNoteLengthRef.current
         setNotes((prev) => {
@@ -3159,11 +3163,7 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
-      if (snapshotPushed) {
-        defaultNoteLengthRef.current = lastDraggedLength
-        // Capture the resulting length as the rhythm selector's value.
-        applyLengthToRhythm(lastDraggedLength)
-      }
+      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
@@ -4438,19 +4438,25 @@ export default function PianoRoll({
                 )}
                 {hoveredCell && !marquee && (
                   <div
-                    className="grid-hover-cell"
+                    className={`grid-hover-cell ${
+                      hoveredCell.noteLength != null ? 'on-note' : ''
+                    }`}
                     style={{
                       left: `${hoveredCell.beat * BEAT_WIDTH}px`,
                       top: `${
                         (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
                       }px`,
-                      // Mirror the length a click would actually produce
-                      // exactly — no snap-mode clamp. Click-place writes
-                      // rhythmLength straight into the notes map, so the
-                      // hover width must follow the same value or the two
-                      // won't line up (an 8th-note hover would render as a
-                      // full-beat box in snap mode otherwise).
-                      width: `${(rhythmLength ?? 1) * BEAT_WIDTH}px`,
+                      // Over an existing note → match that note's exact span
+                      // (highlight it). Over empty grid → mirror the length a
+                      // click would produce: defaultNoteLengthRef, the last
+                      // length the user inputted (from picking a rhythm OR
+                      // resizing). Deliberately DETACHED from the rhythm
+                      // selector, which resizing never rewrites.
+                      width: `${
+                        (hoveredCell.noteLength ??
+                          defaultNoteLengthRef.current ??
+                          1) * BEAT_WIDTH
+                      }px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
                   />
@@ -4516,12 +4522,11 @@ export default function PianoRoll({
                           // out-of-scale rows that a click there would
                           // refuse to place a note on anyway.
                           const rect = e.currentTarget.getBoundingClientRect()
+                          const rawBeat = (e.clientX - rect.left) / BEAT_WIDTH
                           // Snap to the rhythm division grid so the hover
                           // box lands exactly where a click would place the
                           // note (tuplets included).
-                          const beat = snapPlacementBeat(
-                            (e.clientX - rect.left) / BEAT_WIDTH
-                          )
+                          const beat = snapPlacementBeat(rawBeat)
                           // Ctrl held inverts the current snap mode for
                           // the hover indicator too, so its position always
                           // matches where a click will actually land.
@@ -4531,12 +4536,35 @@ export default function PianoRoll({
                           const hoverMidi = effectiveAllowOOS
                             ? midi
                             : nearestScaleMidi(midi)
+                          // If the cursor is over an existing note on THIS row,
+                          // snap the hover box to that note's exact start and
+                          // duration — highlighting it — instead of showing a
+                          // placement box. (No overlaps are allowed, so a click
+                          // there wouldn't place a new note anyway.)
+                          let hitBeat = null
+                          let hitLen = null
+                          for (const [k, len] of notesRef.current) {
+                            const sep = k.indexOf('-')
+                            if (Number(k.slice(sep + 1)) !== midi) continue
+                            const b = Number(k.slice(0, sep))
+                            if (rawBeat >= b && rawBeat < b + len) {
+                              hitBeat = b
+                              hitLen = len
+                              break
+                            }
+                          }
+                          const cellBeat =
+                            hitBeat != null
+                              ? hitBeat
+                              : avoidLeftOverlap(beat, hoverMidi)
+                          const cellMidi = hitBeat != null ? midi : hoverMidi
                           setHoveredCell((cur) =>
                             cur &&
-                            cur.beat === beat &&
-                            cur.midi === hoverMidi
+                            cur.beat === cellBeat &&
+                            cur.midi === cellMidi &&
+                            cur.noteLength === hitLen
                               ? cur
-                              : { beat, midi: hoverMidi }
+                              : { beat: cellBeat, midi: cellMidi, noteLength: hitLen }
                           )
                           if (pendingTemplate) {
                             setTemplateHover((cur) =>
