@@ -4516,11 +4516,6 @@ export default function PianoRoll({
                           // it into both the general hover indicator and the
                           // template preview anchor (when a template is
                           // queued). Snaps to whole beats unless free mode.
-                          // When scale-snap is on (allowOutOfScale=false),
-                          // the hover row also snaps to the nearest in-scale
-                          // midi so the indicator visibly "skips" past the
-                          // out-of-scale rows that a click there would
-                          // refuse to place a note on anyway.
                           const rect = e.currentTarget.getBoundingClientRect()
                           const rawBeat = (e.clientX - rect.left) / BEAT_WIDTH
                           // Snap to the rhythm division grid so the hover
@@ -4533,9 +4528,16 @@ export default function PianoRoll({
                           const effectiveAllowOOS = allowOutOfScale
                             ? !(e.ctrlKey || e.metaKey)
                             : e.ctrlKey || e.metaKey
-                          const hoverMidi = effectiveAllowOOS
-                            ? midi
-                            : nearestScaleMidi(midi)
+                          // On an out-of-scale row with scale-snap on, a click
+                          // won't place a note here — so show no hover border
+                          // at all (instead of snapping the box to a different
+                          // in-scale row, which looked broken).
+                          if (!effectiveAllowOOS && !inScale(midi % 12)) {
+                            setHoveredCell(null)
+                            if (pendingTemplate) setTemplateHover({ beat, midi })
+                            return
+                          }
+                          const hoverMidi = midi
                           // If the cursor is over an existing note on THIS row,
                           // snap the hover box to that note's exact start and
                           // duration — highlighting it — instead of showing a
