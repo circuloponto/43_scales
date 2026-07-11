@@ -2448,37 +2448,27 @@ export default function PianoRoll({
   }
 
   // ── MIDI region (R key) ────────────────────────────────────────────────
-  // The region is a fixed one-octave BOX at the drawn spot, and it owns its own
-  // notes — a DETACHED overlay, not real piano-roll notes (so their vertical
-  // position is measured inside the box, not against the keyboard rows). The
-  // box never moves. Dragging raises/lowers the notes WITHIN the box; a note
-  // leaving the top re-enters at the bottom (it wraps at the octave), so every
-  // note always renders inside the box.
+  // A continuous diagonal staircase built in SCALE-STEP space so it only ever
+  // lands on in-scale notes (climbing skips the out-of-scale tones). The
+  // pattern's pitches are stored as scale-step offsets; copy i is `periodSteps`
+  // scale-steps higher AND `L` later than copy i-1. The box is a window onto the
+  // staircase that MOVES with the drag so the notes line up with the keyboard.
   const regionNotes = (r) => {
     if (!r) return []
     const out = []
     const L = r.patternLen
-    const s = r.pitchShift // semitones the window has climbed up the staircase
+    const s = r.pitchShift // SCALE STEPS the window has climbed
     const EPS = 1e-6
-    // Infinite diagonal staircase: copy i has soundPitch = baseMinMidi+dm+i·period
-    // and time = dt+i·L (each step `period` higher AND `L` later, no octave
-    // drop). The BOX is a fixed viewport onto it, showing a one-octave slice
-    // [baseMinMidi+s, +period). Two coordinates per note:
-    //   • soundMidi — the TRUE pitch, which CLIMBS as you drag (used for audio)
-    //   • midi      — the box-relative display (soundMidi − s), so the notes
-    //                 stay drawn INSIDE the fixed box (detached from the keys).
-    // Dragging slides the window up/down the staircase: it stays a continuous
-    // staircase in the box, but the sounding pitch actually changes.
-    const winPitchLo = r.baseMinMidi + s
-    const winPitchHi = winPitchLo + r.period // exclusive
-    const winTimeLo = s * (L / r.period)
+    const winStepLo = r.baseStep + s
+    const winStepHi = winStepLo + r.periodSteps // exclusive
+    const winTimeLo = s * (L / r.periodSteps)
     const winTimeHi = winTimeLo + L
-    const iLo = Math.floor((winPitchLo - r.baseMinMidi) / r.period) - 1
-    const iHi = Math.ceil((winPitchHi - r.baseMinMidi) / r.period) + 1
+    const iLo = Math.floor(s / r.periodSteps) - 1
+    const iHi = Math.floor(s / r.periodSteps) + 2
     for (let i = iLo; i <= iHi; i++) {
       for (const n of r.pattern) {
-        const soundMidi = r.baseMinMidi + n.dm + i * r.period
-        if (soundMidi < winPitchLo || soundMidi >= winPitchHi) continue
+        const step = r.baseStep + n.dstep + i * r.periodSteps
+        if (step < winStepLo || step >= winStepHi) continue
         let sTime = n.dt + i * L
         let len = n.len
         // Clip to the window's time span (a note can straddle either edge).
@@ -2489,10 +2479,11 @@ export default function PianoRoll({
         }
         if (sTime + len > winTimeHi) len = winTimeHi - sTime
         if (len <= EPS) continue
+        const soundMidi = scaleStepToMidi(step) // always an in-scale pitch
         out.push({
           beat: r.startBeat + (sTime - winTimeLo),
-          midi: soundMidi, // draw at the TRUE pitch (matches the keyboard)
-          soundMidi, // same pitch, for playback
+          midi: soundMidi,
+          soundMidi,
           len,
         })
       }
@@ -2502,11 +2493,7 @@ export default function PianoRoll({
   const setRegionShift = (shift) => {
     const r = midiRegionRef.current
     if (!r) return
-    // Keep the sounding window on the keyboard: soundMidi spans
-    // [baseMinMidi+shift, +period).
-    const lo = MIDI_LOW - r.baseMinMidi
-    const hi = MIDI_HIGH - r.period + 1 - r.baseMinMidi
-    const clamped = Math.max(lo, Math.min(hi, shift))
+    const clamped = Math.max(r.minShift, Math.min(r.maxShift, shift))
     if (clamped === r.pitchShift) return
     const updated = { ...r, pitchShift: clamped }
     midiRegionRef.current = updated
@@ -2515,8 +2502,6 @@ export default function PianoRoll({
   const createRegionFromSelection = () => {
     if (selectedKeys.size === 0) return
     const cur = notesRef.current
-    let minMidi = Infinity
-    let maxMidi = -Infinity
     let minBeat = Infinity
     let maxEnd = -Infinity
     const raw = []
@@ -2526,19 +2511,29 @@ export default function PianoRoll({
       const midi = Number(key.slice(sep + 1))
       const len = cur.get(key) ?? 1
       raw.push({ beat, midi, len })
-      if (midi < minMidi) minMidi = midi
-      if (midi > maxMidi) maxMidi = midi
       if (beat < minBeat) minBeat = beat
       if (beat + len > maxEnd) maxEnd = beat + len
     }
-    const period = maxMidi > minMidi ? maxMidi - minMidi + 1 : 12
     const patternLen = maxEnd - minBeat
     if (patternLen <= 0) return
-    const pattern = raw.map((n) => ({
-      dt: n.beat - minBeat,
-      dm: n.midi - minMidi,
-      len: n.len,
+    // Convert pitches to scale-step indices (snap any out-of-scale note first)
+    // so the staircase moves diatonically and never lands off-scale.
+    const stepped = raw.map((n) => {
+      let st = midiToScaleStep(n.midi)
+      if (st == null) st = midiToScaleStep(nearestScaleMidi(n.midi)) ?? 0
+      return { dt: n.beat - minBeat, step: st, len: n.len }
+    })
+    const baseStep = Math.min(...stepped.map((s) => s.step))
+    const maxStep = Math.max(...stepped.map((s) => s.step))
+    const periodSteps = Math.max(1, maxStep - baseStep + 1)
+    const pattern = stepped.map((s) => ({
+      dt: s.dt,
+      dstep: s.step - baseStep,
+      len: s.len,
     }))
+    // Keep the window on the keyboard, in scale steps.
+    const lowStep = midiToScaleStep(nearestScaleMidi(MIDI_LOW)) ?? 0
+    const highStep = midiToScaleStep(nearestScaleMidi(MIDI_HIGH)) ?? 0
     pushHistory()
     // Detach: remove the selected notes from the real note map — the region
     // now owns them and draws them itself.
@@ -2551,12 +2546,12 @@ export default function PianoRoll({
       startBeat: minBeat,
       windowLen: patternLen,
       patternLen,
-      period,
-      baseMinMidi: minMidi,
-      boxBottomMidi: minMidi, // fixed box: bottom + one octave, never moves
-      boxRows: period,
+      baseStep,
+      periodSteps,
       pattern,
-      pitchShift: 0,
+      pitchShift: 0, // in SCALE STEPS
+      minShift: lowStep - baseStep,
+      maxShift: highStep - baseStep - periodSteps + 1,
     }
     midiRegionRef.current = region
     setMidiRegion(region)
@@ -4684,24 +4679,31 @@ export default function PianoRoll({
                         }}
                       />
                     ))}
-                    <div
-                      className="midi-region"
-                      onPointerDown={handleRegionPointerDown}
-                      title="Drag left/right to climb the pattern's pitch"
-                      style={{
-                        left: `${midiRegion.startBeat * BEAT_WIDTH}px`,
-                        top: `${
-                          (MIDI_HIGH -
-                            (midiRegion.baseMinMidi +
-                              midiRegion.pitchShift +
-                              midiRegion.period -
-                              1)) *
-                          ROW_HEIGHT
-                        }px`,
-                        width: `${midiRegion.windowLen * BEAT_WIDTH}px`,
-                        height: `${midiRegion.period * ROW_HEIGHT}px`,
-                      }}
-                    />
+                    {(() => {
+                      // Box bounds follow the current scale-step window.
+                      const bottomMidi = scaleStepToMidi(
+                        midiRegion.baseStep + midiRegion.pitchShift
+                      )
+                      const topMidi = scaleStepToMidi(
+                        midiRegion.baseStep +
+                          midiRegion.pitchShift +
+                          midiRegion.periodSteps -
+                          1
+                      )
+                      return (
+                        <div
+                          className="midi-region"
+                          onPointerDown={handleRegionPointerDown}
+                          title="Drag left/right to climb the pattern through the scale"
+                          style={{
+                            left: `${midiRegion.startBeat * BEAT_WIDTH}px`,
+                            top: `${(MIDI_HIGH - topMidi) * ROW_HEIGHT}px`,
+                            width: `${midiRegion.windowLen * BEAT_WIDTH}px`,
+                            height: `${(topMidi - bottomMidi + 1) * ROW_HEIGHT}px`,
+                          }}
+                        />
+                      )
+                    })()}
                   </>
                 )}
                 {pitches.map((midi) => {
