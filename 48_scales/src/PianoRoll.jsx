@@ -840,6 +840,15 @@ export default function PianoRoll({
   // thin outlined rectangle so the user knows exactly which beat + midi row
   // a click would land on. Cleared on mouseleave of the grid area.
   const [hoveredCell, setHoveredCell] = useState(null) // { beat, midi } | null
+  // MIDI region created by the R key: the selected pattern is tiled across all
+  // octaves, and this box marks the original selection's bounds. Stage 1 is a
+  // static overlay; later it becomes a movable / pitch-shiftable region.
+  const [midiRegion, setMidiRegion] = useState(null)
+  // Live mirror so pointer handlers always read the current region. Written
+  // ONLY by the region helpers (synchronously) — deliberately NOT synced from
+  // state via an effect, which would race a fast drag and stop old notes from
+  // being cleared (cacophony).
+  const midiRegionRef = useRef(null)
   useEffect(() => {
     if (!tabMenu && !groupMenu) return
     const close = () => {
@@ -1533,6 +1542,10 @@ export default function PianoRoll({
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (chordModalOpen) setChordModalOpen(false)
         if (loop) setLoop(null)
+        if (midiRegion) {
+          midiRegionRef.current = null
+          setMidiRegion(null)
+        }
         if (tHeldRef.current) {
           tHeldRef.current = false
           setTHeld(false)
@@ -1573,6 +1586,15 @@ export default function PianoRoll({
           if (b <= p + EPS && p < b + len - EPS) hit.push(key)
         }
         setSelectedKeys(new Set(hit))
+      } else if (e.code === 'KeyR' && selectedKeys.size > 0) {
+        // Turn the selection into a MIDI region. The pattern is tiled across
+        // every octave that fits the keyboard, but laid out SEQUENTIALLY IN
+        // TIME (lowest octave first, ascending) into a hidden source sequence.
+        // The region is a window onto that sequence — only the window's slice
+        // is materialised as notes; dragging inside the box scrolls the window
+        // so you can start on any octave / pitch range. See createRegion.
+        e.preventDefault()
+        createRegionFromSelection()
       } else if (e.code === 'ArrowUp' && selectedKeys.size > 0) {
         e.preventDefault()
         if (tHeldRef.current) rotateSelection(1)
@@ -2423,6 +2445,149 @@ export default function PianoRoll({
     if (selectedKeys.size === 0) return
     pushHistory()
     stretchSelection(-1)
+  }
+
+  // ── MIDI region (R key) ────────────────────────────────────────────────
+  // The region is a fixed one-octave BOX at the drawn spot, and it owns its own
+  // notes — a DETACHED overlay, not real piano-roll notes (so their vertical
+  // position is measured inside the box, not against the keyboard rows). The
+  // box never moves. Dragging raises/lowers the notes WITHIN the box; a note
+  // leaving the top re-enters at the bottom (it wraps at the octave), so every
+  // note always renders inside the box.
+  const regionNotes = (r) => {
+    if (!r) return []
+    const out = []
+    const L = r.patternLen
+    const s = r.pitchShift // semitones the window has climbed up the staircase
+    const EPS = 1e-6
+    // Infinite diagonal staircase: copy i has soundPitch = baseMinMidi+dm+i·period
+    // and time = dt+i·L (each step `period` higher AND `L` later, no octave
+    // drop). The BOX is a fixed viewport onto it, showing a one-octave slice
+    // [baseMinMidi+s, +period). Two coordinates per note:
+    //   • soundMidi — the TRUE pitch, which CLIMBS as you drag (used for audio)
+    //   • midi      — the box-relative display (soundMidi − s), so the notes
+    //                 stay drawn INSIDE the fixed box (detached from the keys).
+    // Dragging slides the window up/down the staircase: it stays a continuous
+    // staircase in the box, but the sounding pitch actually changes.
+    const winPitchLo = r.baseMinMidi + s
+    const winPitchHi = winPitchLo + r.period // exclusive
+    const winTimeLo = s * (L / r.period)
+    const winTimeHi = winTimeLo + L
+    const iLo = Math.floor((winPitchLo - r.baseMinMidi) / r.period) - 1
+    const iHi = Math.ceil((winPitchHi - r.baseMinMidi) / r.period) + 1
+    for (let i = iLo; i <= iHi; i++) {
+      for (const n of r.pattern) {
+        const soundMidi = r.baseMinMidi + n.dm + i * r.period
+        if (soundMidi < winPitchLo || soundMidi >= winPitchHi) continue
+        let sTime = n.dt + i * L
+        let len = n.len
+        // Clip to the window's time span (a note can straddle either edge).
+        if (sTime + len <= winTimeLo || sTime >= winTimeHi) continue
+        if (sTime < winTimeLo) {
+          len -= winTimeLo - sTime
+          sTime = winTimeLo
+        }
+        if (sTime + len > winTimeHi) len = winTimeHi - sTime
+        if (len <= EPS) continue
+        out.push({
+          beat: r.startBeat + (sTime - winTimeLo),
+          midi: soundMidi - s, // box-relative display
+          soundMidi, // true pitch, for playback
+          len,
+        })
+      }
+    }
+    return out
+  }
+  const setRegionShift = (shift) => {
+    const r = midiRegionRef.current
+    if (!r) return
+    // Keep the sounding window on the keyboard: soundMidi spans
+    // [baseMinMidi+shift, +period).
+    const lo = MIDI_LOW - r.baseMinMidi
+    const hi = MIDI_HIGH - r.period + 1 - r.baseMinMidi
+    const clamped = Math.max(lo, Math.min(hi, shift))
+    if (clamped === r.pitchShift) return
+    const updated = { ...r, pitchShift: clamped }
+    midiRegionRef.current = updated
+    setMidiRegion(updated)
+  }
+  const createRegionFromSelection = () => {
+    if (selectedKeys.size === 0) return
+    const cur = notesRef.current
+    let minMidi = Infinity
+    let maxMidi = -Infinity
+    let minBeat = Infinity
+    let maxEnd = -Infinity
+    const raw = []
+    for (const key of selectedKeys) {
+      const sep = key.indexOf('-')
+      const beat = Number(key.slice(0, sep))
+      const midi = Number(key.slice(sep + 1))
+      const len = cur.get(key) ?? 1
+      raw.push({ beat, midi, len })
+      if (midi < minMidi) minMidi = midi
+      if (midi > maxMidi) maxMidi = midi
+      if (beat < minBeat) minBeat = beat
+      if (beat + len > maxEnd) maxEnd = beat + len
+    }
+    const period = maxMidi > minMidi ? maxMidi - minMidi + 1 : 12
+    const patternLen = maxEnd - minBeat
+    if (patternLen <= 0) return
+    const pattern = raw.map((n) => ({
+      dt: n.beat - minBeat,
+      dm: n.midi - minMidi,
+      len: n.len,
+    }))
+    pushHistory()
+    // Detach: remove the selected notes from the real note map — the region
+    // now owns them and draws them itself.
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const k of selectedKeys) next.delete(k)
+      return next
+    })
+    const region = {
+      startBeat: minBeat,
+      windowLen: patternLen,
+      patternLen,
+      period,
+      baseMinMidi: minMidi,
+      boxBottomMidi: minMidi, // fixed box: bottom + one octave, never moves
+      boxRows: period,
+      pattern,
+      pitchShift: 0,
+    }
+    midiRegionRef.current = region
+    setMidiRegion(region)
+    setSelectedKeys(new Set())
+  }
+  // Drag left/right inside the region to climb the detached pattern's pitch.
+  // Snapped to whole semitones so notes land on rows.
+  const handleRegionPointerDown = (e) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    const r0 = midiRegionRef.current
+    if (!r0) return
+    const startX = e.clientX
+    const shift0 = r0.pitchShift
+    const STEP_PX = 16 // px of drag per semitone climb
+    pushHistory()
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      setRegionShift(shift0 + Math.round(dx / STEP_PX)) // drag right → climb up
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ew-resize'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   const pasteNotes = () => {
@@ -3277,7 +3442,7 @@ export default function PianoRoll({
 
   const playFromBeat = (startBeat = 0) => {
     const hasAnyNotes = tracksRef.current.some((t) => t.notes.size > 0)
-    if (!hasAnyNotes && !metronome) return
+    if (!hasAnyNotes && !metronome && !midiRegionRef.current) return
     stopPlayback(false)
     const ctx = getAudioContext()
     const cellDur = beatDurForBpm(bpm)
@@ -3328,6 +3493,39 @@ export default function PianoRoll({
               (swungNoteEnd - swungNoteStart) * cellDur
             )
             playOneNote(midi, noteTime, noteDur, peak, synth, voice)
+          }
+        }
+      }
+      // Region (R-key staircase) notes are a DETACHED overlay — not in any
+      // track's note map — so schedule them here with the active track's voice,
+      // gated by the same mute/solo rules. Read live so dragging the region
+      // during loop playback updates what sounds.
+      const region = midiRegionRef.current
+      if (region) {
+        const at =
+          liveTracks.find((t) => t.id === activeTrackId) ?? liveTracks[0]
+        if (at && !at.muted && (!anySolo || at.soloed)) {
+          const peak = BASE_GAIN * at.volume
+          if (peak > 0.001) {
+            const synth = at.synth || 'triangle'
+            const voice = {
+              attackMs: at.attackMs,
+              releaseMs: at.releaseMs,
+              detuneCents: at.detuneCents,
+            }
+            for (const m of regionNotes(region)) {
+              if (m.beat >= rangeStart && m.beat < rangeEnd) {
+                const swungNoteStart = applySwingBeat(m.beat, liveSwing)
+                const swungNoteEnd = applySwingBeat(m.beat + m.len, liveSwing)
+                const noteTime =
+                  scheduleStartTime + (swungNoteStart - swungRangeStart) * cellDur
+                const noteDur = Math.max(
+                  0.06,
+                  (swungNoteEnd - swungNoteStart) * cellDur
+                )
+                playOneNote(m.soundMidi, noteTime, noteDur, peak, synth, voice)
+              }
+            }
           }
         }
       }
@@ -4471,6 +4669,37 @@ export default function PianoRoll({
                       transform: `translateX(${playheadBeat * BEAT_WIDTH}px)`,
                     }}
                   />
+                )}
+                {midiRegion && (
+                  <>
+                    {regionNotes(midiRegion).map((m, i) => (
+                      <div
+                        key={`rn-${i}`}
+                        className="region-note"
+                        style={{
+                          left: `${m.beat * BEAT_WIDTH}px`,
+                          top: `${(MIDI_HIGH - m.midi) * ROW_HEIGHT}px`,
+                          width: `${m.len * BEAT_WIDTH}px`,
+                          height: `${ROW_HEIGHT}px`,
+                        }}
+                      />
+                    ))}
+                    <div
+                      className="midi-region"
+                      onPointerDown={handleRegionPointerDown}
+                      title="Drag left/right to climb the pattern's pitch"
+                      style={{
+                        left: `${midiRegion.startBeat * BEAT_WIDTH}px`,
+                        top: `${
+                          (MIDI_HIGH -
+                            (midiRegion.boxBottomMidi + midiRegion.boxRows - 1)) *
+                          ROW_HEIGHT
+                        }px`,
+                        width: `${midiRegion.windowLen * BEAT_WIDTH}px`,
+                        height: `${midiRegion.boxRows * ROW_HEIGHT}px`,
+                      }}
+                    />
+                  </>
                 )}
                 {pitches.map((midi) => {
                   const pc = midi % 12
