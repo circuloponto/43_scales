@@ -2491,8 +2491,8 @@ export default function PianoRoll({
         if (len <= EPS) continue
         out.push({
           beat: r.startBeat + (sTime - winTimeLo),
-          midi: soundMidi - s, // box-relative display
-          soundMidi, // true pitch, for playback
+          midi: soundMidi, // draw at the TRUE pitch (matches the keyboard)
+          soundMidi, // same pitch, for playback
           len,
         })
       }
@@ -4692,11 +4692,14 @@ export default function PianoRoll({
                         left: `${midiRegion.startBeat * BEAT_WIDTH}px`,
                         top: `${
                           (MIDI_HIGH -
-                            (midiRegion.boxBottomMidi + midiRegion.boxRows - 1)) *
+                            (midiRegion.baseMinMidi +
+                              midiRegion.pitchShift +
+                              midiRegion.period -
+                              1)) *
                           ROW_HEIGHT
                         }px`,
                         width: `${midiRegion.windowLen * BEAT_WIDTH}px`,
-                        height: `${midiRegion.boxRows * ROW_HEIGHT}px`,
+                        height: `${midiRegion.period * ROW_HEIGHT}px`,
                       }}
                     />
                   </>
