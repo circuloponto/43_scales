@@ -1256,19 +1256,16 @@ export default function PianoRoll({
   const snapPlacementBeat = (raw) => {
     const clamp = (v) => Math.max(0, Math.min(totalBeats - 0.001, v))
     if (freeMode) return clamp(raw)
-    // Snap to the box's OWN length grid, not the rhythm subdivision. The hover
-    // box (and placed note) is `defaultNoteLength` wide, so tiling the grid at
-    // that length makes notes butt cleanly against each other AND keeps the
-    // cursor inside the box: with step == width and floor, the box always
-    // spans [floor, floor + width) — the exact interval the cursor sits in.
-    // (Using the coarser rhythm subdivision here would strand a shorter box to
-    // the cursor's left — the "previous beat" drift.)
-    const step =
-      defaultNoteLengthRef.current > 0
-        ? defaultNoteLengthRef.current
-        : rhythmBaseCells > 0
-        ? rhythmBaseCells
-        : 1
+    // The snap increment is the rhythm SUBDIVISION (rhythmBaseCells) — the
+    // multiplier only lengthens the note, it must not coarsen the grid, so a
+    // ×3 8th still snaps every 8th. The one exception: never snap coarser than
+    // the box itself, otherwise a box shorter than the subdivision (e.g. after
+    // resizing a note down) would sit to the cursor's left ("previous beat"
+    // drift). So step = min(subdivision, box length).
+    const box =
+      defaultNoteLengthRef.current > 0 ? defaultNoteLengthRef.current : 1
+    const sub = rhythmBaseCells > 0 ? rhythmBaseCells : box
+    const step = Math.min(sub, box)
     // Floor (not round-to-nearest) so the start is always at or left of the
     // cursor; the epsilon absorbs float error on exact grid lines.
     return clamp(Math.floor(raw / step + 1e-9) * step)
@@ -4438,24 +4435,19 @@ export default function PianoRoll({
                 )}
                 {hoveredCell && !marquee && (
                   <div
-                    className={`grid-hover-cell ${
-                      hoveredCell.noteLength != null ? 'on-note' : ''
-                    }`}
+                    className="grid-hover-cell"
                     style={{
                       left: `${hoveredCell.beat * BEAT_WIDTH}px`,
                       top: `${
                         (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
                       }px`,
-                      // Over an existing note → match that note's exact span
-                      // (highlight it). Over empty grid → mirror the length a
-                      // click would produce: defaultNoteLengthRef, the last
-                      // length the user inputted (from picking a rhythm OR
-                      // resizing). Deliberately DETACHED from the rhythm
-                      // selector, which resizing never rewrites.
+                      // Mirror the length a click would produce:
+                      // defaultNoteLengthRef, the last length the user inputted
+                      // (from picking a rhythm OR resizing). Deliberately
+                      // DETACHED from the rhythm selector, which resizing never
+                      // rewrites. (Hidden entirely while over a placed note.)
                       width: `${
-                        (hoveredCell.noteLength ??
-                          defaultNoteLengthRef.current ??
-                          1) * BEAT_WIDTH
+                        (defaultNoteLengthRef.current ?? 1) * BEAT_WIDTH
                       }px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
@@ -4539,34 +4531,28 @@ export default function PianoRoll({
                           }
                           const hoverMidi = midi
                           // If the cursor is over an existing note on THIS row,
-                          // snap the hover box to that note's exact start and
-                          // duration — highlighting it — instead of showing a
-                          // placement box. (No overlaps are allowed, so a click
-                          // there wouldn't place a new note anyway.)
-                          let hitBeat = null
-                          let hitLen = null
+                          // hide the hover box entirely — no border over placed
+                          // notes. It returns as soon as the cursor moves back
+                          // over empty space. (No overlaps allowed, so a click
+                          // there wouldn't place a note anyway.)
                           for (const [k, len] of notesRef.current) {
                             const sep = k.indexOf('-')
                             if (Number(k.slice(sep + 1)) !== midi) continue
                             const b = Number(k.slice(0, sep))
                             if (rawBeat >= b && rawBeat < b + len) {
-                              hitBeat = b
-                              hitLen = len
-                              break
+                              setHoveredCell(null)
+                              if (pendingTemplate) setTemplateHover({ beat, midi })
+                              return
                             }
                           }
-                          const cellBeat =
-                            hitBeat != null
-                              ? hitBeat
-                              : avoidLeftOverlap(beat, hoverMidi)
-                          const cellMidi = hitBeat != null ? midi : hoverMidi
+                          const cellBeat = avoidLeftOverlap(beat, hoverMidi)
+                          const cellMidi = hoverMidi
                           setHoveredCell((cur) =>
                             cur &&
                             cur.beat === cellBeat &&
-                            cur.midi === cellMidi &&
-                            cur.noteLength === hitLen
+                            cur.midi === cellMidi
                               ? cur
-                              : { beat: cellBeat, midi: cellMidi, noteLength: hitLen }
+                              : { beat: cellBeat, midi: cellMidi }
                           )
                           if (pendingTemplate) {
                             setTemplateHover((cur) =>

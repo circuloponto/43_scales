@@ -3057,11 +3057,6 @@
   z-index: 3;
   box-sizing: border-box;
 }
-/* Over an existing note: read as a highlight of that note, not a placement box. */
-.grid-hover-cell.on-note {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.18);
-}
 
 /* Loop region on the timeline */
 .timeline-loop {
