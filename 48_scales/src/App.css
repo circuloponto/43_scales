@@ -3066,22 +3066,67 @@
   border: 1px solid color-mix(in srgb, var(--accent) 60%, #000 40%);
   border-radius: 2px;
   pointer-events: none;
-  z-index: 5;
+  z-index: 4;
   box-sizing: border-box;
 }
 
-/* MIDI region (R key): window onto the octave-tiled pattern. Drag it left/
-   right to scroll the window through the hidden source sequence. */
+/* MIDI region ("rune"): staircase clip. Drag body to climb pitch, the label to
+   move it, the right edge to extend; click to select, Delete to bake. */
 .midi-region {
   position: absolute;
   border: 1.5px solid var(--accent);
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   cursor: ew-resize;
-  z-index: 4;
+  z-index: 5;
   box-sizing: border-box;
   touch-action: none;
+}
+.midi-region.selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #fff, 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.region-label {
+  position: absolute;
+  left: -1.5px;
+  bottom: 100%;
+  margin-bottom: 2px;
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #0a0a0a;
+  background: var(--accent);
+  border-radius: 3px 3px 3px 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.midi-region.selected .region-label {
+  background: #fff;
+}
+.region-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  min-height: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 6;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 0 2px 2px 0;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.region-resize:hover {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+.midi-region.selected .region-resize {
+  border-left-color: #fff;
+  background: color-mix(in srgb, #fff 28%, transparent);
 }
 
 /* Loop region on the timeline */

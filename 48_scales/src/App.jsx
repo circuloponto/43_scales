@@ -2279,7 +2279,7 @@ function App() {
                   ['Ctrl / ⌘ + C', 'Copy selection'],
                   ['Ctrl / ⌘ + V', 'Paste at playhead (or origin beat)'],
                   ['P', 'Select notes the playhead is touching'],
-                  ['R', 'Tile the selected pattern across all octaves (MIDI region)'],
+                  ['R', 'Make a Rune from the selection (drag to climb; Delete to bake)'],
                   ['Delete / Backspace', 'Delete selected notes'],
                   ['Escape', 'Clear selection / cancel template / drop loop'],
                 ],
