@@ -2453,49 +2453,56 @@ export default function PianoRoll({
   // pattern's pitches are stored as scale-step offsets; copy i is `periodSteps`
   // scale-steps higher AND `L` later than copy i-1. The box is a window onto the
   // staircase that MOVES with the drag so the notes line up with the keyboard.
+  // The pattern's RHYTHM (times + lengths) is fixed; its PITCHES flow up the
+  // scale-step staircase. `pitchShift` (w) is a whole-note index: time-slot j
+  // takes the staircase step of note (w+j), so every slot is always filled —
+  // all N notes are always present (none dropped, none partial), and each drag
+  // click advances the pitches by exactly one note.
   const regionNotes = (r) => {
     if (!r) return []
     const out = []
-    const L = r.patternLen
-    const s = r.pitchShift // SCALE STEPS the window has climbed
-    const EPS = 1e-6
-    const winStepLo = r.baseStep + s
-    const winStepHi = winStepLo + r.periodSteps // exclusive
-    const winTimeLo = s * (L / r.periodSteps)
-    const winTimeHi = winTimeLo + L
-    const iLo = Math.floor(s / r.periodSteps) - 1
-    const iHi = Math.floor(s / r.periodSteps) + 2
-    for (let i = iLo; i <= iHi; i++) {
-      for (const n of r.pattern) {
-        const step = r.baseStep + n.dstep + i * r.periodSteps
-        if (step < winStepLo || step >= winStepHi) continue
-        let sTime = n.dt + i * L
-        let len = n.len
-        // Clip to the window's time span (a note can straddle either edge).
-        if (sTime + len <= winTimeLo || sTime >= winTimeHi) continue
-        if (sTime < winTimeLo) {
-          len -= winTimeLo - sTime
-          sTime = winTimeLo
-        }
-        if (sTime + len > winTimeHi) len = winTimeHi - sTime
-        if (len <= EPS) continue
-        const soundMidi = scaleStepToMidi(step) // always an in-scale pitch
-        out.push({
-          beat: r.startBeat + (sTime - winTimeLo),
-          midi: soundMidi,
-          soundMidi,
-          len,
-        })
-      }
+    const N = r.pattern.length
+    const w = r.pitchShift
+    for (let j = 0; j < N; j++) {
+      const m = w + j
+      const li = ((m % N) + N) % N
+      const copy = Math.floor(m / N)
+      const step = r.baseStep + r.pattern[li].dstep + copy * r.periodSteps
+      const soundMidi = scaleStepToMidi(step) // always an in-scale pitch
+      out.push({
+        beat: r.startBeat + r.pattern[j].dt, // fixed rhythm slot
+        midi: soundMidi,
+        soundMidi,
+        len: r.pattern[j].len,
+      })
     }
     return out
   }
-  const setRegionShift = (shift) => {
+  // MIDI range the window would span at a given note-index — used to keep the
+  // whole pattern on the keyboard and to size the box.
+  const regionMidiRange = (r, w) => {
+    const N = r.pattern.length
+    let lo = Infinity
+    let hi = -Infinity
+    for (let j = 0; j < N; j++) {
+      const m = w + j
+      const li = ((m % N) + N) % N
+      const copy = Math.floor(m / N)
+      const midi = scaleStepToMidi(
+        r.baseStep + r.pattern[li].dstep + copy * r.periodSteps
+      )
+      if (midi < lo) lo = midi
+      if (midi > hi) hi = midi
+    }
+    return { lo, hi }
+  }
+  const setRegionShift = (w) => {
     const r = midiRegionRef.current
-    if (!r) return
-    const clamped = Math.max(r.minShift, Math.min(r.maxShift, shift))
-    if (clamped === r.pitchShift) return
-    const updated = { ...r, pitchShift: clamped }
+    if (!r || w === r.pitchShift) return
+    // Reject the move if any note would run off the keyboard (natural clamp).
+    const { lo, hi } = regionMidiRange(r, w)
+    if (lo < MIDI_LOW || hi > MIDI_HIGH) return
+    const updated = { ...r, pitchShift: w }
     midiRegionRef.current = updated
     setMidiRegion(updated)
   }
@@ -2526,14 +2533,10 @@ export default function PianoRoll({
     const baseStep = Math.min(...stepped.map((s) => s.step))
     const maxStep = Math.max(...stepped.map((s) => s.step))
     const periodSteps = Math.max(1, maxStep - baseStep + 1)
-    const pattern = stepped.map((s) => ({
-      dt: s.dt,
-      dstep: s.step - baseStep,
-      len: s.len,
-    }))
-    // Keep the window on the keyboard, in scale steps.
-    const lowStep = midiToScaleStep(nearestScaleMidi(MIDI_LOW)) ?? 0
-    const highStep = midiToScaleStep(nearestScaleMidi(MIDI_HIGH)) ?? 0
+    // Sort by time so note-index order runs along the staircase.
+    const pattern = stepped
+      .map((s) => ({ dt: s.dt, dstep: s.step - baseStep, len: s.len }))
+      .sort((a, b) => a.dt - b.dt || a.dstep - b.dstep)
     pushHistory()
     // Detach: remove the selected notes from the real note map — the region
     // now owns them and draws them itself.
@@ -2549,9 +2552,7 @@ export default function PianoRoll({
       baseStep,
       periodSteps,
       pattern,
-      pitchShift: 0, // in SCALE STEPS
-      minShift: lowStep - baseStep,
-      maxShift: highStep - baseStep - periodSteps + 1,
+      pitchShift: 0, // whole-note index into the staircase
     }
     midiRegionRef.current = region
     setMidiRegion(region)
@@ -4680,15 +4681,10 @@ export default function PianoRoll({
                       />
                     ))}
                     {(() => {
-                      // Box bounds follow the current scale-step window.
-                      const bottomMidi = scaleStepToMidi(
-                        midiRegion.baseStep + midiRegion.pitchShift
-                      )
-                      const topMidi = scaleStepToMidi(
-                        midiRegion.baseStep +
-                          midiRegion.pitchShift +
-                          midiRegion.periodSteps -
-                          1
+                      // Box bounds follow the current window's actual notes.
+                      const { lo: bottomMidi, hi: topMidi } = regionMidiRange(
+                        midiRegion,
+                        midiRegion.pitchShift
                       )
                       return (
                         <div
