@@ -2916,6 +2916,29 @@ export default function PianoRoll({
     [midiRegions, scale, root]
   )
 
+  // MIDI pitches SOUNDING at the current playhead (placed notes + region notes),
+  // so the fretboard plays along in time with the timeline. Empty when the
+  // playhead isn't set.
+  const fretboardPitches = useMemo(() => {
+    const s = new Set()
+    const p = playheadBeat
+    if (p == null) return s
+    const EPS = 1e-6
+    for (const [key, len] of notes) {
+      const sep = key.indexOf('-')
+      const beat = Number(key.slice(0, sep))
+      if (beat <= p + EPS && p < beat + len - EPS) {
+        s.add(Number(key.slice(sep + 1)))
+      }
+    }
+    for (const { notes: rn } of renderedRegions) {
+      for (const n of rn) {
+        if (n.beat <= p + EPS && p < n.beat + n.len - EPS) s.add(n.soundMidi)
+      }
+    }
+    return s
+  }, [notes, renderedRegions, playheadBeat])
+
   const pasteNotes = () => {
     const clip = clipboardRef.current
     if (!clip || !clip.items || clip.items.length === 0) return
@@ -4856,8 +4879,7 @@ export default function PianoRoll({
           {fretboardView === 'vertical' ? (
             <Fretboard
               orientation="vertical"
-              inScale={inScale}
-              rootPc={root}
+              notePitches={fretboardPitches}
               useFlats={useFlats}
               chordClassFor={chordClassFor}
             />
@@ -4966,8 +4988,7 @@ export default function PianoRoll({
               <div className="fretboard-stage-body">
                 <Fretboard
                   orientation="horizontal"
-                  inScale={inScale}
-                  rootPc={root}
+                  notePitches={fretboardPitches}
                   useFlats={useFlats}
                   chordClassFor={chordClassFor}
                 />
