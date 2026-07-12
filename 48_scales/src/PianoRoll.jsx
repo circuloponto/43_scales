@@ -435,6 +435,19 @@ function PlayIcon() {
   )
 }
 
+// Six-dot "grip" used as the panel reorder anchor.
+function AnchorGripIcon() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+      {[3, 7, 11].map((cy) =>
+        [2.5, 7.5].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.1" fill="currentColor" />
+        ))
+      )}
+    </svg>
+  )
+}
+
 function BackIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -849,6 +862,163 @@ export default function PianoRoll({
   // Fretboard preview: 'off' (templates + roll), 'vertical' (fretboard replaces
   // the templates sidebar), or 'horizontal' (fretboard replaces the roll).
   const [fretboardView, setFretboardView] = useState('off')
+  // Dockable, resizable layout. Panels are keyed ('templates' | 'roll' |
+  // 'synth'); `panelOrder` is their left-to-right arrangement (reorder by
+  // dragging a panel's anchor grip). Widths are per sidebar (the roll always
+  // flexes); heights are per panel (null = stretch full). Persisted.
+  const loadJSON = (k, d) => {
+    try {
+      const v = localStorage.getItem(k)
+      return v ? JSON.parse(v) : d
+    } catch {
+      return d
+    }
+  }
+  const [panelOrder, setPanelOrder] = useState(() => {
+    const a = loadJSON('roll.order', null)
+    return Array.isArray(a) && a.length === 3 ? a : ['templates', 'roll', 'synth']
+  })
+  const [panelW, setPanelW] = useState(() =>
+    loadJSON('roll.w', { templates: 220, synth: 220 })
+  )
+  const [panelH, setPanelH] = useState(() =>
+    loadJSON('roll.h', { templates: null, roll: null, synth: null })
+  )
+  // While reordering: { key, dx } — the panel being dragged and how far it has
+  // moved from its slot (so it follows the cursor). null when not dragging.
+  const [dragState, setDragState] = useState(null)
+  const rollBodyRef = useRef(null)
+  const panelOrderRef = useRef(panelOrder)
+  panelOrderRef.current = panelOrder
+  useEffect(() => {
+    try {
+      localStorage.setItem('roll.order', JSON.stringify(panelOrder))
+      localStorage.setItem('roll.w', JSON.stringify(panelW))
+      localStorage.setItem('roll.h', JSON.stringify(panelH))
+    } catch {}
+  }, [panelOrder, panelW, panelH])
+  const setPanelWidth = (key, w) =>
+    setPanelW((prev) => ({ ...prev, [key]: w }))
+  const setPanelHeight = (key, h) =>
+    setPanelH((prev) => ({ ...prev, [key]: h }))
+  // Flex/order style for a panel. The roll flexes (no fixed width); a resized
+  // panel is bottom-anchored so it grows toward the TOP.
+  const panelStyle = (key) => {
+    const w = key === 'roll' ? null : panelW[key]
+    const h = panelH[key]
+    const dragging = dragState && dragState.key === key
+    return {
+      order: panelOrder.indexOf(key) * 2,
+      ...(w != null ? { flex: `0 0 ${w}px`, width: `${w}px` } : {}),
+      ...(h != null ? { height: `${h}px`, alignSelf: 'flex-end' } : {}),
+      // The dragged panel follows the cursor and floats above the others.
+      ...(dragging
+        ? {
+            transform: `translateX(${dragState.dx}px)`,
+            zIndex: 40,
+            transition: 'none',
+            pointerEvents: 'none',
+          }
+        : {}),
+    }
+  }
+  // Drag a vertical splitter → resize the sidebar next to that boundary.
+  const startColResize = (boundary) => (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const keyL = panelOrder[boundary]
+    const keyR = panelOrder[boundary + 1]
+    const sideKey = keyL !== 'roll' ? keyL : keyR // the fixed-width neighbour
+    const sign = keyL !== 'roll' ? 1 : -1 // sidebar on the left grows when →
+    const start = panelW[sideKey]
+    const startX = e.clientX
+    const move = (mv) => {
+      const dx = mv.clientX - startX
+      const w = start + sign * dx
+      setPanelWidth(sideKey, Math.max(120, Math.min(560, Math.round(w))))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  // Drag a panel's top OR bottom edge → resize that panel's height (delta-based
+  // so it works from either edge). Double-click resets to full-height stretch.
+  const startHeightResize = (key, edge = 'bottom') => (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const panel = e.currentTarget.parentElement
+    const row = panel.parentElement // roll-body — bounds the max height
+    const startH = panel.getBoundingClientRect().height
+    const startY = e.clientY
+    const move = (mv) => {
+      const dy = mv.clientY - startY
+      let h = edge === 'top' ? startH - dy : startH + dy
+      const maxH = row ? row.getBoundingClientRect().height : Infinity
+      h = Math.max(140, Math.min(maxH, h))
+      setPanelHeight(key, Math.round(h))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'row-resize'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const resetColWidth = (boundary) => {
+    const keyL = panelOrder[boundary]
+    const keyR = panelOrder[boundary + 1]
+    setPanelWidth(keyL !== 'roll' ? keyL : keyR, 220)
+  }
+  // Drag a panel's anchor grip → the panel follows the cursor; the others reflow
+  // as its centre passes theirs (CSS `order`). On release it settles in its slot.
+  const startReorder = (key) => (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const body = rollBodyRef.current
+    if (!body) return
+    const el = body.querySelector(`[data-panel="${key}"]`)
+    const grabOffset = e.clientX - el.getBoundingClientRect().left
+    let curDx = 0
+    setDragState({ key, dx: 0 })
+    const move = (mv) => {
+      const dEl = body.querySelector(`[data-panel="${key}"]`)
+      if (!dEl) return
+      // Keep the panel's left under the cursor, accounting for its current
+      // transform and any slot change from a reorder.
+      const naturalLeft = dEl.getBoundingClientRect().left - curDx
+      curDx = mv.clientX - grabOffset - naturalLeft
+      setDragState({ key, dx: curDx })
+      // Reorder by comparing centres: the dragged panel's centre (with its
+      // transform) vs the others' natural centres. Stable → no thrash.
+      const order = panelOrderRef.current
+      const centres = order.map((k) => {
+        const kEl = body.querySelector(`[data-panel="${k}"]`)
+        const r = kEl.getBoundingClientRect()
+        return { k, c: r.left + r.width / 2 }
+      })
+      centres.sort((a, b) => a.c - b.c)
+      const next = centres.map((o) => o.k)
+      if (next.join() !== order.join()) setPanelOrder(next)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      setDragState(null)
+    }
+    document.body.style.cursor = 'grabbing'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   // Live mirrors so pointer handlers read current values synchronously (no
   // state-sync effect, which would race a fast drag).
   const midiRegionsRef = useRef([])
@@ -4206,12 +4376,11 @@ export default function PianoRoll({
             )
           })}
         </div>
-      </div>
 
-      {/* Chrome-style song tabs — each tab is its own piano-roll workspace,
-          optionally grouped under a coloured strip. Tabs are HTML5-draggable
-          for reorder and cross-group moves; right-click opens a group menu. */}
-      <div className="song-tabs" role="tablist" aria-label="songs">
+        {/* Chrome-style song tabs — moved inline with the scale spelling to
+            free a row; each tab is its own piano-roll workspace, optionally
+            grouped under a coloured strip. */}
+        <div className="song-tabs" role="tablist" aria-label="songs">
         {/* The baseline lives on .song-tabs-list so it only spans the
             actual tabs, not the trailing + button or padding. */}
         <div
@@ -4485,6 +4654,7 @@ export default function PianoRoll({
             +
           </button>
         )}
+        </div>
       </div>
       {tabMenu && (() => {
         const song = songs.find((s) => s.id === tabMenu.songId)
@@ -4620,8 +4790,29 @@ export default function PianoRoll({
         )
       })()}
 
-      <div className="roll-body">
-        <aside className="variation-panel">
+      <div className="roll-body" ref={rollBodyRef}>
+        <aside
+          className={`variation-panel resizable ${
+            dragState?.key === 'templates' ? 'reordering' : ''
+          }`}
+          data-panel="templates"
+          style={panelStyle('templates')}
+        >
+          <button
+            type="button"
+            className="panel-anchor"
+            onPointerDown={startReorder('templates')}
+            title="Drag to reorder this panel"
+            aria-label="Reorder panel"
+          >
+            <AnchorGripIcon />
+          </button>
+          <div
+            className="panel-resize-y top"
+            onPointerDown={startHeightResize('templates', 'top')}
+            onDoubleClick={() => setPanelHeight('templates', null)}
+            title="Drag to resize height · double-click to reset"
+          />
           <div className="templates-header">
             <div className="panel-view-toggle">
               <button
@@ -4712,10 +4903,34 @@ export default function PianoRoll({
           )}
         </aside>
         <div
-          className={`roll-stage ${
-            fretboardView === 'horizontal' ? 'showing-fretboard' : ''
-          }`}
+          className="panel-resize-x"
+          style={{ order: 1 }}
+          onPointerDown={startColResize(0)}
+          onDoubleClick={() => resetColWidth(0)}
+          title="Drag to resize width · double-click to reset"
+        />
+        <div
+          className={`roll-stage resizable ${
+            dragState?.key === 'roll' ? 'reordering' : ''
+          } ${fretboardView === 'horizontal' ? 'showing-fretboard' : ''}`}
+          data-panel="roll"
+          style={panelStyle('roll')}
         >
+          <button
+            type="button"
+            className="panel-anchor"
+            onPointerDown={startReorder('roll')}
+            title="Drag to reorder this panel"
+            aria-label="Reorder panel"
+          >
+            <AnchorGripIcon />
+          </button>
+          <div
+            className="panel-resize-y top"
+            onPointerDown={startHeightResize('roll', 'top')}
+            onDoubleClick={() => setPanelHeight('roll', null)}
+            title="Drag to resize height · double-click to reset"
+          />
           <div className="stage-view-bar">
             <div className="panel-view-toggle">
               <button
@@ -5137,11 +5352,33 @@ export default function PianoRoll({
             </div>
           </div>
         </div>
+        <div
+          className="panel-resize-x"
+          style={{ order: 3 }}
+          onPointerDown={startColResize(1)}
+          onDoubleClick={() => resetColWidth(1)}
+          title="Drag to resize width · double-click to reset"
+        />
 
         {/* Right-side track sidebar: vertical tabs sticking out the left
             edge (like folder tabs), with the active one merging into the
             sidebar's control panel on its right. */}
-        <aside className="track-sidebar">
+        <aside
+          className={`track-sidebar resizable ${
+            dragState?.key === 'synth' ? 'reordering' : ''
+          }`}
+          data-panel="synth"
+          style={panelStyle('synth')}
+        >
+          <button
+            type="button"
+            className="panel-anchor"
+            onPointerDown={startReorder('synth')}
+            title="Drag to reorder this panel"
+            aria-label="Reorder panel"
+          >
+            <AnchorGripIcon />
+          </button>
           <div className="track-rail" role="tablist" aria-label="tracks">
             {tracks.map((t) => {
               const isActive = activeTrack && t.id === activeTrack.id
@@ -5329,6 +5566,12 @@ export default function PianoRoll({
               ))}
             </div>
           )}
+          <div
+            className="panel-resize-y top"
+            onPointerDown={startHeightResize('synth', 'top')}
+            onDoubleClick={() => setPanelHeight('synth', null)}
+            title="Drag to resize height · double-click to reset"
+          />
         </aside>
       </div>
 
