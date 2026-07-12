@@ -25,7 +25,6 @@ export default function Fretboard({
             {frets.map((f) => {
               const pc = (open + f) % 12
               const on = inScale(pc)
-              const isRoot = pc === rootPc
               return (
                 <div
                   key={f}
@@ -36,7 +35,7 @@ export default function Fretboard({
                   {on && (
                     <span
                       className={`fret-dot ${
-                        isRoot ? 'root' : chordClassFor ? chordClassFor(pc) : ''
+                        chordClassFor ? chordClassFor(pc) : ''
                       }`}
                     >
                       {pcName(pc, useFlats)}
