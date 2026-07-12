@@ -4046,34 +4046,6 @@ export default function PianoRoll({
             </span>
           )}
         </div>
-        <div className="panel-view-toggle roll-view-toggle">
-          <button
-            type="button"
-            className={fretboardView === 'horizontal' ? '' : 'on'}
-            onClick={() =>
-              setFretboardView((v) => (v === 'horizontal' ? 'off' : v))
-            }
-          >
-            Piano roll
-          </button>
-          <button
-            type="button"
-            className={fretboardView === 'horizontal' ? 'on' : ''}
-            onClick={() => setFretboardView('horizontal')}
-          >
-            Fretboard
-          </button>
-        </div>
-        {fretboardView === 'horizontal' && (
-          <button
-            type="button"
-            className="panel-swap-btn roll-view-swap"
-            onClick={() => setFretboardView('vertical')}
-            title="Move the fretboard to a vertical neck in the sidebar"
-          >
-            ⇄ Vertical
-          </button>
-        )}
         <button
           type="button"
           className={`roll-toolbar-toggle ${mobileMenuOpen ? 'on' : ''}`}
@@ -4696,6 +4668,7 @@ export default function PianoRoll({
               inScale={inScale}
               rootPc={root}
               useFlats={useFlats}
+              chordClassFor={chordClassFor}
             />
           ) : templates.length === 0 ? (
             <div className="hint">
@@ -4743,6 +4716,36 @@ export default function PianoRoll({
             fretboardView === 'horizontal' ? 'showing-fretboard' : ''
           }`}
         >
+          <div className="stage-view-bar">
+            <div className="panel-view-toggle">
+              <button
+                type="button"
+                className={fretboardView === 'horizontal' ? '' : 'on'}
+                onClick={() =>
+                  setFretboardView((v) => (v === 'horizontal' ? 'off' : v))
+                }
+              >
+                Piano roll
+              </button>
+              <button
+                type="button"
+                className={fretboardView === 'horizontal' ? 'on' : ''}
+                onClick={() => setFretboardView('horizontal')}
+              >
+                Fretboard
+              </button>
+            </div>
+            {fretboardView === 'horizontal' && (
+              <button
+                type="button"
+                className="panel-swap-btn"
+                onClick={() => setFretboardView('vertical')}
+                title="Move the fretboard to a vertical neck in the sidebar"
+              >
+                ⇄ Vertical
+              </button>
+            )}
+          </div>
           {fretboardView === 'horizontal' && (
             <div className="fretboard-stage">
               <div className="fretboard-stage-body">
@@ -4751,6 +4754,7 @@ export default function PianoRoll({
                   inScale={inScale}
                   rootPc={root}
                   useFlats={useFlats}
+                  chordClassFor={chordClassFor}
                 />
               </div>
             </div>

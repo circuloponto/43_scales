@@ -14,6 +14,7 @@ export default function Fretboard({
   inScale,
   rootPc,
   useFlats = false,
+  chordClassFor,
 }) {
   const frets = Array.from({ length: FRETS + 1 }, (_, f) => f)
   return (
@@ -33,7 +34,11 @@ export default function Fretboard({
                   } ${f === 12 || f === 24 ? 'octave' : ''}`}
                 >
                   {on && (
-                    <span className={`fret-dot ${isRoot ? 'root' : ''}`}>
+                    <span
+                      className={`fret-dot ${
+                        isRoot ? 'root' : chordClassFor ? chordClassFor(pc) : ''
+                      }`}
+                    >
                       {pcName(pc, useFlats)}
                     </span>
                   )}

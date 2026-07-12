@@ -2474,18 +2474,31 @@
 @keyframes fb-fade-in {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+@keyframes fb-fade-plain {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 .fretboard.vertical,
 .fretboard-stage,
 .templates-list,
 .variation-panel > .hint {
-  animation: fb-fade-in 0.2s var(--ease);
+  animation: fb-fade-in 0.24s var(--ease) both;
+}
+/* Fade the roll back in when switching away from the fretboard (opacity only —
+   a transform would drag the sticky timeline). */
+.roll-stage:not(.showing-fretboard) > .roll-scroll {
+  animation: fb-fade-plain 0.24s var(--ease) both;
 }
 
 .panel-view-toggle {
@@ -2581,10 +2594,26 @@
   background: color-mix(in srgb, var(--fg) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
 }
+/* Notes take the user's picked colors, same scheme as the roll's keys. */
 .fret-dot.root {
   color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);
+}
+.fret-dot.chord-left {
+  color: var(--bg);
+  background: var(--chord1);
+  border-color: color-mix(in srgb, var(--chord1) 70%, #000 30%);
+}
+.fret-dot.chord-right {
+  color: var(--bg);
+  background: var(--chord2);
+  border-color: color-mix(in srgb, var(--chord2) 70%, #000 30%);
+}
+.fret-dot.chord-both {
+  color: var(--bg);
+  background: color-mix(in srgb, var(--chord1) 50%, var(--chord2) 50%);
+  border-color: color-mix(in srgb, var(--chord1) 35%, var(--chord2) 35%);
 }
 .fret-num {
   font-family: var(--mono);
@@ -2706,6 +2735,16 @@
 .fretboard.vertical .fret-num:first-child {
   flex: 0 0 34px;
   min-height: 34px;
+}
+
+/* Persistent view switcher at the top of the stage (above roll OR fretboard). */
+.stage-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
 }
 
 /* Horizontal fretboard replacing the roll inside the stage. */
