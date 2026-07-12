@@ -3,6 +3,7 @@ import { Magnet, Camera, Repeat, Metronome } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
+import Fretboard from './Fretboard'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -845,6 +846,9 @@ export default function PianoRoll({
   // notes onto the timeline). Array so several can coexist (Rune 1, 2, …).
   const [midiRegions, setMidiRegions] = useState([])
   const [selectedRegionId, setSelectedRegionId] = useState(null)
+  // Fretboard preview: 'off' (templates + roll), 'vertical' (fretboard replaces
+  // the templates sidebar), or 'horizontal' (fretboard replaces the roll).
+  const [fretboardView, setFretboardView] = useState('off')
   // Live mirrors so pointer handlers read current values synchronously (no
   // state-sync effect, which would race a fast drag).
   const midiRegionsRef = useRef([])
@@ -4042,6 +4046,34 @@ export default function PianoRoll({
             </span>
           )}
         </div>
+        <div className="panel-view-toggle roll-view-toggle">
+          <button
+            type="button"
+            className={fretboardView === 'horizontal' ? '' : 'on'}
+            onClick={() =>
+              setFretboardView((v) => (v === 'horizontal' ? 'off' : v))
+            }
+          >
+            Piano roll
+          </button>
+          <button
+            type="button"
+            className={fretboardView === 'horizontal' ? 'on' : ''}
+            onClick={() => setFretboardView('horizontal')}
+          >
+            Fretboard
+          </button>
+        </div>
+        {fretboardView === 'horizontal' && (
+          <button
+            type="button"
+            className="panel-swap-btn roll-view-swap"
+            onClick={() => setFretboardView('vertical')}
+            title="Move the fretboard to a vertical neck in the sidebar"
+          >
+            ⇄ Vertical
+          </button>
+        )}
         <button
           type="button"
           className={`roll-toolbar-toggle ${mobileMenuOpen ? 'on' : ''}`}
@@ -4619,19 +4651,53 @@ export default function PianoRoll({
       <div className="roll-body">
         <aside className="variation-panel">
           <div className="templates-header">
-            <span className="label">Templates</span>
-            {templates.length > 0 && (
+            <div className="panel-view-toggle">
               <button
                 type="button"
-                className="templates-export"
-                onClick={exportTemplates}
-                title="Copy all templates as a JS code block for src/templates.js"
+                className={fretboardView !== 'vertical' ? 'on' : ''}
+                onClick={() => setFretboardView('off')}
               >
-                {exportFeedback || 'Export'}
+                Templates
               </button>
+              <button
+                type="button"
+                className={fretboardView === 'vertical' ? 'on' : ''}
+                onClick={() => setFretboardView('vertical')}
+                title="Show the fretboard here"
+              >
+                Fretboard
+              </button>
+            </div>
+            {fretboardView === 'vertical' ? (
+              <button
+                type="button"
+                className="panel-swap-btn"
+                onClick={() => setFretboardView('horizontal')}
+                title="Move the fretboard to a horizontal neck over the roll"
+              >
+                ⇄ Horizontal
+              </button>
+            ) : (
+              templates.length > 0 && (
+                <button
+                  type="button"
+                  className="templates-export"
+                  onClick={exportTemplates}
+                  title="Copy all templates as a JS code block for src/templates.js"
+                >
+                  {exportFeedback || 'Export'}
+                </button>
+              )
             )}
           </div>
-          {templates.length === 0 ? (
+          {fretboardView === 'vertical' ? (
+            <Fretboard
+              orientation="vertical"
+              inScale={inScale}
+              rootPc={root}
+              useFlats={useFlats}
+            />
+          ) : templates.length === 0 ? (
             <div className="hint">
               Capture a pattern to reuse on any scale.
             </div>
@@ -4672,7 +4738,23 @@ export default function PianoRoll({
             </ul>
           )}
         </aside>
-        <div className="roll-stage">
+        <div
+          className={`roll-stage ${
+            fretboardView === 'horizontal' ? 'showing-fretboard' : ''
+          }`}
+        >
+          {fretboardView === 'horizontal' && (
+            <div className="fretboard-stage">
+              <div className="fretboard-stage-body">
+                <Fretboard
+                  orientation="horizontal"
+                  inScale={inScale}
+                  rootPc={root}
+                  useFlats={useFlats}
+                />
+              </div>
+            </div>
+          )}
           <div
             className="roll-scroll"
             ref={scrollRef}

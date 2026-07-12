@@ -2431,6 +2431,7 @@
   gap: 14px;
   padding-right: 16px;
   border-right: 1px solid var(--hairline);
+  min-height: 0;
 }
 
 .variation-list {
@@ -2459,6 +2460,287 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+/* ---- Fretboard (frontend preview) ----------------------------------- */
+.roll-view-toggle {
+  flex-shrink: 0;
+}
+.roll-view-swap {
+  flex-shrink: 0;
+}
+
+@keyframes fb-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fretboard.vertical,
+.fretboard-stage,
+.templates-list,
+.variation-panel > .hint {
+  animation: fb-fade-in 0.2s var(--ease);
+}
+
+.panel-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.panel-view-toggle button {
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 3px 6px;
+  line-height: 1.3;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.panel-view-toggle button + button {
+  border-left: 1px solid var(--hairline);
+}
+.panel-view-toggle button:hover {
+  color: var(--fg);
+}
+.panel-view-toggle button.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.panel-swap-btn {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.panel-swap-btn:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+
+.fretboard {
+  --fret-wire: color-mix(in srgb, var(--fg) 13%, transparent);
+  --nut: color-mix(in srgb, var(--fg) 42%, transparent);
+  --string: color-mix(in srgb, var(--fg) 20%, transparent);
+  display: flex;
+  gap: 5px;
+}
+.fret-grid {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fret-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fret-cell.inlay::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+  z-index: 0;
+}
+.fret-dot {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.fret-dot.root {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.fret-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Horizontal neck — wide, nut on the left. */
+.fretboard.horizontal {
+  flex-direction: column;
+}
+.fretboard.horizontal .fret-grid {
+  display: flex;
+  flex-direction: column;
+}
+.fretboard.horizontal .fret-string {
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  height: 30px;
+}
+.fretboard.horizontal .fret-string::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--string);
+}
+.fretboard.horizontal .fret-cell {
+  flex: 1;
+  min-width: 34px;
+  border-right: 1px solid var(--fret-wire);
+}
+.fretboard.horizontal .fret-cell.open {
+  flex: 0 0 42px;
+  border-right: 2px solid var(--nut);
+}
+.fretboard.horizontal .fret-cell.octave {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.fretboard.horizontal .fret-cell:last-child {
+  border-right: none;
+}
+.fretboard.horizontal .fret-nums {
+  display: flex;
+}
+.fretboard.horizontal .fret-num {
+  flex: 1;
+  height: 14px;
+}
+.fretboard.horizontal .fret-num:first-child {
+  flex: 0 0 42px;
+}
+
+/* Vertical neck — tall, nut at the top (fits the sidebar). Scrolls when the
+   neck is taller than the panel. */
+.fretboard.vertical {
+  flex-direction: row;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  align-items: flex-start;
+  /* Scrollable but no visible scrollbar. */
+  scrollbar-width: none;
+}
+.fretboard.vertical::-webkit-scrollbar {
+  display: none;
+}
+.fretboard.vertical .fret-grid {
+  display: flex;
+  /* Low E on the left (chord-chart convention); TUNING is high→low. */
+  flex-direction: row-reverse;
+}
+.fretboard.vertical .fret-string {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  width: 28px;
+}
+.fretboard.vertical .fret-string::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--string);
+}
+.fretboard.vertical .fret-cell {
+  flex: 1;
+  min-height: 26px;
+  border-bottom: 1px solid var(--fret-wire);
+}
+.fretboard.vertical .fret-cell.open {
+  flex: 0 0 34px;
+  border-bottom: 2px solid var(--nut);
+}
+.fretboard.vertical .fret-cell.octave {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.fretboard.vertical .fret-cell:last-child {
+  border-bottom: none;
+}
+.fretboard.vertical .fret-nums {
+  display: flex;
+  flex-direction: column;
+  width: 16px;
+}
+.fretboard.vertical .fret-num {
+  min-height: 26px;
+  flex: 1;
+}
+.fretboard.vertical .fret-num:first-child {
+  flex: 0 0 34px;
+  min-height: 34px;
+}
+
+/* Horizontal fretboard replacing the roll inside the stage. */
+.roll-stage.showing-fretboard > .roll-scroll,
+.roll-stage.showing-fretboard > .roll-hscroll {
+  display: none;
+}
+.fretboard-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.fretboard-stage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.fretboard-stage-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 18px;
+  overflow: auto;
+}
+.fretboard-stage-body .fretboard.horizontal {
+  width: 100%;
+  max-width: 980px;
+  flex-shrink: 0;
 }
 
 .templates-export {
