@@ -3,7 +3,7 @@ import { Magnet, Camera, Repeat, Metronome } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
-import Fretboard from './Fretboard'
+import Fretboard, { adjustFretPosition } from './Fretboard'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -862,6 +862,14 @@ export default function PianoRoll({
   // Fretboard preview: 'off' (templates + roll), 'vertical' (fretboard replaces
   // the templates sidebar), or 'horizontal' (fretboard replaces the roll).
   const [fretboardView, setFretboardView] = useState('off')
+  // Fretboard "position": the lower fret of the 5-fret span notes are placed in.
+  // Set with the P key + a number; auto-shifts when an entered note is outside.
+  const [fretPosition, setFretPosition] = useState(0)
+  const [fretPosPriming, setFretPosPriming] = useState(false)
+  const fretPosPrimingRef = useRef(false)
+  fretPosPrimingRef.current = fretPosPriming
+  const fretPosBufRef = useRef('')
+  const fretPosTimerRef = useRef(null)
   // Dockable, resizable layout. Panels are keyed ('templates' | 'roll' |
   // 'synth'); `panelOrder` is their left-to-right arrangement (reorder by
   // dragging a panel's anchor grip). Widths are per sidebar (the roll always
@@ -1720,6 +1728,7 @@ export default function PianoRoll({
           setSelectedKeys(new Set())
         }
       } else if (e.code === 'Escape') {
+        if (fretPosPriming) setFretPosPriming(false)
         if (pendingTemplate) setPendingTemplate(null)
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (selectedRegionId) setSelectedRegionId(null)
@@ -1753,18 +1762,18 @@ export default function PianoRoll({
         e.preventDefault()
         setParamsOpen((v) => !v)
       } else if (e.code === 'KeyP') {
-        // Select every note the playhead is currently touching — a note counts
-        // if the playhead sits on its start or anywhere inside its span
-        // [beat, beat + length). Replaces the current selection.
-        e.preventDefault()
-        const p = playheadBeatRef.current ?? 0
-        const EPS = 1e-6
-        const hit = []
-        for (const [key, len] of notesRef.current) {
-          const b = Number(key.split('-')[0])
-          if (b <= p + EPS && p < b + len - EPS) hit.push(key)
+        // Prime fretboard-position entry: the next digit(s) set the position
+        // (lower fret of the 5-fret span). Ends on Enter/Escape or a timeout.
+        if (!e.repeat) {
+          e.preventDefault()
+          setFretPosPriming(true)
+          fretPosBufRef.current = ''
+          if (fretPosTimerRef.current) clearTimeout(fretPosTimerRef.current)
+          fretPosTimerRef.current = setTimeout(
+            () => setFretPosPriming(false),
+            1500
+          )
         }
-        setSelectedKeys(new Set(hit))
       } else if (e.code === 'KeyR' && selectedKeys.size > 0) {
         // Turn the selection into a MIDI region. The pattern is tiled across
         // every octave that fits the keyboard, but laid out SEQUENTIALLY IN
@@ -1816,6 +1825,20 @@ export default function PianoRoll({
         // the type-ahead accumulator (e.g. "3" → "333…"), landing on the wrong
         // subdivision. Only the initial press counts.
         if (e.repeat) return
+        // While P-primed, digits build the fretboard position instead.
+        if (fretPosPrimingRef.current) {
+          const d = e.code.slice(5)
+          fretPosBufRef.current = (fretPosBufRef.current + d).slice(-2)
+          setFretPosition(
+            Math.max(0, Math.min(20, Number(fretPosBufRef.current)))
+          )
+          if (fretPosTimerRef.current) clearTimeout(fretPosTimerRef.current)
+          fretPosTimerRef.current = setTimeout(
+            () => setFretPosPriming(false),
+            1500
+          )
+          return
+        }
         feedRhythmDigit(Number(e.code.slice(5)))
       }
     }
@@ -3250,6 +3273,9 @@ export default function PianoRoll({
           return next
         })
         auditionNote(placeMidi, 0.3, 0.3)
+        // Shift the fretboard position if this note falls outside the current
+        // 5-fret span (it becomes the new upper/lower boundary).
+        setFretPosition((p) => adjustFretPosition(p, placeMidi))
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
@@ -4880,6 +4906,8 @@ export default function PianoRoll({
             <Fretboard
               orientation="vertical"
               notePitches={fretboardPitches}
+                  position={fretPosition}
+                  priming={fretPosPriming}
               useFlats={useFlats}
               chordClassFor={chordClassFor}
             />
@@ -4989,6 +5017,8 @@ export default function PianoRoll({
                 <Fretboard
                   orientation="horizontal"
                   notePitches={fretboardPitches}
+                  position={fretPosition}
+                  priming={fretPosPriming}
                   useFlats={useFlats}
                   chordClassFor={chordClassFor}
                 />

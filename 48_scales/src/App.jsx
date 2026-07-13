@@ -2278,7 +2278,7 @@ function App() {
                   ['Ctrl / ⌘ + A', 'Select all notes'],
                   ['Ctrl / ⌘ + C', 'Copy selection'],
                   ['Ctrl / ⌘ + V', 'Paste at playhead (or origin beat)'],
-                  ['P', 'Select notes the playhead is touching'],
+                  ['P + number', 'Set the fretboard position (lower fret of the 5-fret span)'],
                   ['R', 'Make a Rune from the selection (drag to climb; Delete to bake)'],
                   ['Delete / Backspace', 'Delete selected notes'],
                   ['Escape', 'Clear selection / cancel template / drop loop'],

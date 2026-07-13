@@ -2710,6 +2710,29 @@
   align-items: center;
   justify-content: center;
 }
+/* Current position band + readout. */
+.fret-cell.in-position {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.fret-position {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.fret-position.priming {
+  color: var(--accent);
+}
+.fret-position-hint {
+  color: color-mix(in srgb, var(--fg) 32%, transparent);
+  font-weight: 400;
+}
+.fretboard.vertical .fret-position {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
 .fret-cell.inlay::after {
   content: '';
   position: absolute;
