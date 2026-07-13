@@ -3035,18 +3035,59 @@
   color: var(--mute);
 }
 
-.template-delete {
-  background: transparent;
-  border: none;
-  color: var(--mute);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
+/* Selected (shift-clicked) rows — for multi-export etc. */
+.template-row.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.template-delete:hover {
+.template-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--sans);
+  font-size: 13px;
   color: var(--fg);
+  outline: none;
+}
+
+/* Paste / import / export icon row in the templates header. */
+.templates-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.templates-feedback {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  margin-right: 4px;
+}
+.template-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.template-icon-btn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.template-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Modal */

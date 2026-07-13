@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Camera, Repeat, Metronome } from 'lucide-react'
+import {
+  Magnet,
+  Camera,
+  Repeat,
+  Metronome,
+  ClipboardPaste,
+  Upload,
+} from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
@@ -828,6 +835,14 @@ export default function PianoRoll({
   // on right-click of a group strip. Coordinates are viewport pixels.
   const [tabMenu, setTabMenu] = useState(null)
   const [groupMenu, setGroupMenu] = useState(null)
+  // Template-sharing UI state (multi-select, right-click menu, inline rename).
+  // Declared here — before the close-menu effect that reads `templateMenu` —
+  // to avoid a temporal-dead-zone ReferenceError during render.
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState(() => new Set())
+  const [templateMenu, setTemplateMenu] = useState(null) // { x, y, id }
+  const [renamingTemplateId, setRenamingTemplateId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const templateFileInputRef = useRef(null)
   // `paramsOpen` is the centered "Roll settings" modal holding every option;
   // opened by the ⋯ button or the M key. Escape (and its backdrop) close it.
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -1035,10 +1050,11 @@ export default function PianoRoll({
   selectedRegionIdRef.current = selectedRegionId
   const runeCounterRef = useRef(0)
   useEffect(() => {
-    if (!tabMenu && !groupMenu) return
+    if (!tabMenu && !groupMenu && !templateMenu) return
     const close = () => {
       setTabMenu(null)
       setGroupMenu(null)
+      setTemplateMenu(null)
     }
     // Close on next click anywhere and on Escape — matches OS convention.
     window.addEventListener('mousedown', close)
@@ -1047,7 +1063,7 @@ export default function PianoRoll({
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', close)
     }
-  }, [tabMenu, groupMenu])
+  }, [tabMenu, groupMenu, templateMenu])
   // A shared drop handler used by both tab-drop and pill-drop targets. It
   // reads `tabDrag.kind` to decide whether the payload is a song (moveSong)
   // or an entire group (moveGroup). Drop targets translate their "before"
@@ -2311,33 +2327,134 @@ export default function PianoRoll({
     return byMidi
   }, [pendingTemplate, templateHover, scale, root, totalBeats])
 
+  // ── Template sharing (copy / paste / import / export) ──────────────────
+  // (state hooks live up near tabMenu/groupMenu so the close-menu effect can
+  // reference templateMenu without a temporal-dead-zone crash.)
+  const newTemplateId = () =>
+    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const flashExport = (msg) => {
+    setExportFeedback(msg)
+    setTimeout(() => setExportFeedback(''), 1600)
+  }
+  const templatesToJSON = (tpls) =>
+    JSON.stringify(tpls.length === 1 ? tpls[0] : tpls, null, 2)
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      let ok = false
+      try {
+        ok = document.execCommand('copy')
+      } catch {}
+      document.body.removeChild(ta)
+      return ok
+    }
+  }
+  // Accept a raw template object, an array of them, or the "export const
+  // templates = [...]" code form. Returns fresh templates (new ids) or null.
+  const parseTemplates = (text) => {
+    let s = (text || '').trim()
+    if (!s) return null
+    const i = s.search(/[[{]/)
+    if (i > 0) s = s.slice(i)
+    s = s.replace(/;\s*$/, '')
+    let data
+    try {
+      data = JSON.parse(s)
+    } catch {
+      return null
+    }
+    const arr = Array.isArray(data) ? data : [data]
+    return arr
+      .filter((t) => t && Array.isArray(t.notes))
+      .map((t) => ({
+        id: newTemplateId(),
+        name: typeof t.name === 'string' ? t.name : 'Imported',
+        capturedFrom: t.capturedFrom || { scaleId: scale.id, root },
+        notes: t.notes,
+      }))
+  }
   const deleteTemplate = (id) => {
     if (!setTemplates) return
     setTemplates(templates.filter((t) => t.id !== id))
   }
-
-  const exportTemplates = async () => {
-    if (templates.length === 0) return
-    const code = `export const templates = ${JSON.stringify(templates, null, 2)}\n`
+  const deleteTemplates = (ids) => {
+    if (!setTemplates) return
+    setTemplates(templates.filter((t) => !ids.has(t.id)))
+    setSelectedTemplateIds(new Set())
+  }
+  const renameTemplate = (id, name) => {
+    if (!setTemplates) return
+    const n = (name || '').trim()
+    if (!n) return
+    setTemplates(templates.map((t) => (t.id === id ? { ...t, name: n } : t)))
+  }
+  const copyTemplates = async (tpls) => {
+    if (!tpls.length) return
+    flashExport((await copyText(templatesToJSON(tpls))) ? 'Copied' : 'Failed')
+  }
+  const downloadTemplates = (tpls) => {
+    if (!tpls.length) return
+    const name =
+      tpls.length === 1
+        ? `${tpls[0].name.replace(/[^\w-]+/g, '_') || 'template'}.json`
+        : 'templates.json'
+    const blob = new Blob([templatesToJSON(tpls)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const addTemplates = (incoming) => {
+    if (!setTemplates || !incoming || !incoming.length) return
+    setTemplates([...templates, ...incoming])
+  }
+  const pasteTemplates = async () => {
+    let text = ''
     try {
-      await navigator.clipboard.writeText(code)
-      setExportFeedback('Copied')
-    } catch (e) {
-      // Fallback for non-secure contexts
-      const ta = document.createElement('textarea')
-      ta.value = code
-      document.body.appendChild(ta)
-      ta.select()
-      try {
-        document.execCommand('copy')
-        setExportFeedback('Copied')
-      } catch (_) {
-        setExportFeedback('Failed')
-      } finally {
-        document.body.removeChild(ta)
-      }
+      text = await navigator.clipboard.readText()
+    } catch {
+      flashExport('Clipboard blocked')
+      return
     }
-    setTimeout(() => setExportFeedback(''), 1600)
+    const parsed = parseTemplates(text)
+    if (!parsed || !parsed.length) {
+      flashExport('No template')
+      return
+    }
+    addTemplates(parsed)
+    flashExport(`+${parsed.length}`)
+  }
+  const importTemplateFiles = async (files) => {
+    const all = []
+    for (const file of files) {
+      const parsed = parseTemplates(await file.text())
+      if (parsed) all.push(...parsed)
+    }
+    if (all.length) {
+      addTemplates(all)
+      flashExport(`+${all.length}`)
+    } else {
+      flashExport('No template')
+    }
+  }
+  // Templates a menu/action targets: the multi-selection if the clicked one is
+  // part of it, otherwise just the clicked template.
+  const templateTargets = (id) => {
+    if (selectedTemplateIds.has(id) && selectedTemplateIds.size > 1) {
+      return templates.filter((t) => selectedTemplateIds.has(t.id))
+    }
+    const t = templates.find((x) => x.id === id)
+    return t ? [t] : []
   }
 
   // Click a chord card → insert the chord at the current playhead position.
@@ -4705,6 +4822,65 @@ export default function PianoRoll({
         )}
         </div>
       </div>
+      {templateMenu && (() => {
+        const targets = templateTargets(templateMenu.id)
+        if (!targets.length) return null
+        const many = targets.length > 1
+        const close = () => setTemplateMenu(null)
+        return (
+          <div
+            className="tab-context-menu"
+            style={{ left: templateMenu.x, top: templateMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="tab-context-menu-item"
+              onClick={() => {
+                copyTemplates(targets)
+                close()
+              }}
+            >
+              Copy{many ? ` (${targets.length})` : ''}
+            </button>
+            <button
+              type="button"
+              className="tab-context-menu-item"
+              onClick={() => {
+                downloadTemplates(targets)
+                setSelectedTemplateIds(new Set())
+                close()
+              }}
+            >
+              Export{many ? ` (${targets.length})` : ''} to file
+            </button>
+            {!many && (
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  setRenameValue(targets[0].name)
+                  setRenamingTemplateId(targets[0].id)
+                  close()
+                }}
+              >
+                Rename
+              </button>
+            )}
+            <div className="tab-context-menu-divider" />
+            <button
+              type="button"
+              className="tab-context-menu-item danger"
+              onClick={() => {
+                deleteTemplates(new Set(targets.map((t) => t.id)))
+                close()
+              }}
+            >
+              Delete{many ? ` (${targets.length})` : ''}
+            </button>
+          </div>
+        )
+      })()}
       {tabMenu && (() => {
         const song = songs.find((s) => s.id === tabMenu.songId)
         if (!song) return null
@@ -4890,16 +5066,38 @@ export default function PianoRoll({
                 ⇄ Horizontal
               </button>
             ) : (
-              templates.length > 0 && (
+              <div className="templates-actions">
+                {exportFeedback && (
+                  <span className="templates-feedback">{exportFeedback}</span>
+                )}
                 <button
                   type="button"
-                  className="templates-export"
-                  onClick={exportTemplates}
-                  title="Copy all templates as a JS code block for src/templates.js"
+                  className="template-icon-btn"
+                  onClick={pasteTemplates}
+                  title="Paste a template from the clipboard"
                 >
-                  {exportFeedback || 'Export'}
+                  <ClipboardPaste size={14} strokeWidth={1.8} />
                 </button>
-              )
+                <button
+                  type="button"
+                  className="template-icon-btn"
+                  onClick={() => templateFileInputRef.current?.click()}
+                  title="Import template(s) from a file"
+                >
+                  <Upload size={14} strokeWidth={1.8} />
+                </button>
+                <input
+                  ref={templateFileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    importTemplateFiles([...e.target.files])
+                    e.target.value = ''
+                  }}
+                />
+              </div>
             )}
           </div>
           {fretboardView === 'vertical' ? (
@@ -4924,29 +5122,50 @@ export default function PianoRoll({
                     pendingTemplate && pendingTemplate.id === tpl.id
                       ? 'pending'
                       : ''
-                  }`}
-                  onClick={() => handleTemplateClick(tpl)}
+                  } ${selectedTemplateIds.has(tpl.id) ? 'selected' : ''}`}
+                  onClick={(e) => {
+                    if (e.shiftKey) {
+                      // Shift-click toggles multi-selection (for export etc.).
+                      setSelectedTemplateIds((prev) => {
+                        const next = new Set(prev)
+                        next.has(tpl.id) ? next.delete(tpl.id) : next.add(tpl.id)
+                        return next
+                      })
+                      return
+                    }
+                    setSelectedTemplateIds(new Set())
+                    handleTemplateClick(tpl)
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setTemplateMenu({ x: e.clientX, y: e.clientY, id: tpl.id })
+                  }}
                   title={
                     pendingTemplate && pendingTemplate.id === tpl.id
                       ? 'Click on the grid to place this template — Esc to cancel'
-                      : `Click then click on the grid to place this template at that beat + scale degree (${tpl.notes.length} notes, captured from scale ${padId(tpl.capturedFrom.scaleId)})`
+                      : `Click to place · Shift-click to select · right-click for options (${tpl.notes.length} notes, scale ${padId(tpl.capturedFrom.scaleId)})`
                   }
                 >
-                  <span className="template-name">{tpl.name}</span>
-                  <span className="template-meta">
-                    {tpl.notes.length}n
-                    <button
-                      type="button"
-                      className="template-delete"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteTemplate(tpl.id)
+                  {renamingTemplateId === tpl.id ? (
+                    <input
+                      className="template-rename"
+                      autoFocus
+                      value={renameValue}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => {
+                        renameTemplate(tpl.id, renameValue)
+                        setRenamingTemplateId(null)
                       }}
-                      aria-label="delete template"
-                    >
-                      ×
-                    </button>
-                  </span>
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur()
+                        else if (e.key === 'Escape') setRenamingTemplateId(null)
+                      }}
+                    />
+                  ) : (
+                    <span className="template-name">{tpl.name}</span>
+                  )}
+                  <span className="template-meta">{tpl.notes.length}n</span>
                 </li>
               ))}
             </ul>

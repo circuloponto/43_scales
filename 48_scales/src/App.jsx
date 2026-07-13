@@ -669,6 +669,25 @@ function App() {
       window.alert('Could not export session: ' + err.message)
     }
   }
+  // Export the whole template library as a single .json file (an array the
+  // roll's paste/import can read back). Sharing shortcut for dev.
+  const exportTemplatesLibrary = () => {
+    try {
+      const json = JSON.stringify(templates, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const stamp = new Date().toISOString().slice(0, 10)
+      a.download = `8fold-templates-${stamp}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert('Could not export templates: ' + err.message)
+    }
+  }
   const importSession = (file) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -2512,6 +2531,27 @@ function App() {
                     style={{ display: 'none' }}
                   />
                 </label>
+              </div>
+            </div>
+
+            <div className="settings-row settings-row-column">
+              <div className="settings-row-text">
+                <div className="settings-row-label">Templates</div>
+                <div className="settings-row-sub">
+                  Download your entire template library as one .json file to
+                  share. Individual templates can be copied, imported, or
+                  exported from the roll's template panel.
+                </div>
+              </div>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="settings-action"
+                  onClick={exportTemplatesLibrary}
+                  disabled={templates.length === 0}
+                >
+                  Export templates
+                </button>
               </div>
             </div>
           </div>
