@@ -5230,4 +5230,188 @@
   }
 }
 
+/* ── Chord-voicings viewer ──────────────────────────────────────────────── */
+.chord-voicing-modal {
+  width: min(860px, 96vw);
+}
+
+.voicing-sides {
+  display: flex;
+  gap: 8px;
+}
+.voicing-side-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.voicing-side-btn:hover {
+  border-color: var(--mute);
+}
+.voicing-side-btn.left.on {
+  border-color: var(--chord1);
+  background: color-mix(in srgb, var(--chord1) 20%, transparent);
+}
+.voicing-side-btn.right.on {
+  border-color: var(--chord2);
+  background: color-mix(in srgb, var(--chord2) 20%, transparent);
+}
+
+.voicing-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+.voicing-stage .chord-neck {
+  flex: 1;
+  min-width: 0;
+}
+.voicing-nav {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--fg);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), color 0.12s var(--ease);
+}
+.voicing-nav:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.voicing-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+.voicing-caption-name {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.voicing-caption-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.voicing-caption-stretch {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e6a15b;
+}
+
+.voicing-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.voicing-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.voicing-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.voicing-chip:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.voicing-chip.on {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Horizontal 24-fret neck (ChordDiagram.jsx). The neck itself reuses the
+   existing .fretboard.horizontal / .fret-* styles; these rules add the string
+   labels, the scroll frame, and the muted-string mark. */
+.chord-neck {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.chord-neck.stretch {
+  /* subtle warm tint on the frame when the shape needs a stretch */
+  --neck-tint: color-mix(in srgb, #e6a15b 8%, transparent);
+}
+.chord-neck-strings {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  padding-top: 0;
+}
+.chord-neck-string-label {
+  height: 30px; /* matches .fretboard.horizontal .fret-string height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+}
+/* The whole 24-fret neck is shown statically (no scroll / no auto-jump); the
+   frets flex to share the available width so all of them stay in view. */
+.chord-neck-frets {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 2px;
+  background: var(--neck-tint, transparent);
+  border-radius: 6px;
+}
+.chord-neck-frets .fretboard.horizontal {
+  width: 100%;
+}
+.chord-neck-frets .fret-cell {
+  min-width: 0;
+}
+.chord-neck-frets .fret-cell.open {
+  flex: 0 0 26px;
+}
+.chord-neck-frets .fret-num:first-child {
+  flex: 0 0 26px;
+}
+.chord-neck-frets .fret-dot {
+  width: 18px;
+  height: 18px;
+  font-size: 8px;
+}
+.fret-mute {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+
 

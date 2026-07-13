@@ -6,11 +6,14 @@ import {
   Metronome,
   ClipboardPaste,
   Upload,
+  Guitar,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import Fretboard, { adjustFretPosition } from './Fretboard'
+import ChordDiagram from './ChordDiagram'
+import { buildVoicings, FAMILIES } from './voicings'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -802,6 +805,10 @@ export default function PianoRoll({
   const [captureName, setCaptureName] = useState('')
   const [exportFeedback, setExportFeedback] = useState('')
   const [chordModalOpen, setChordModalOpen] = useState(false)
+  // Chord-voicings fretboard viewer (separate from the insert palette above).
+  const [chordVoicingOpen, setChordVoicingOpen] = useState(false)
+  const [voicingSide, setVoicingSide] = useState('left') // which of the 2 chords
+  const [voicingIndex, setVoicingIndex] = useState(0) // index into that side's list
   // Floating pitch label that follows the cursor while hovering a row-note.
   // Carries the hovered note's `key` so we can dismiss the label if that
   // note is deleted out from under the cursor (delete removes the DOM node
@@ -1684,6 +1691,13 @@ export default function PianoRoll({
     const handler = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      // While the chord-voicings viewer is open, ←/→ cycle through voicings
+      // (and take precedence over the note-nudge arrows below).
+      if (chordVoicingOpen && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+        e.preventDefault()
+        stepVoicing(e.code === 'ArrowRight' ? 1 : -1)
+        return
+      }
       const meta = e.ctrlKey || e.metaKey
       const k = (e.key || '').toLowerCase()
       // Ctrl/Cmd + Shift + Z → redo. Plain Ctrl/Cmd + Z → undo.
@@ -1749,6 +1763,7 @@ export default function PianoRoll({
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (selectedRegionId) setSelectedRegionId(null)
         if (chordModalOpen) setChordModalOpen(false)
+        if (chordVoicingOpen) setChordVoicingOpen(false)
         if (loop) setLoop(null)
         if (tHeldRef.current) {
           tHeldRef.current = false
@@ -1887,6 +1902,24 @@ export default function PianoRoll({
       attackMs: t?.attackMs,
       releaseMs: t?.releaseMs,
       detuneCents: t?.detuneCents,
+    })
+  }
+
+  // Strum a chord voicing (low→high, ~28 ms apart) using the active track's
+  // synth. Used by the chord-voicings viewer on view + on click.
+  const strumVoicing = (midis) => {
+    if (!midis || !midis.length) return
+    const ctx = getAudioContext()
+    const t =
+      tracksRef.current.find((tk) => tk.id === activeTrackId) ??
+      tracksRef.current[0]
+    const start = ctx.currentTime + 0.02
+    midis.forEach((m, i) => {
+      playOneNote(m, start + i * 0.028, 0.9, 0.16, t?.synth ?? 'triangle', {
+        attackMs: t?.attackMs,
+        releaseMs: t?.releaseMs,
+        detuneCents: t?.detuneCents,
+      })
     })
   }
 
@@ -2060,6 +2093,74 @@ export default function PianoRoll({
       ...side('right', _pair.right, _resolved.rightNotes, _resolved.rightRoot),
     ]
   }, [_resolved, _pair, useFlats])
+
+  // ── Chord-voicings fretboard viewer ────────────────────────────────────
+  // Every drop/close voicing of the scale's two chords, per side, ready to draw
+  // as chord boxes and to strum. Recomputed only when the scale/root changes.
+  const chordVoicings = useMemo(() => {
+    if (!_resolved) return { left: [], right: [] }
+    return {
+      left: buildVoicings(_resolved.leftNotes, _resolved.leftRoot),
+      right: buildVoicings(_resolved.rightNotes, _resolved.rightRoot),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawScale?.id, root, modeStep])
+
+  const voicingList =
+    voicingSide === 'left' ? chordVoicings.left : chordVoicings.right
+  const currentVoicing = voicingList[voicingIndex] ?? voicingList[0] ?? null
+  const voicingMeta =
+    voicingSide === 'left'
+      ? { rootPc: _resolved?.leftRoot, label: _pair?.left }
+      : { rootPc: _resolved?.rightRoot, label: _pair?.right }
+  // Families that actually produced playable voicings for this chord.
+  const voicingFamilies = FAMILIES.filter((f) =>
+    voicingList.some((v) => v.type === f.type)
+  )
+  // String sets available for the current family (for the selector chips).
+  const voicingSetsForType = currentVoicing
+    ? [
+        ...new Set(
+          voicingList
+            .filter((v) => v.type === currentVoicing.type)
+            .map((v) => v.stringSetLabel)
+        ),
+      ]
+    : []
+  const stepVoicing = (d) => {
+    const n = voicingList.length
+    if (!n) return
+    setVoicingIndex((i) => (i + d + n) % n)
+  }
+  const pickVoicing = ({ type, stringSetLabel, inversion }) => {
+    if (!currentVoicing) return
+    const t = type ?? currentVoicing.type
+    const s = stringSetLabel ?? currentVoicing.stringSetLabel
+    const inv = inversion ?? currentVoicing.inversion
+    const find = (pt, ps, pi) =>
+      voicingList.findIndex(
+        (v) =>
+          v.type === pt &&
+          (ps == null || v.stringSetLabel === ps) &&
+          (pi == null || v.inversion === pi)
+      )
+    let idx = find(t, s, inv)
+    if (idx < 0) idx = find(t, s, null)
+    if (idx < 0) idx = find(t, null, inv)
+    if (idx < 0) idx = find(t, null, null)
+    if (idx >= 0) setVoicingIndex(idx)
+  }
+  const openChordVoicing = () => {
+    setVoicingSide('left')
+    setVoicingIndex(0)
+    setChordVoicingOpen(true)
+  }
+  // Strum the current voicing whenever it changes while the viewer is open.
+  useEffect(() => {
+    if (!chordVoicingOpen || !currentVoicing) return
+    strumVoicing(currentVoicing.midis)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chordVoicingOpen, voicingSide, voicingIndex])
 
   // Map a MIDI value (assumed to be on-scale) to a global scale-step index
   // = octave * scale.notes.length + degree. Step indices are monotone in
@@ -4426,6 +4527,16 @@ export default function PianoRoll({
         </button>
         <button
           type="button"
+          className={`mode-toggle icon-toggle ${chordVoicingOpen ? 'on' : ''}`}
+          onClick={openChordVoicing}
+          aria-label="chord voicings"
+          aria-pressed={chordVoicingOpen}
+          title="See the scale's chords as guitar voicings"
+        >
+          <Guitar size={16} strokeWidth={1.8} />
+        </button>
+        <button
+          type="button"
           className={`mode-toggle icon-toggle ${loop ? 'on' : ''}`}
           onClick={() => {
             if (loop) {
@@ -6148,6 +6259,151 @@ export default function PianoRoll({
                 </button>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {chordVoicingOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setChordVoicingOpen(false)}
+        >
+          <div
+            className="modal chord-voicing-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="settings-modal-header">
+              <h3>
+                Chord voicings — {padId(scale.id)} · {NOTE_DISPLAY[root]}
+              </h3>
+              <button
+                type="button"
+                className="finder-modal-close"
+                onClick={() => setChordVoicingOpen(false)}
+                aria-label="close chord voicings"
+              >
+                ×
+              </button>
+            </div>
+            {!currentVoicing ? (
+              <p className="modal-sub">No chord data for this scale yet.</p>
+            ) : (
+              <>
+                <div className="voicing-sides">
+                  <button
+                    type="button"
+                    className={`voicing-side-btn left ${
+                      voicingSide === 'left' ? 'on' : ''
+                    }`}
+                    onClick={() => {
+                      setVoicingSide('left')
+                      setVoicingIndex(0)
+                    }}
+                  >
+                    {_resolved ? pcName(_resolved.leftRoot, useFlats) : ''}{' '}
+                    {_pair?.left}
+                  </button>
+                  <button
+                    type="button"
+                    className={`voicing-side-btn right ${
+                      voicingSide === 'right' ? 'on' : ''
+                    }`}
+                    onClick={() => {
+                      setVoicingSide('right')
+                      setVoicingIndex(0)
+                    }}
+                  >
+                    {_resolved ? pcName(_resolved.rightRoot, useFlats) : ''}{' '}
+                    {_pair?.right}
+                  </button>
+                </div>
+
+                <div className="voicing-stage">
+                  <button
+                    type="button"
+                    className="voicing-nav"
+                    onClick={() => stepVoicing(-1)}
+                    aria-label="previous voicing"
+                  >
+                    ‹
+                  </button>
+                  <ChordDiagram
+                    voicing={currentVoicing}
+                    useFlats={useFlats}
+                    side={voicingSide}
+                    onStrum={() => strumVoicing(currentVoicing.midis)}
+                  />
+                  <button
+                    type="button"
+                    className="voicing-nav"
+                    onClick={() => stepVoicing(1)}
+                    aria-label="next voicing"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div className="voicing-caption">
+                  <span className="voicing-caption-name">
+                    {pcName(voicingMeta.rootPc, useFlats)} {voicingMeta.label}
+                  </span>
+                  <span className="voicing-caption-detail">
+                    {currentVoicing.typeLabel} · {currentVoicing.invLabel} ·
+                    strings {currentVoicing.stringSetLabel}
+                  </span>
+                  {currentVoicing.stretch && (
+                    <span className="voicing-caption-stretch">wide stretch</span>
+                  )}
+                </div>
+
+                <div className="voicing-controls">
+                  <div className="voicing-chip-row">
+                    {voicingFamilies.map((f) => (
+                      <button
+                        key={f.type}
+                        type="button"
+                        className={`voicing-chip ${
+                          currentVoicing.type === f.type ? 'on' : ''
+                        }`}
+                        onClick={() => pickVoicing({ type: f.type })}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="voicing-chip-row">
+                    {voicingSetsForType.map((lbl) => (
+                      <button
+                        key={lbl}
+                        type="button"
+                        className={`voicing-chip ${
+                          currentVoicing.stringSetLabel === lbl ? 'on' : ''
+                        }`}
+                        onClick={() => pickVoicing({ stringSetLabel: lbl })}
+                      >
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="voicing-chip-row">
+                    {['root', '1st inv', '2nd inv', '3rd inv'].map(
+                      (lbl, inv) => (
+                        <button
+                          key={inv}
+                          type="button"
+                          className={`voicing-chip ${
+                            currentVoicing.inversion === inv ? 'on' : ''
+                          }`}
+                          onClick={() => pickVoicing({ inversion: inv })}
+                        >
+                          {lbl}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
