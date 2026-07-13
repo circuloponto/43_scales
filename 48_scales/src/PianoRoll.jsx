@@ -5122,20 +5122,8 @@ export default function PianoRoll({
                     pendingTemplate && pendingTemplate.id === tpl.id
                       ? 'pending'
                       : ''
-                  } ${selectedTemplateIds.has(tpl.id) ? 'selected' : ''}`}
-                  onClick={(e) => {
-                    if (e.shiftKey) {
-                      // Shift-click toggles multi-selection (for export etc.).
-                      setSelectedTemplateIds((prev) => {
-                        const next = new Set(prev)
-                        next.has(tpl.id) ? next.delete(tpl.id) : next.add(tpl.id)
-                        return next
-                      })
-                      return
-                    }
-                    setSelectedTemplateIds(new Set())
-                    handleTemplateClick(tpl)
-                  }}
+                  } ${selectedTemplateIds.has(tpl.id) ? 'checked' : ''}`}
+                  onClick={() => handleTemplateClick(tpl)}
                   onContextMenu={(e) => {
                     e.preventDefault()
                     setTemplateMenu({ x: e.clientX, y: e.clientY, id: tpl.id })
@@ -5143,9 +5131,24 @@ export default function PianoRoll({
                   title={
                     pendingTemplate && pendingTemplate.id === tpl.id
                       ? 'Click on the grid to place this template — Esc to cancel'
-                      : `Click to place · Shift-click to select · right-click for options (${tpl.notes.length} notes, scale ${padId(tpl.capturedFrom.scaleId)})`
+                      : `Click to place · tick to select · right-click for options (${tpl.notes.length} notes, scale ${padId(tpl.capturedFrom.scaleId)})`
                   }
                 >
+                  <input
+                    type="checkbox"
+                    className="template-check"
+                    checked={selectedTemplateIds.has(tpl.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() =>
+                      setSelectedTemplateIds((prev) => {
+                        const next = new Set(prev)
+                        next.has(tpl.id) ? next.delete(tpl.id) : next.add(tpl.id)
+                        return next
+                      })
+                    }
+                    title="Select for copy / export / delete"
+                    aria-label={`Select ${tpl.name}`}
+                  />
                   {renamingTemplateId === tpl.id ? (
                     <input
                       className="template-rename"
