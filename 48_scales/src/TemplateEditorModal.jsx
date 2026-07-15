@@ -17,10 +17,15 @@ const octaveOf = (midi) => Math.floor(midi / 12) - 1
 export default function TemplateEditorModal({
   scale,
   root,
+  bpm = 120,
   NOTE_DISPLAY,
   inScale,
   chordClassFor,
   onAudition,
+  getAudioContext,
+  playNote,
+  stopAudio,
+  rhythm,
   onSave,
   onClose,
   initialName = '',
@@ -40,6 +45,64 @@ export default function TemplateEditorModal({
   })
   const resizeRef = useRef(false)
   const scrollRef = useRef(null)
+
+  // ── Transport (play / pause / stop / return-to-start) ─────────────────
+  const [playing, setPlaying] = useState(false)
+  const [playhead, setPlayhead] = useState(null) // cell position, null = at 0/idle
+  const rafRef = useRef(null)
+  const playRef = useRef(null) // { audioStart, startBeat }
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+  const cellDur = 60 / bpm / 4 // seconds per 16th-cell
+
+  const contentEnd = () => {
+    let end = 0
+    for (const [k, len] of notesRef.current) {
+      const beat = Number(k.split(':')[1])
+      if (beat + len > end) end = beat + len
+    }
+    return end
+  }
+  const stopTransport = (resetTo = null) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+    playRef.current = null
+    stopAudio?.()
+    setPlaying(false)
+    if (resetTo !== null) setPlayhead(resetTo)
+  }
+  const startPlayback = (fromBeat) => {
+    const end = contentEnd()
+    if (end <= 0) return
+    const start = Math.max(0, Math.min(fromBeat ?? 0, end - 0.0001))
+    const ctx = getAudioContext()
+    const audioStart = ctx.currentTime + 0.06
+    for (const [k, len] of notesRef.current) {
+      const [midi, beat] = k.split(':').map(Number)
+      if (beat + len <= start) continue
+      const at = audioStart + (beat - start) * cellDur
+      playNote?.(midi, at, len * cellDur)
+    }
+    playRef.current = { audioStart, startBeat: start }
+    setPlaying(true)
+    const tick = () => {
+      const pr = playRef.current
+      if (!pr) return
+      const pos = pr.startBeat + (ctx.currentTime - pr.audioStart) / cellDur
+      if (pos >= end) {
+        stopTransport(0)
+        return
+      }
+      setPlayhead(pos)
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+  }
+  const togglePlay = () => {
+    if (playing) stopTransport() // pause, keep playhead
+    else startPlayback(playhead ?? 0)
+  }
+  const toBeginning = () => stopTransport(0)
 
   const pitches = useMemo(() => {
     const out = []
@@ -63,6 +126,49 @@ export default function TemplateEditorModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Transport keys — Space play/pause, Enter return-to-start, Esc close. The
+  // roll's own shortcuts are suppressed while this modal is open.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        if (e.key === 'Escape') onClose()
+        return
+      }
+      if (e.code === 'Space') {
+        e.preventDefault()
+        togglePlay()
+      } else if (e.code === 'Enter') {
+        e.preventDefault()
+        toBeginning()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      } else if (rhythm && /^Digit[0-9]$/.test(e.code)) {
+        // Type a number → set the rhythm divisor (or multiplier after X).
+        if (e.repeat) return
+        e.preventDefault()
+        rhythm.feedDigit(Number(e.code.slice(5)))
+      } else if (rhythm && (e.code === 'KeyX' || e.key === 'x')) {
+        e.preventDefault()
+        rhythm.primeMultiplier()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, playhead])
+
+  // Stop audio + RAF if the modal unmounts mid-playback.
+  useEffect(
+    () => () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      stopAudio?.()
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+
   const notesByMidi = useMemo(() => {
     const m = new Map()
     for (const [k, length] of notes) {
@@ -80,12 +186,14 @@ export default function TemplateEditorModal({
   const addAt = (e, midi) => {
     if (e.button !== 0) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const beat = Math.max(
-      0,
-      Math.min(COLS - 1, Math.floor((e.clientX - rect.left) / BEAT_W))
-    )
+    const raw = (e.clientX - rect.left) / BEAT_W
+    // Snap to the rhythm's subdivision (so triplets etc. land evenly), and use
+    // its length for the new note — same idea as the roll.
+    const sub = rhythm && rhythm.subdivision > 0 ? rhythm.subdivision : 1
+    const len = rhythm && rhythm.length > 0 ? rhythm.length : 1
+    const beat = Math.max(0, Math.min(COLS - len, Math.round(raw / sub) * sub))
     if (covers(midi, beat)) return
-    setNotes((prev) => new Map(prev).set(`${midi}:${beat}`, 1))
+    setNotes((prev) => new Map(prev).set(`${midi}:${beat}`, len))
     onAudition?.(midi)
   }
   const removeNote = (key) => {
@@ -94,6 +202,46 @@ export default function TemplateEditorModal({
       next.delete(key)
       return next
     })
+  }
+  // Left-drag a note to move it across time and pitch (snaps to the rhythm
+  // subdivision). A plain click leaves it put; right-click deletes.
+  const startMove = (e, midi, beat, len) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    const sub = rhythm && rhythm.subdivision > 0 ? rhythm.subdivision : 1
+    let curMidi = midi
+    let curBeat = beat
+    const move = (mv) => {
+      let nb = beat + (mv.clientX - startX) / BEAT_W
+      nb = Math.max(0, Math.min(COLS - len, Math.round(nb / sub) * sub))
+      const dRows = Math.round((mv.clientY - startY) / ROW_H)
+      const nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, midi - dRows))
+      if (nm === curMidi && nb === curBeat) return
+      // Capture the keys NOW — the setNotes updater runs async, and curMidi/
+      // curBeat are reassigned below before it fires, so referencing them
+      // inside the updater would delete the wrong (new) key and leave a trail.
+      const oldKey = `${curMidi}:${curBeat}`
+      const newKey = `${nm}:${nb}`
+      const pitchChanged = nm !== curMidi
+      curMidi = nm
+      curBeat = nb
+      setNotes((prev) => {
+        const next = new Map(prev)
+        next.delete(oldKey)
+        next.set(newKey, len)
+        return next
+      })
+      if (pitchChanged) onAudition?.(nm)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
   }
   const startResize = (e, midi, beat, startLen) => {
     e.preventDefault()
@@ -167,10 +315,64 @@ export default function TemplateEditorModal({
           </button>
         </div>
         <p className="modal-sub">
-          Click to add a note, click a note to remove it, drag its right edge to
-          lengthen. In-scale rows are tinted like the roll; stored by scale
-          relationship so it replays on any scale.
+          Click empty space to add · drag a note to move it · drag its right
+          edge to lengthen · right-click to delete. Stored by scale relationship
+          so it replays on any scale.
         </p>
+
+        <div className="template-editor-transport">
+          <button
+            type="button"
+            className={`te-transport-btn ${playing ? 'on' : ''}`}
+            onClick={togglePlay}
+            title={playing ? 'Pause (Space)' : 'Play (Space)'}
+            aria-label={playing ? 'pause' : 'play'}
+          >
+            {playing ? '❚❚' : '▶'}
+          </button>
+          <button
+            type="button"
+            className="te-transport-btn"
+            onClick={() => stopTransport(0)}
+            title="Stop / return to start"
+            aria-label="stop"
+          >
+            ■
+          </button>
+          {rhythm && (
+            <div
+              className="rhythm-cluster"
+              title="Rhythm — pick beat/bar, then type a number to divide it (÷2 half, ÷3 triplet…). Press X then a number for a multiplier."
+            >
+              <button
+                type="button"
+                className="rhythm-unit-box"
+                onClick={rhythm.toggleUnit}
+                title="Toggle whether the division refers to a beat or a bar"
+              >
+                {rhythm.unit === 'bar' ? 'BAR' : 'BEAT'}
+              </button>
+              <div className="rhythm-box">
+                <span className="rhythm-box-div">÷{rhythm.denominator}</span>
+                <span className="rhythm-box-name">{rhythm.noteName}</span>
+              </div>
+              <div className="rhythm-note-icon">
+                <rhythm.NoteGlyph value={rhythm.glyphValue} size={18} />
+                {rhythm.tuplet && (
+                  <span className="rhythm-note-tuplet">{rhythm.tuplet}</span>
+                )}
+              </div>
+              <div
+                className={`rhythm-mult-box ${rhythm.awaiting ? 'awaiting' : ''}`}
+              >
+                ×{rhythm.awaiting ? '?' : rhythm.mult}
+              </div>
+            </div>
+          )}
+          <span className="te-transport-hint">
+            Space play · Enter start · digits = rhythm
+          </span>
+        </div>
 
         <div className="template-editor-roll" ref={scrollRef}>
           <div className="roll-content">
@@ -198,6 +400,12 @@ export default function TemplateEditorModal({
               })}
             </div>
             <div className="grid-area">
+              {playhead !== null && (
+                <div
+                  className="playhead"
+                  style={{ transform: `translateX(${playhead * BEAT_W}px)` }}
+                />
+              )}
               {pitches.map((midi) => {
                 const pc = ((midi % 12) + 12) % 12
                 const white = WHITE_PCS.has(pc)
@@ -230,12 +438,13 @@ export default function TemplateEditorModal({
                             left: beat * BEAT_W,
                             width: length * BEAT_W,
                           }}
-                          onPointerDown={(e) => {
+                          onPointerDown={(e) => startMove(e, midi, beat, length)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
                             e.stopPropagation()
-                            if (resizeRef.current) return
                             removeNote(key)
                           }}
-                          title="Click to remove · drag right edge to resize"
+                          title="Drag to move · drag right edge to resize · right-click to delete"
                         >
                           <span
                             className="row-note-handle"

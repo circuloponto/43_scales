@@ -2977,6 +2977,17 @@
   flex-direction: column;
   gap: 6px;
 }
+/* The root list fills the remaining panel height and scrolls when the tree is
+   taller than the panel (nested lists just flow inside it). */
+.templates-list.root {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 40%, transparent) transparent;
+}
 
 .template-row {
   display: flex;
@@ -3225,14 +3236,15 @@
   width: min(940px, 96vw);
 }
 .template-editor-name {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  width: 200px;
+  max-width: 45%;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--hairline);
-  padding: 2px 2px 6px;
+  padding: 2px 2px 5px;
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--fg);
   outline: none;
@@ -3240,6 +3252,41 @@
 .template-editor-name:focus {
   border-bottom-color: var(--accent);
 }
+/* Transport bar above the editor timeline. */
+.template-editor-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.te-transport-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.te-transport-btn:hover {
+  border-color: var(--mute);
+}
+.te-transport-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.te-transport-hint {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+}
+
 /* Scroll frame that hosts the real roll timeline markup (.roll-content etc.). */
 .template-editor-roll {
   border: 1px solid var(--hairline);

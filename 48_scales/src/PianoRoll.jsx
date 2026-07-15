@@ -1707,6 +1707,9 @@ export default function PianoRoll({
     const handler = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      // The template editor modal owns all shortcuts (its own transport) while
+      // it's open — don't let the roll react underneath it.
+      if (templateEditorOpen) return
       // While the chord-voicings viewer is open, ←/→ cycle through voicings
       // (and take precedence over the note-nudge arrows below).
       if (chordVoicingOpen && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
@@ -6459,10 +6462,43 @@ export default function PianoRoll({
             <TemplateEditorModal
               scale={scale}
               root={root}
+              bpm={bpm}
               NOTE_DISPLAY={NOTE_DISPLAY}
               inScale={inScale}
               chordClassFor={chordClassFor}
               onAudition={(midi) => auditionNote(midi)}
+              getAudioContext={getAudioContext}
+              playNote={(midi, startAt, durSec) => {
+                const t =
+                  tracksRef.current.find((tk) => tk.id === activeTrackId) ??
+                  tracksRef.current[0]
+                playOneNote(midi, startAt, durSec, 0.22, t?.synth ?? 'triangle', {
+                  attackMs: t?.attackMs,
+                  releaseMs: t?.releaseMs,
+                  detuneCents: t?.detuneCents,
+                })
+              }}
+              stopAudio={killScheduledVoices}
+              rhythm={{
+                length: rhythmLength,
+                subdivision: rhythmBaseCells,
+                unit: rhythmUnit,
+                denominator: rhythmDenominator,
+                mult: rhythmMult,
+                awaiting: rhythmAwaitingMultiplier,
+                noteName: rhythmNoteName,
+                glyphValue: rhythmGlyphValue,
+                tuplet: rhythmTuplet,
+                NoteGlyph,
+                toggleUnit: () =>
+                  setRhythmUnit((u) => (u === 'beat' ? 'bar' : 'beat')),
+                feedDigit: feedRhythmDigit,
+                primeMultiplier: () => {
+                  setRhythmAwaitingMultiplier(true)
+                  rhythmPendingKindRef.current = 'mult'
+                  rhythmBufRef.current = { kind: null, str: '', t: 0 }
+                },
+              }}
               onSave={saveNewTemplate}
               onClose={() => {
                 setTemplateEditorOpen(false)
