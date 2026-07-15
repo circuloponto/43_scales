@@ -1,12 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Magnet,
-  Camera,
   Repeat,
   Metronome,
   ClipboardPaste,
   Upload,
   Guitar,
+  Plus,
+  Folder,
+  FolderPlus,
+  FilePlus,
+  ChevronRight,
+  ChevronDown,
+  GripVertical,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -14,6 +20,7 @@ import { resolveChordPair, pcName } from './chordVocab'
 import Fretboard, { adjustFretPosition } from './Fretboard'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
+import TemplateEditorModal from './TemplateEditorModal'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -801,8 +808,6 @@ export default function PianoRoll({
   const [pendingTemplate, setPendingTemplate] = useState(null)
   const [marquee, setMarquee] = useState(null)
   const [loop, setLoop] = useState(initialLoop ?? null)
-  const [captureOpen, setCaptureOpen] = useState(false)
-  const [captureName, setCaptureName] = useState('')
   const [exportFeedback, setExportFeedback] = useState('')
   const [chordModalOpen, setChordModalOpen] = useState(false)
   // Chord-voicings fretboard viewer (separate from the insert palette above).
@@ -850,6 +855,16 @@ export default function PianoRoll({
   const [renamingTemplateId, setRenamingTemplateId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
   const templateFileInputRef = useRef(null)
+  // "+" creation dropdown, the from-scratch editor modal, and live drag-reorder
+  // state. `dragNodeId` = node being dragged (rendered dimmed in place while a
+  // floating `dragGhost` follows the cursor and the list reorders live).
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
+  // id of the template being edited (null = creating a brand-new one).
+  const [editingTemplateId, setEditingTemplateId] = useState(null)
+  const [dragNodeId, setDragNodeId] = useState(null)
+  const [dragGhost, setDragGhost] = useState(null) // { x, y, dx, dy, w, label, type }
+  const dragSortRef = useRef(null) // { id, lastKey } during a drag
   // `paramsOpen` is the centered "Roll settings" modal holding every option;
   // opened by the ⋯ button or the M key. Escape (and its backdrop) close it.
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -1057,11 +1072,12 @@ export default function PianoRoll({
   selectedRegionIdRef.current = selectedRegionId
   const runeCounterRef = useRef(0)
   useEffect(() => {
-    if (!tabMenu && !groupMenu && !templateMenu) return
+    if (!tabMenu && !groupMenu && !templateMenu && !newMenuOpen) return
     const close = () => {
       setTabMenu(null)
       setGroupMenu(null)
       setTemplateMenu(null)
+      setNewMenuOpen(false)
     }
     // Close on next click anywhere and on Escape — matches OS convention.
     window.addEventListener('mousedown', close)
@@ -1070,7 +1086,7 @@ export default function PianoRoll({
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', close)
     }
-  }, [tabMenu, groupMenu, templateMenu])
+  }, [tabMenu, groupMenu, templateMenu, newMenuOpen])
   // A shared drop handler used by both tab-drop and pill-drop targets. It
   // reads `tabDrag.kind` to decide whether the payload is a song (moveSong)
   // or an entire group (moveGroup). Drop targets translate their "before"
@@ -2271,45 +2287,6 @@ export default function PianoRoll({
     }
   }
 
-  // Convert each note in the roll to a { beat, degree, octave } record,
-  // where degree is the position within the parent scale (0..7) and octave
-  // is the offset in octaves from the root + C4 base. Notes outside the
-  // current scale are skipped — the template only tracks scale degrees so it
-  // can be reapplied to any other scale's note set.
-  const captureCurrentTemplate = () => {
-    if (!scale) return []
-    const baseRoot = 60 + root
-    const items = []
-    for (const [key, length] of notesRef.current) {
-      const [beatStr, midiStr] = key.split('-')
-      const beat = Number(beatStr)
-      const midi = Number(midiStr)
-      const pcRelative = ((midi - root) % 12 + 12) % 12
-      const degree = scale.notes.indexOf(pcRelative)
-      if (degree === -1) continue
-      const octave = Math.round((midi - baseRoot - scale.notes[degree]) / 12)
-      items.push({ beat, degree, octave, length })
-    }
-    return items
-  }
-
-  const saveCurrentAsTemplate = () => {
-    if (!setTemplates) return
-    const items = captureCurrentTemplate()
-    if (items.length === 0) {
-      setCaptureOpen(false)
-      return
-    }
-    const tpl = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: captureName.trim() || `Template ${templates.length + 1}`,
-      capturedFrom: { scaleId: scale.id, root },
-      notes: items,
-    }
-    setTemplates([...templates, tpl])
-    setCaptureOpen(false)
-    setCaptureName('')
-  }
 
   // Apply a template at a specific anchor point (beat + midi). The template's
   // earliest note becomes the rhythmic anchor; the anchor midi becomes the
@@ -2349,7 +2326,9 @@ export default function PianoRoll({
         const origStep = midiToScaleStep(origMidi)
         if (origStep == null) continue
         const newStep = origStep + stepShift
-        const newMidi = scaleStepToMidi(newStep)
+        // `semis` carries any chromatic (out-of-scale) offset above the degree
+        // so those notes ride along with the scale rather than being dropped.
+        const newMidi = scaleStepToMidi(newStep) + (item.semis || 0)
         const newBeat = item.beat + beatShift
         if (newBeat < 0 || newBeat >= totalBeats) continue
         if (newMidi < MIDI_LOW || newMidi > MIDI_HIGH) continue
@@ -2402,7 +2381,7 @@ export default function PianoRoll({
       const origStep = midiToScaleStep(origMidi)
       if (origStep == null) continue
       const newStep = origStep + stepShift
-      const newMidi = scaleStepToMidi(newStep)
+      const newMidi = scaleStepToMidi(newStep) + (item.semis || 0)
       const newBeat = item.beat + beatShift
       if (newBeat < 0 || newBeat >= totalBeats) continue
       if (newMidi < MIDI_LOW || newMidi > MIDI_HIGH) continue
@@ -2556,6 +2535,127 @@ export default function PianoRoll({
     }
     const t = templates.find((x) => x.id === id)
     return t ? [t] : []
+  }
+
+  // ── Folders + creation + drag-reorder ─────────────────────────────────
+  const isFolder = (n) => n && n.type === 'folder'
+  // Create an empty folder at the root and immediately rename it inline.
+  const createFolder = () => {
+    if (!setTemplates) return
+    const id = newTemplateId()
+    setTemplates([
+      ...templates,
+      { id, type: 'folder', name: 'New folder', parentId: null },
+    ])
+    setRenameValue('New folder')
+    setRenamingTemplateId(id)
+    setNewMenuOpen(false)
+  }
+  // Open the editor for a brand-new template, or to edit an existing one.
+  const openTemplateEditor = (node = null) => {
+    setEditingTemplateId(node ? node.id : null)
+    setTemplateEditorOpen(true)
+    setNewMenuOpen(false)
+    setTemplateMenu(null)
+  }
+  // Save from the editor. Stores scale-relative records so it replays on any
+  // scale. Updates the existing template when editing, else appends a new one.
+  const saveNewTemplate = (name, items) => {
+    if (!setTemplates || !items.length) {
+      setTemplateEditorOpen(false)
+      setEditingTemplateId(null)
+      return
+    }
+    if (editingTemplateId) {
+      setTemplates(
+        templates.map((t) =>
+          t.id === editingTemplateId
+            ? {
+                ...t,
+                name: name || t.name,
+                capturedFrom: { scaleId: scale.id, root },
+                notes: items,
+              }
+            : t
+        )
+      )
+    } else {
+      const count = templates.filter((t) => !isFolder(t)).length + 1
+      setTemplates([
+        ...templates,
+        {
+          id: newTemplateId(),
+          type: 'template',
+          name: name || `Template ${count}`,
+          parentId: null,
+          capturedFrom: { scaleId: scale.id, root },
+          notes: items,
+        },
+      ])
+    }
+    setTemplateEditorOpen(false)
+    setEditingTemplateId(null)
+  }
+  const toggleFolder = (id) => {
+    setTemplates(
+      templates.map((n) =>
+        n.id === id ? { ...n, collapsed: !n.collapsed } : n
+      )
+    )
+  }
+  // Delete a folder but keep its contents — its children move up to the
+  // folder's own parent.
+  const deleteFolder = (id) => {
+    const folder = templates.find((n) => n.id === id)
+    const pid = folder ? folder.parentId ?? null : null
+    setTemplates(
+      templates
+        .filter((n) => n.id !== id)
+        .map((n) => (n.parentId === id ? { ...n, parentId: pid } : n))
+    )
+  }
+  // Move a node (and, for a folder, its whole subtree since children keep
+  // their parentId) relative to a target: before/after a sibling, inside a
+  // folder, or to the end of the root. Called live during a drag, so it works
+  // purely off the freshest array (`prev`) and no-ops when nothing changes.
+  const moveNode = (dragId, targetId, pos) => {
+    if (!setTemplates || !dragId || dragId === targetId) return
+    setTemplates((prev) => {
+      // Cycle guard on the fresh tree: can't drop a folder into its own subtree.
+      const isDesc = (ancestorId, nodeId) => {
+        let cur = prev.find((n) => n.id === nodeId)
+        const seen = new Set()
+        while (cur && cur.parentId != null && !seen.has(cur.id)) {
+          seen.add(cur.id)
+          if (cur.parentId === ancestorId) return true
+          cur = prev.find((n) => n.id === cur.parentId)
+        }
+        return false
+      }
+      if (targetId && isDesc(dragId, targetId)) return prev
+      const arr = prev.slice()
+      const di = arr.findIndex((n) => n.id === dragId)
+      if (di < 0) return prev
+      const [node] = arr.splice(di, 1)
+      let parentId
+      let insertAt
+      if (pos === 'root' || targetId == null) {
+        parentId = null
+        insertAt = arr.length
+      } else {
+        const ti = arr.findIndex((n) => n.id === targetId)
+        if (ti < 0) return prev
+        parentId = pos === 'inside' ? targetId : arr[ti].parentId ?? null
+        insertAt = pos === 'before' ? ti : ti + 1
+      }
+      const moved = { ...node, parentId }
+      // Auto-expand a folder we drop into so the moved item stays visible.
+      const out = arr.map((n) =>
+        pos === 'inside' && n.id === targetId ? { ...n, collapsed: false } : n
+      )
+      out.splice(insertAt, 0, moved)
+      return out
+    })
   }
 
   // Click a chord card → insert the chord at the current playhead position.
@@ -4460,6 +4560,192 @@ export default function PianoRoll({
     window.addEventListener('pointercancel', up)
   }
 
+  // ── Template tree rendering + live drag-reorder ───────────────────────
+  const childrenOf = (pid) =>
+    templates.filter((n) => (n.parentId ?? null) === pid)
+
+  // Pointer-based sortable: grabbing a row's grip starts a drag; as the pointer
+  // moves the list reorders LIVE (moveNode) and a floating ghost follows the
+  // cursor. Releasing just ends the drag — the reordering already happened.
+  const beginSortDrag = (e, node) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const rowEl = e.currentTarget.closest('[data-node-id]')
+    const rect = rowEl.getBoundingClientRect()
+    const dx = e.clientX - rect.left
+    const dy = e.clientY - rect.top
+    dragSortRef.current = { id: node.id, lastKey: null }
+    setDragNodeId(node.id)
+    setDragGhost({
+      x: e.clientX,
+      y: e.clientY,
+      dx,
+      dy,
+      w: rect.width,
+      label: node.name,
+      type: node.type || 'template',
+    })
+    document.body.style.userSelect = 'none'
+    const move = (ev) => {
+      const st = dragSortRef.current
+      if (!st) return
+      setDragGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g))
+      const under = document.elementFromPoint(ev.clientX, ev.clientY)
+      const rowUnder = under && under.closest('[data-node-id]')
+      if (rowUnder) {
+        const tid = rowUnder.getAttribute('data-node-id')
+        if (tid === st.id) return
+        const isF = rowUnder.getAttribute('data-node-type') === 'folder'
+        const r = rowUnder.getBoundingClientRect()
+        const y = ev.clientY - r.top
+        let pos
+        if (isF) {
+          if (y < r.height * 0.3) pos = 'before'
+          else if (y > r.height * 0.7) pos = 'after'
+          else pos = 'inside'
+        } else {
+          pos = y < r.height / 2 ? 'before' : 'after'
+        }
+        const key = `${tid}:${pos}`
+        if (key !== st.lastKey) {
+          st.lastKey = key
+          moveNode(st.id, tid, pos)
+        }
+      } else if (under && under.closest('.templates-list.root')) {
+        if (st.lastKey !== 'root') {
+          st.lastKey = 'root'
+          moveNode(st.id, null, 'root')
+        }
+      }
+    }
+    const up = () => {
+      dragSortRef.current = null
+      setDragNodeId(null)
+      setDragGhost(null)
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const renderTemplateNode = (node, depth) => {
+    const dragging = dragNodeId === node.id
+    const indent = { paddingLeft: 12 + depth * 14 }
+    const renaming = renamingTemplateId === node.id
+    const renameInput = (
+      <input
+        className="template-rename"
+        autoFocus
+        value={renameValue}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setRenameValue(e.target.value)}
+        onBlur={() => {
+          renameTemplate(node.id, renameValue)
+          setRenamingTemplateId(null)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          else if (e.key === 'Escape') setRenamingTemplateId(null)
+        }}
+      />
+    )
+    if (isFolder(node)) {
+      const kids = childrenOf(node.id)
+      return (
+        <li key={node.id} className="template-tree-item">
+          <div
+            className={`folder-row ${dragging ? 'dragging' : ''}`}
+            data-node-id={node.id}
+            data-node-type="folder"
+            style={indent}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setTemplateMenu({ x: e.clientX, y: e.clientY, id: node.id })
+            }}
+          >
+            <span
+              className="tree-grip"
+              onPointerDown={(e) => beginSortDrag(e, node)}
+              title="Drag to reorder / move"
+            >
+              <GripVertical size={12} />
+            </span>
+            <button
+              type="button"
+              className="folder-toggle"
+              onClick={() => toggleFolder(node.id)}
+              aria-label={node.collapsed ? 'expand folder' : 'collapse folder'}
+            >
+              {node.collapsed ? (
+                <ChevronRight size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
+            </button>
+            <Folder size={14} className="folder-icon" />
+            {renaming ? renameInput : <span className="folder-name">{node.name}</span>}
+          </div>
+          {!node.collapsed && kids.length > 0 && (
+            <ul className="templates-list nested">
+              {kids.map((k) => renderTemplateNode(k, depth + 1))}
+            </ul>
+          )}
+        </li>
+      )
+    }
+    return (
+      <li key={node.id} className="template-tree-item">
+        <div
+          className={`template-row ${
+            pendingTemplate && pendingTemplate.id === node.id ? 'pending' : ''
+          } ${selectedTemplateIds.has(node.id) ? 'checked' : ''} ${
+            dragging ? 'dragging' : ''
+          }`}
+          data-node-id={node.id}
+          data-node-type="template"
+          style={indent}
+          onClick={() => handleTemplateClick(node)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setTemplateMenu({ x: e.clientX, y: e.clientY, id: node.id })
+          }}
+          title={
+            pendingTemplate && pendingTemplate.id === node.id
+              ? 'Click on the grid to place this template — Esc to cancel'
+              : `Click to place · tick to select · drag the grip to reorder · right-click for options`
+          }
+        >
+          <span
+            className="tree-grip"
+            onPointerDown={(e) => beginSortDrag(e, node)}
+            title="Drag to reorder / move"
+          >
+            <GripVertical size={12} />
+          </span>
+          <input
+            type="checkbox"
+            className="template-check"
+            checked={selectedTemplateIds.has(node.id)}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() =>
+              setSelectedTemplateIds((prev) => {
+                const next = new Set(prev)
+                next.has(node.id) ? next.delete(node.id) : next.add(node.id)
+                return next
+              })
+            }
+            title="Select for copy / export / delete"
+            aria-label={`Select ${node.name}`}
+          />
+          {renaming ? renameInput : <span className="template-name">{node.name}</span>}
+        </div>
+      </li>
+    )
+  }
+
   return (
     <div
       className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''} ${pendingTemplate ? 'placing-template' : ''}`}
@@ -4513,18 +4799,6 @@ export default function PianoRoll({
           sensitivity={0.25}
           onCommit={setSwingPct}
         />
-        <button
-          type="button"
-          className="mode-toggle icon-toggle"
-          onClick={() => {
-            setCaptureName('')
-            setCaptureOpen(true)
-          }}
-          aria-label="capture template"
-          title="Save current pattern as a scale-degree template"
-        >
-          <Camera size={16} strokeWidth={1.8} />
-        </button>
         <button
           type="button"
           className={`mode-toggle icon-toggle ${chordVoicingOpen ? 'on' : ''}`}
@@ -4934,16 +5208,59 @@ export default function PianoRoll({
         </div>
       </div>
       {templateMenu && (() => {
+        const node = templates.find((n) => n.id === templateMenu.id)
+        const close = () => setTemplateMenu(null)
+        // Folder menu: rename + delete (delete keeps the contents).
+        if (isFolder(node)) {
+          return (
+            <div
+              className="tab-context-menu"
+              style={{ left: templateMenu.x, top: templateMenu.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  setRenameValue(node.name)
+                  setRenamingTemplateId(node.id)
+                  close()
+                }}
+              >
+                Rename folder
+              </button>
+              <div className="tab-context-menu-divider" />
+              <button
+                type="button"
+                className="tab-context-menu-item danger"
+                onClick={() => {
+                  deleteFolder(node.id)
+                  close()
+                }}
+              >
+                Delete folder (keep contents)
+              </button>
+            </div>
+          )
+        }
         const targets = templateTargets(templateMenu.id)
         if (!targets.length) return null
         const many = targets.length > 1
-        const close = () => setTemplateMenu(null)
         return (
           <div
             className="tab-context-menu"
             style={{ left: templateMenu.x, top: templateMenu.y }}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {!many && (
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => openTemplateEditor(targets[0])}
+              >
+                Edit
+              </button>
+            )}
             <button
               type="button"
               className="tab-context-menu-item"
@@ -5181,6 +5498,40 @@ export default function PianoRoll({
                 {exportFeedback && (
                   <span className="templates-feedback">{exportFeedback}</span>
                 )}
+                <div className="template-new-wrap">
+                  <button
+                    type="button"
+                    className={`template-icon-btn ${newMenuOpen ? 'on' : ''}`}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setNewMenuOpen((v) => !v)}
+                    title="New template or folder"
+                    aria-haspopup="true"
+                    aria-expanded={newMenuOpen}
+                  >
+                    <Plus size={15} strokeWidth={1.8} />
+                  </button>
+                  {newMenuOpen && (
+                    <div
+                      className="template-new-menu"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="tab-context-menu-item"
+                        onClick={() => openTemplateEditor(null)}
+                      >
+                        <FilePlus size={14} /> New template
+                      </button>
+                      <button
+                        type="button"
+                        className="tab-context-menu-item"
+                        onClick={createFolder}
+                      >
+                        <FolderPlus size={14} /> New folder
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="template-icon-btn"
@@ -5222,66 +5573,11 @@ export default function PianoRoll({
             />
           ) : templates.length === 0 ? (
             <div className="hint">
-              Capture a pattern to reuse on any scale.
+              Use + to create a template or a folder.
             </div>
           ) : (
-            <ul className="templates-list">
-              {templates.map((tpl) => (
-                <li
-                  key={tpl.id}
-                  className={`template-row ${
-                    pendingTemplate && pendingTemplate.id === tpl.id
-                      ? 'pending'
-                      : ''
-                  } ${selectedTemplateIds.has(tpl.id) ? 'checked' : ''}`}
-                  onClick={() => handleTemplateClick(tpl)}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setTemplateMenu({ x: e.clientX, y: e.clientY, id: tpl.id })
-                  }}
-                  title={
-                    pendingTemplate && pendingTemplate.id === tpl.id
-                      ? 'Click on the grid to place this template — Esc to cancel'
-                      : `Click to place · tick to select · right-click for options (${tpl.notes.length} notes, scale ${padId(tpl.capturedFrom.scaleId)})`
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    className="template-check"
-                    checked={selectedTemplateIds.has(tpl.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() =>
-                      setSelectedTemplateIds((prev) => {
-                        const next = new Set(prev)
-                        next.has(tpl.id) ? next.delete(tpl.id) : next.add(tpl.id)
-                        return next
-                      })
-                    }
-                    title="Select for copy / export / delete"
-                    aria-label={`Select ${tpl.name}`}
-                  />
-                  {renamingTemplateId === tpl.id ? (
-                    <input
-                      className="template-rename"
-                      autoFocus
-                      value={renameValue}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={() => {
-                        renameTemplate(tpl.id, renameValue)
-                        setRenamingTemplateId(null)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur()
-                        else if (e.key === 'Escape') setRenamingTemplateId(null)
-                      }}
-                    />
-                  ) : (
-                    <span className="template-name">{tpl.name}</span>
-                  )}
-                  <span className="template-meta">{tpl.notes.length}n</span>
-                </li>
-              ))}
+            <ul className="templates-list root">
+              {childrenOf(null).map((n) => renderTemplateNode(n, 0))}
             </ul>
           )}
         </aside>
@@ -6142,17 +6438,6 @@ export default function PianoRoll({
                     className="settings-action"
                     onClick={() => {
                       setParamsOpen(false)
-                      setCaptureName('')
-                      setCaptureOpen(true)
-                    }}
-                  >
-                    Capture template
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-action"
-                    onClick={() => {
-                      setParamsOpen(false)
                       setChordModalOpen(true)
                     }}
                   >
@@ -6165,50 +6450,47 @@ export default function PianoRoll({
         </div>
       )}
 
-      {captureOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setCaptureOpen(false)}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <div
-            className="modal"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <h3>Capture template</h3>
-            <p className="modal-sub">
-              {(() => {
-                const items = captureCurrentTemplate()
-                return `Save this pattern by scale degree so you can replay it on any other scale. ${items.length} of ${notes.size} note${
-                  notes.size === 1 ? '' : 's'
-                } sit on a scale degree.`
-              })()}
-            </p>
-            <input
-              autoFocus
-              type="text"
-              value={captureName}
-              onChange={(e) => setCaptureName(e.target.value)}
-              placeholder="Template name"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveCurrentAsTemplate()
-                if (e.key === 'Escape') setCaptureOpen(false)
+      {templateEditorOpen &&
+        (() => {
+          const editing = editingTemplateId
+            ? templates.find((t) => t.id === editingTemplateId)
+            : null
+          return (
+            <TemplateEditorModal
+              scale={scale}
+              root={root}
+              NOTE_DISPLAY={NOTE_DISPLAY}
+              inScale={inScale}
+              chordClassFor={chordClassFor}
+              onAudition={(midi) => auditionNote(midi)}
+              onSave={saveNewTemplate}
+              onClose={() => {
+                setTemplateEditorOpen(false)
+                setEditingTemplateId(null)
               }}
+              initialName={editing ? editing.name : ''}
+              initialNotes={editing ? editing.notes : null}
             />
-            <div className="modal-actions">
-              <button type="button" onClick={() => setCaptureOpen(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={saveCurrentAsTemplate}
-              >
-                Save
-              </button>
-            </div>
-          </div>
+          )
+        })()}
+
+      {dragGhost && (
+        <div
+          className="template-drag-ghost"
+          style={{
+            left: dragGhost.x - dragGhost.dx,
+            top: dragGhost.y - dragGhost.dy,
+            width: dragGhost.w,
+          }}
+        >
+          {dragGhost.type === 'folder' ? (
+            <Folder size={14} className="folder-icon" />
+          ) : (
+            <span className="tree-grip">
+              <GripVertical size={12} />
+            </span>
+          )}
+          <span className="template-name">{dragGhost.label}</span>
         </div>
       )}
 

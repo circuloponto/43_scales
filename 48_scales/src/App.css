@@ -3006,16 +3006,6 @@
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   box-shadow: 0 0 0 1px var(--accent), 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
 }
-.template-row.pending::after {
-  content: 'click grid to place';
-  font-family: var(--sans);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-left: 8px;
-}
 /* When any template is pending, the grid invites a click anywhere. */
 .roll-view.placing-template .grid-area .beats-track {
   cursor: crosshair !important;
@@ -3100,6 +3090,165 @@
 .template-icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* "+" creation dropdown */
+.template-new-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.template-icon-btn.on {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.template-new-menu {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 5px;
+  background: #000;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.template-new-menu .tab-context-menu-item {
+  gap: 9px;
+}
+
+/* Tree: folders + nesting + drag handles */
+.templates-list.nested {
+  margin-top: 6px;
+  gap: 6px;
+}
+.template-tree-item {
+  list-style: none;
+}
+.tree-grip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--mute);
+  opacity: 0.5;
+  cursor: grab;
+  flex: 0 0 auto;
+  margin-left: -2px;
+}
+.template-row:hover .tree-grip,
+.folder-row:hover .tree-grip {
+  opacity: 0.9;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.folder-row:hover {
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+}
+.folder-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.folder-toggle:hover {
+  color: var(--fg);
+}
+.folder-icon {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Live drag-reorder: the source row dims in place while the list reflows and a
+   floating ghost follows the cursor. */
+.template-row.dragging,
+.folder-row.dragging {
+  opacity: 0.35;
+}
+.template-tree-item {
+  transition: transform 0.12s var(--ease);
+}
+.tree-grip {
+  touch-action: none;
+}
+.template-drag-ghost {
+  position: fixed;
+  z-index: 3000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--frame) 92%, var(--accent) 8%);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--fg);
+  opacity: 0.95;
+}
+.template-drag-ghost .template-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* From-scratch template editor modal (needs .modal.… to beat `.modal`'s width,
+   which is declared later in the file). */
+.modal.template-editor-modal {
+  width: min(940px, 96vw);
+}
+.template-editor-name {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  padding: 2px 2px 6px;
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--fg);
+  outline: none;
+}
+.template-editor-name:focus {
+  border-bottom-color: var(--accent);
+}
+/* Scroll frame that hosts the real roll timeline markup (.roll-content etc.). */
+.template-editor-roll {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 58vh;
+  background: var(--frame);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 40%, transparent) transparent;
 }
 
 /* Modal */
