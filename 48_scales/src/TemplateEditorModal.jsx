@@ -26,6 +26,7 @@ export default function TemplateEditorModal({
   playNote,
   stopAudio,
   rhythm,
+  findDuplicate,
   onSave,
   onClose,
   initialName = '',
@@ -45,6 +46,15 @@ export default function TemplateEditorModal({
   })
   const resizeRef = useRef(false)
   const scrollRef = useRef(null)
+  // Duplicate-on-save warning: `dupName` is the matching template's name;
+  // `dupAck` means the user has seen the warning and may now save anyway.
+  const [dupName, setDupName] = useState(null)
+  const [dupAck, setDupAck] = useState(false)
+  // Editing the notes invalidates a prior warning — re-check on next save.
+  useEffect(() => {
+    setDupName(null)
+    setDupAck(false)
+  }, [notes])
 
   // ── Transport (play / pause / stop / return-to-start) ─────────────────
   const [playing, setPlaying] = useState(false)
@@ -265,7 +275,7 @@ export default function TemplateEditorModal({
     window.addEventListener('pointerup', up)
   }
 
-  const save = () => {
+  const buildItems = () => {
     const items = []
     for (const [k, length] of notes) {
       const [midi, beat] = k.split(':').map(Number)
@@ -279,6 +289,20 @@ export default function TemplateEditorModal({
       }
       const semis = within - scale.notes[degree]
       items.push({ beat, degree, octave, semis, length })
+    }
+    return items
+  }
+  const save = () => {
+    const items = buildItems()
+    // Warn once if this template duplicates an existing one (same scalar
+    // contour + same relative rhythm). A second click saves it anyway.
+    if (findDuplicate && !dupAck) {
+      const dup = findDuplicate(items)
+      if (dup) {
+        setDupName(dup.name)
+        setDupAck(true)
+        return
+      }
     }
     onSave(name.trim(), items)
   }
@@ -462,6 +486,13 @@ export default function TemplateEditorModal({
           </div>
         </div>
 
+        {dupName && (
+          <div className="template-dup-warning">
+            ⚠ This has the same shape &amp; rhythm as{' '}
+            <strong>{dupName}</strong>. Click Save again to keep it anyway.
+          </div>
+        )}
+
         <div className="modal-actions">
           <button type="button" onClick={onClose}>
             Cancel
@@ -472,7 +503,11 @@ export default function TemplateEditorModal({
             onClick={save}
             disabled={notes.size === 0}
           >
-            {initialNotes ? 'Save changes' : 'Save template'}
+            {dupName
+              ? 'Save anyway'
+              : initialNotes
+              ? 'Save changes'
+              : 'Save template'}
           </button>
         </div>
       </div>

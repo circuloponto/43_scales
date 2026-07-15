@@ -248,6 +248,43 @@ function midiToOctave(midi) {
   return Math.floor(midi / 12) - 1
 }
 
+// Canonical fingerprint of a template's musical shape, used to detect
+// duplicates. Two templates are "the same" when they share BOTH:
+//  1. Scalar relationship — the pitch contour in scale-step space
+//     (octave*8 + degree), invariant to transposition (we subtract the
+//     lowest step). `semis` (chromatic offset) is kept so off-scale variants
+//     stay distinct.
+//  2. Rhythmic relationship — the pattern of onsets + durations, invariant to
+//     the absolute note value (we divide every time quantity by their GCD, so
+//     the same figure written in 16ths or 8ths collapses to one signature).
+// Returns a stable string; equal strings ⇒ duplicate.
+function templateSignature(notes) {
+  if (!notes || !notes.length) return ''
+  const N = 8 // notes per scale (all scales here are 8-note)
+  const steps = notes.map((n) => (n.octave || 0) * N + n.degree)
+  const minStep = Math.min(...steps)
+  const minBeat = Math.min(...notes.map((n) => n.beat))
+  const S = 48 // scale factor to turn tuplet fractions into integers
+  const scaled = notes.map((n, i) => ({
+    step: steps[i] - minStep,
+    semis: n.semis || 0,
+    onset: Math.round((n.beat - minBeat) * S),
+    len: Math.round((n.length || 1) * S),
+  }))
+  const gcd2 = (a, b) => (b ? gcd2(b, a % b) : a)
+  let g = 0
+  for (const s of scaled) {
+    if (s.onset > 0) g = gcd2(g, s.onset)
+    g = gcd2(g, s.len)
+  }
+  if (!g) g = 1
+  const tokens = scaled.map(
+    (s) => `${s.step}:${s.semis}:${s.onset / g}:${s.len / g}`
+  )
+  tokens.sort()
+  return tokens.join(';')
+}
+
 // Each MIDI row in the keyboard column occupies exactly one ROW_HEIGHT, so
 // the keyboard and the grid are pixel-perfectly aligned at every semitone.
 // White keys fill the column's full width; black keys are narrower and
@@ -2560,6 +2597,17 @@ export default function PianoRoll({
     setTemplateEditorOpen(true)
     setNewMenuOpen(false)
     setTemplateMenu(null)
+  }
+  // Find an existing template whose musical shape matches `items` (same scalar
+  // contour + same relative rhythm). Skips folders and the one being edited.
+  const findDuplicateTemplate = (items, excludeId) => {
+    const sig = templateSignature(items)
+    if (!sig) return null
+    for (const t of templates) {
+      if (isFolder(t) || (excludeId && t.id === excludeId)) continue
+      if (templateSignature(t.notes) === sig) return t
+    }
+    return null
   }
   // Save from the editor. Stores scale-relative records so it replays on any
   // scale. Updates the existing template when editing, else appends a new one.
@@ -6479,6 +6527,9 @@ export default function PianoRoll({
                 })
               }}
               stopAudio={killScheduledVoices}
+              findDuplicate={(items) =>
+                findDuplicateTemplate(items, editingTemplateId)
+              }
               rhythm={{
                 length: rhythmLength,
                 subdivision: rhythmBaseCells,
