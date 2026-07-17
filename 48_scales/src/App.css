@@ -3303,39 +3303,68 @@
   white-space: nowrap;
 }
 
-/* Live drag-reorder: the source row dims in place while the list reflows and a
-   floating ghost follows the cursor. */
+/* Native drag-and-drop with no browser ghost: the source row dims in place, an
+   accent line shows where it will land, and folders highlight for "inside".
+   The move commits on drop, so the indicator is rock-steady from any approach. */
 .template-row.dragging,
 .folder-row.dragging {
-  opacity: 0.35;
+  opacity: 0.4;
+}
+/* A 3px accent line at the top (before) or bottom (after) of the hovered row,
+   drawn just outside it so it reads as an insertion point between rows. */
+.template-row.drop-before,
+.folder-row.drop-before,
+.template-row.drop-after,
+.folder-row.drop-after {
+  position: relative;
+}
+.template-row.drop-before::before,
+.folder-row.drop-before::before,
+.template-row.drop-after::after,
+.folder-row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+  z-index: 5;
+}
+.template-row.drop-before::before,
+.folder-row.drop-before::before {
+  top: -4px;
+}
+.template-row.drop-after::after,
+.folder-row.drop-after::after {
+  bottom: -4px;
+}
+.folder-row.drop-inside {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Dropping at the end of the root list. */
+.templates-list.root.drop-root {
+  position: relative;
+}
+.templates-list.root.drop-root::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .template-tree-item {
   transition: transform 0.12s var(--ease);
 }
 .tree-grip {
   touch-action: none;
-}
-.template-drag-ghost {
-  position: fixed;
-  z-index: 3000;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--frame) 92%, var(--accent) 8%);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--fg);
-  opacity: 0.95;
-}
-.template-drag-ghost .template-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* From-scratch template editor modal (needs .modal.… to beat `.modal`'s width,

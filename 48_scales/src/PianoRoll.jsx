@@ -13,7 +13,6 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronDown,
-  GripVertical,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -900,9 +899,13 @@ export default function PianoRoll({
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
   const [editingTemplateId, setEditingTemplateId] = useState(null)
+  // Native HTML5 drag-and-drop: `dragNodeId` = the row being dragged (dimmed in
+  // place while the browser drags a copy under the cursor); `dropTarget` =
+  // where it will land — { id, pos: 'before'|'after'|'inside'|'root' } — shown
+  // as an indicator line / folder highlight, committed on drop.
   const [dragNodeId, setDragNodeId] = useState(null)
-  const [dragGhost, setDragGhost] = useState(null) // { x, y, dx, dy, w, label, type }
-  const dragSortRef = useRef(null) // { id, lastKey } during a drag
+  const [dropTarget, setDropTarget] = useState(null)
+  const dragOverRef = useRef(null) // last "targetId:pos" applied (drag thrash guard)
   // `paramsOpen` is the centered "Roll settings" modal holding every option;
   // opened by the ⋯ button or the M key. Escape (and its backdrop) close it.
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -2712,12 +2715,10 @@ export default function PianoRoll({
         insertAt = pos === 'before' ? ti : ti + 1
       }
       const moved = { ...node, parentId }
-      // Auto-expand a folder we drop into so the moved item stays visible.
-      const out = arr.map((n) =>
-        pos === 'inside' && n.id === targetId ? { ...n, collapsed: false } : n
-      )
-      out.splice(insertAt, 0, moved)
-      return out
+      // Don't force the target folder open — dropping into a folder leaves it
+      // in whatever open/closed state it was (less jarring).
+      arr.splice(insertAt, 0, moved)
+      return arr
     })
   }
 
@@ -4627,71 +4628,60 @@ export default function PianoRoll({
   const childrenOf = (pid) =>
     templates.filter((n) => (n.parentId ?? null) === pid)
 
-  // Pointer-based sortable: grabbing a row's grip starts a drag; as the pointer
-  // moves the list reorders LIVE (moveNode) and a floating ghost follows the
-  // cursor. Releasing just ends the drag — the reordering already happened.
-  const beginSortDrag = (e, node) => {
-    if (e.button !== 0) return
+  // Native HTML5 drag-and-drop. Rows are `draggable`; the browser drags a copy
+  // under the cursor, and `dropTarget` marks where it will land (a line between
+  // rows, or a highlighted folder for "inside"). Clicks still place/toggle
+  // because a plain click never fires a drag.
+  const onNodeDragStart = (e, node) => {
+    setDragNodeId(node.id)
+    e.dataTransfer.effectAllowed = 'move'
+    try {
+      e.dataTransfer.setData('text/plain', node.id)
+      // Hide the browser's drag-image "ghost" — the live reorder + landing line
+      // is the only cue we want.
+      const empty = document.createElement('div')
+      empty.style.cssText =
+        'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px'
+      document.body.appendChild(empty)
+      e.dataTransfer.setDragImage(empty, 0, 0)
+      setTimeout(() => empty.remove(), 0)
+    } catch {}
+  }
+  const onNodeDragOver = (e, node) => {
+    if (!dragNodeId || dragNodeId === node.id) return
     e.preventDefault()
     e.stopPropagation()
-    const rowEl = e.currentTarget.closest('[data-node-id]')
-    const rect = rowEl.getBoundingClientRect()
-    const dx = e.clientX - rect.left
-    const dy = e.clientY - rect.top
-    dragSortRef.current = { id: node.id, lastKey: null }
-    setDragNodeId(node.id)
-    setDragGhost({
-      x: e.clientX,
-      y: e.clientY,
-      dx,
-      dy,
-      w: rect.width,
-      label: node.name,
-      type: node.type || 'template',
-    })
-    document.body.style.userSelect = 'none'
-    const move = (ev) => {
-      const st = dragSortRef.current
-      if (!st) return
-      setDragGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g))
-      const under = document.elementFromPoint(ev.clientX, ev.clientY)
-      const rowUnder = under && under.closest('[data-node-id]')
-      if (rowUnder) {
-        const tid = rowUnder.getAttribute('data-node-id')
-        if (tid === st.id) return
-        const isF = rowUnder.getAttribute('data-node-type') === 'folder'
-        const r = rowUnder.getBoundingClientRect()
-        const y = ev.clientY - r.top
-        let pos
-        if (isF) {
-          if (y < r.height * 0.3) pos = 'before'
-          else if (y > r.height * 0.7) pos = 'after'
-          else pos = 'inside'
-        } else {
-          pos = y < r.height / 2 ? 'before' : 'after'
-        }
-        const key = `${tid}:${pos}`
-        if (key !== st.lastKey) {
-          st.lastKey = key
-          moveNode(st.id, tid, pos)
-        }
-      } else if (under && under.closest('.templates-list.root')) {
-        if (st.lastKey !== 'root') {
-          st.lastKey = 'root'
-          moveNode(st.id, null, 'root')
-        }
-      }
+    e.dataTransfer.dropEffect = 'move'
+    const r = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - r.top
+    let pos
+    if (isFolder(node)) {
+      // Most of a folder = drop INSIDE; thin top/bottom edges reorder around it.
+      if (y < r.height * 0.25) pos = 'before'
+      else if (y > r.height * 0.75) pos = 'after'
+      else pos = 'inside'
+    } else {
+      pos = y < r.height / 2 ? 'before' : 'after'
     }
-    const up = () => {
-      dragSortRef.current = null
-      setDragNodeId(null)
-      setDragGhost(null)
-      document.body.style.userSelect = ''
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    // Just mark where it will land — nothing moves until the drop, so the
+    // indicator stays put no matter which direction you approach from.
+    setDropTarget((cur) =>
+      cur && cur.id === node.id && cur.pos === pos ? cur : { id: node.id, pos }
+    )
+  }
+  const onNodeDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dragNodeId && dropTarget)
+      moveNode(dragNodeId, dropTarget.id, dropTarget.pos)
+    setDragNodeId(null)
+    setDropTarget(null)
+    dragOverRef.current = null
+  }
+  const onNodeDragEnd = () => {
+    setDragNodeId(null)
+    setDropTarget(null)
+    dragOverRef.current = null
   }
 
   const renderTemplateNode = (node, depth) => {
@@ -4720,26 +4710,30 @@ export default function PianoRoll({
       return (
         <li key={node.id} className="template-tree-item">
           <div
-            className={`folder-row ${dragging ? 'dragging' : ''}`}
+            className={`folder-row ${dragging ? 'dragging' : ''} ${
+              dropTarget && dropTarget.id === node.id ? `drop-${dropTarget.pos}` : ''
+            }`}
             data-node-id={node.id}
-            data-node-type="folder"
             style={indent}
+            draggable={!renaming}
+            onDragStart={(e) => onNodeDragStart(e, node)}
+            onDragOver={(e) => onNodeDragOver(e, node)}
+            onDrop={onNodeDrop}
+            onDragEnd={onNodeDragEnd}
+            onClick={() => toggleFolder(node.id)}
+            title="Click to open/close · drag to move · right-click for options"
             onContextMenu={(e) => {
               e.preventDefault()
               setTemplateMenu({ x: e.clientX, y: e.clientY, id: node.id })
             }}
           >
-            <span
-              className="tree-grip"
-              onPointerDown={(e) => beginSortDrag(e, node)}
-              title="Drag to reorder / move"
-            >
-              <GripVertical size={12} />
-            </span>
             <button
               type="button"
               className="folder-toggle"
-              onClick={() => toggleFolder(node.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleFolder(node.id)
+              }}
               aria-label={node.collapsed ? 'expand folder' : 'collapse folder'}
             >
               {node.collapsed ? (
@@ -4766,10 +4760,16 @@ export default function PianoRoll({
             pendingTemplate && pendingTemplate.id === node.id ? 'pending' : ''
           } ${selectedTemplateIds.has(node.id) ? 'checked' : ''} ${
             dragging ? 'dragging' : ''
+          } ${
+            dropTarget && dropTarget.id === node.id ? `drop-${dropTarget.pos}` : ''
           }`}
           data-node-id={node.id}
-          data-node-type="template"
           style={indent}
+          draggable={!renaming}
+          onDragStart={(e) => onNodeDragStart(e, node)}
+          onDragOver={(e) => onNodeDragOver(e, node)}
+          onDrop={onNodeDrop}
+          onDragEnd={onNodeDragEnd}
           onClick={() => handleTemplateClick(node)}
           onContextMenu={(e) => {
             e.preventDefault()
@@ -4778,16 +4778,9 @@ export default function PianoRoll({
           title={
             pendingTemplate && pendingTemplate.id === node.id
               ? 'Click on the grid to place this template — Esc to cancel'
-              : `Click to place · tick to select · drag the grip to reorder · right-click for options`
+              : `Click to place · tick to select · drag to move · right-click for options`
           }
         >
-          <span
-            className="tree-grip"
-            onPointerDown={(e) => beginSortDrag(e, node)}
-            title="Drag to reorder / move"
-          >
-            <GripVertical size={12} />
-          </span>
           <input
             type="checkbox"
             className="template-check"
@@ -5665,7 +5658,28 @@ export default function PianoRoll({
               Use + to create a template or a folder.
             </div>
           ) : (
-            <ul className="templates-list root">
+            <ul
+              className={`templates-list root ${
+                dropTarget && dropTarget.pos === 'root' ? 'drop-root' : ''
+              }`}
+              onDragOver={(e) => {
+                // Empty area below the tree → drop at the root end.
+                if (dragNodeId && e.target === e.currentTarget) {
+                  e.preventDefault()
+                  setDropTarget((cur) =>
+                    cur && cur.pos === 'root' ? cur : { id: null, pos: 'root' }
+                  )
+                }
+              }}
+              onDrop={(e) => {
+                if (dragNodeId && dropTarget && dropTarget.pos === 'root') {
+                  e.preventDefault()
+                  moveNode(dragNodeId, null, 'root')
+                }
+                setDragNodeId(null)
+                setDropTarget(null)
+              }}
+            >
               {childrenOf(null).map((n) => renderTemplateNode(n, 0))}
             </ul>
           )}
@@ -6618,25 +6632,6 @@ export default function PianoRoll({
           )
         })()}
 
-      {dragGhost && (
-        <div
-          className="template-drag-ghost"
-          style={{
-            left: dragGhost.x - dragGhost.dx,
-            top: dragGhost.y - dragGhost.dy,
-            width: dragGhost.w,
-          }}
-        >
-          {dragGhost.type === 'folder' ? (
-            <Folder size={14} className="folder-icon" />
-          ) : (
-            <span className="tree-grip">
-              <GripVertical size={12} />
-            </span>
-          )}
-          <span className="template-name">{dragGhost.label}</span>
-        </div>
-      )}
 
       {chordModalOpen && (
         <div className="chord-palette-modal">
