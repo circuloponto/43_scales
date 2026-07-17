@@ -2725,6 +2725,47 @@ export default function PianoRoll({
       return arr
     })
   }
+  // Move several nodes together (a shift-selection) to a target — e.g. drop a
+  // group of templates into a folder. Their relative order is preserved; items
+  // whose parent is also being moved stay nested under it.
+  const moveNodes = (ids, targetId, pos) => {
+    if (!setTemplates || !ids || !ids.length) return
+    setTemplates((prev) => {
+      const idSet = new Set(ids)
+      if (targetId != null && idSet.has(targetId)) return prev
+      const isDesc = (ancestorId, nodeId) => {
+        let cur = prev.find((n) => n.id === nodeId)
+        const seen = new Set()
+        while (cur && cur.parentId != null && !seen.has(cur.id)) {
+          seen.add(cur.id)
+          if (cur.parentId === ancestorId) return true
+          cur = prev.find((n) => n.id === cur.parentId)
+        }
+        return false
+      }
+      if (targetId != null && [...idSet].some((id) => isDesc(id, targetId)))
+        return prev
+      const moving = prev.filter((n) => idSet.has(n.id)) // keeps current order
+      const rest = prev.filter((n) => !idSet.has(n.id))
+      let parentId
+      let insertAt
+      if (pos === 'root' || targetId == null) {
+        parentId = null
+        insertAt = rest.length
+      } else {
+        const ti = rest.findIndex((n) => n.id === targetId)
+        if (ti < 0) return prev
+        parentId = pos === 'inside' ? targetId : rest[ti].parentId ?? null
+        insertAt = pos === 'before' ? ti : ti + 1
+      }
+      const moved = moving.map((n) =>
+        idSet.has(n.parentId) ? n : { ...n, parentId }
+      )
+      rest.splice(insertAt, 0, ...moved)
+      return rest
+    })
+    setSelectedTemplateIds(new Set())
+  }
 
   // Click a chord card → insert the chord at the current playhead position.
   // 4 notes (the chord voicing) are added to the grid, anchored at C3 so
@@ -5543,6 +5584,7 @@ export default function PianoRoll({
             <TemplateTree
               templates={templates}
               onMove={moveNode}
+              onMoveMany={moveNodes}
               selectedTemplateIds={selectedTemplateIds}
               onToggleSelect={(id) =>
                 setSelectedTemplateIds((prev) => {

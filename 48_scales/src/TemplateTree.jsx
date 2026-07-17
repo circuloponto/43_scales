@@ -43,7 +43,9 @@ function Row({ item, ctx }) {
     drag.setNodeRef(el)
     drop.setNodeRef(el)
   }
-  const isDragging = ctx.activeId === node.id
+  const isDragging =
+    ctx.activeId === node.id ||
+    (ctx.draggingSelection && ctx.selectedTemplateIds.has(node.id))
   const dropCls =
     ctx.overInfo && ctx.overInfo.id === node.id ? `drop-${ctx.overInfo.pos}` : ''
 
@@ -138,6 +140,7 @@ function Row({ item, ctx }) {
 export default function TemplateTree({
   templates,
   onMove,
+  onMoveMany,
   selectedTemplateIds,
   onToggleSelect,
   renamingTemplateId,
@@ -153,6 +156,9 @@ export default function TemplateTree({
   const [activeId, setActiveId] = useState(null)
   const [overInfo, setOverInfo] = useState(null)
   const overRef = useRef(null)
+  // The ids that this drag will move, locked in at drag start (the whole
+  // shift-selection if the grabbed row is part of it, else just that row).
+  const dragIdsRef = useRef([])
   const listRef = useRef(null)
   const posRef = useRef(new Map())
   const sensors = useSensors(
@@ -207,6 +213,10 @@ export default function TemplateTree({
 
   const ctx = {
     activeId,
+    draggingSelection:
+      !!activeId &&
+      selectedTemplateIds.has(activeId) &&
+      selectedTemplateIds.size > 1,
     overInfo,
     selectedTemplateIds,
     onToggleSelect,
@@ -226,7 +236,13 @@ export default function TemplateTree({
       sensors={sensors}
       collisionDetection={pointerWithin}
       autoScroll={{ acceleration: 4, threshold: { x: 0, y: 0.15 } }}
-      onDragStart={(e) => setActiveId(e.active.id)}
+      onDragStart={(e) => {
+        setActiveId(e.active.id)
+        dragIdsRef.current =
+          selectedTemplateIds.has(e.active.id) && selectedTemplateIds.size > 1
+            ? [...selectedTemplateIds]
+            : [e.active.id]
+      }}
       onDragMove={(e) => {
         const info = computeOver(e)
         overRef.current = info
@@ -239,7 +255,17 @@ export default function TemplateTree({
       }}
       onDragEnd={(e) => {
         const info = overRef.current
-        if (info && e.active.id !== info.id) onMove(e.active.id, info.id, info.pos)
+        const dragIds = dragIdsRef.current
+        if (info && info.id !== e.active.id) {
+          const ids = dragIds.filter((id) => id !== info.id)
+          if (ids.length > 1) {
+            // Dragging one of several shift-selected rows moves them all.
+            onMoveMany(ids, info.id, info.pos)
+          } else if (ids.length === 1) {
+            onMove(ids[0], info.id, info.pos)
+          }
+        }
+        dragIdsRef.current = []
         setActiveId(null)
         setOverInfo(null)
         overRef.current = null
