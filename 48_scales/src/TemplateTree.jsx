@@ -169,7 +169,9 @@ export default function TemplateTree({
     const next = new Map()
     for (const el of list.querySelectorAll('[data-node-id]')) {
       const id = el.getAttribute('data-node-id')
-      const top = el.getBoundingClientRect().top
+      // offsetTop is scroll-independent (position within the list's content), so
+      // scrolling doesn't look like every row moved and trigger a mass animation.
+      const top = el.offsetTop
       next.set(id, top)
       const old = prev.get(id)
       if (old != null && Math.abs(old - top) > 0.5) {
@@ -224,6 +226,7 @@ export default function TemplateTree({
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
+      autoScroll={{ acceleration: 4, threshold: { x: 0, y: 0.15 } }}
       onDragStart={(e) => setActiveId(e.active.id)}
       onDragMove={(e) => {
         const info = computeOver(e)

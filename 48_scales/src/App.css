@@ -3076,6 +3076,7 @@
 /* The root list fills the remaining panel height and scrolls when the tree is
    taller than the panel (nested lists just flow inside it). */
 .templates-list.root {
+  position: relative; /* offsetParent for rows → scroll-independent FLIP */
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3308,6 +3309,15 @@
 .template-row.dragging,
 .folder-row.dragging {
   opacity: 0.4;
+}
+/* While dragging, suppress the row hover highlight — the landing line is the
+   only cue for a reorder (folders keep their "inside" highlight). */
+.templates-list.root.is-dnd-active .template-row:hover {
+  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+}
+.templates-list.root.is-dnd-active .folder-row:hover:not(.drop-inside) {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
 .template-row,
 .folder-row {
