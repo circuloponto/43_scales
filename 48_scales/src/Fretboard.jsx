@@ -6,6 +6,21 @@ const FRETS = 24
 const SPAN = 4 // a "position" covers 5 frets: [pos, pos+SPAN]
 const INLAYS = new Set([3, 5, 7, 9, 15, 17, 19, 21])
 
+// Guitar positions are named with roman numerals (open = 0).
+function toRoman(n) {
+  if (n <= 0) return '0'
+  const map = [
+    [10, 'X'],
+    [9, 'IX'],
+    [5, 'V'],
+    [4, 'IV'],
+    [1, 'I'],
+  ]
+  let out = ''
+  for (const [v, sym] of map) while (n >= v) (out += sym), (n -= v)
+  return out
+}
+
 // Frets (0..FRETS) at which `midi` can be fretted on any string.
 function fretsForMidi(midi) {
   const out = []
@@ -61,8 +76,7 @@ export default function Fretboard({
   return (
     <div className={`fretboard ${orientation}`}>
       <div className={`fret-position ${priming ? 'priming' : ''}`}>
-        Pos {priming ? `${position}_` : position}
-        <span className="fret-position-hint"> · P + number</span>
+        Pos {priming ? `${position}_` : toRoman(position)}
       </div>
       <div className="fret-grid">
         {TUNING.map((open, s) => (

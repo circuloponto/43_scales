@@ -2828,6 +2828,10 @@
 .fretboard.vertical .fret-position {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
+  margin-right: 10px;
+}
+.fretboard.horizontal .fret-position {
+  margin-bottom: 10px;
 }
 .fret-cell.inlay::after {
   content: '';
