@@ -2450,8 +2450,8 @@
 /* Anchor grip — drag to reorder the panel. */
 .panel-anchor {
   position: absolute;
-  top: 1px;
-  right: 3px;
+  top: 5px;
+  right: 8px;
   z-index: 30;
   display: inline-flex;
   align-items: center;
@@ -2477,6 +2477,102 @@
 .panel-anchor:active {
   cursor: grabbing;
 }
+
+/* Collapse toggle — a small chevron in the corner, left of the drag grip. */
+.panel-collapse-btn {
+  position: absolute;
+  top: 5px;
+  right: 30px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mute);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.12s var(--ease), color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.panel-collapse-btn:hover {
+  opacity: 1;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+/* Collapsed side panel: a thin strip with the name written top-to-bottom.
+   Everything else in the panel is hidden; the strip expands on click. */
+.panel-collapsed-view {
+  display: none;
+}
+.variation-panel.collapsed,
+.track-sidebar.collapsed {
+  padding: 0;
+  overflow: hidden;
+}
+/* The track sidebar is normally a 2-column grid; collapse it to a single
+   full-width column so the strip (and centred grip) fill the whole 40px. */
+.track-sidebar.collapsed {
+  display: block;
+}
+/* Hide everything except the strip AND the drag grip (so collapsed panels can
+   still be reordered). */
+.variation-panel.collapsed > :not(.panel-collapsed-view):not(.panel-anchor),
+.track-sidebar.collapsed > :not(.panel-collapsed-view):not(.panel-anchor) {
+  display: none;
+}
+/* In the collapsed strip the grip sits at the bottom-centre, clearly separate
+   from the click-to-expand chevron/name above it. */
+.variation-panel.collapsed .panel-anchor,
+.track-sidebar.collapsed .panel-anchor {
+  top: auto;
+  bottom: 8px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  opacity: 0.7;
+}
+.variation-panel.collapsed > .panel-collapsed-view,
+.track-sidebar.collapsed > .panel-collapsed-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 0;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: var(--mute);
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.panel-collapsed-view:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.panel-collapsed-name {
+  /* Upright glyphs stacked top-to-bottom — readable without tilting your head. */
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--fg);
+  white-space: nowrap;
+  line-height: 1.05;
+}
+.panel-collapsed-view:hover .panel-collapsed-name {
+  color: var(--accent);
+}
+
 /* The panel currently being dragged to a new slot — floats above the others. */
 .reordering {
   outline: 1.5px solid var(--accent);

@@ -11,6 +11,7 @@ import {
   FolderPlus,
   FilePlus,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   GripVertical,
 } from 'lucide-react'
@@ -966,6 +967,15 @@ export default function PianoRoll({
   const [panelH, setPanelH] = useState(() =>
     loadJSON('roll.h', { templates: null, roll: null, synth: null })
   )
+  // Collapsed side panels shrink to a thin vertical strip (name written
+  // top-to-bottom) so the timeline gets the room. The roll itself never
+  // collapses. Persisted.
+  const [panelCollapsed, setPanelCollapsed] = useState(() =>
+    loadJSON('roll.collapsed', { templates: false, synth: false })
+  )
+  const COLLAPSED_W = 40
+  const toggleCollapse = (key) =>
+    setPanelCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
   // While reordering: { key, dx } — the panel being dragged and how far it has
   // moved from its slot (so it follows the cursor). null when not dragging.
   const [dragState, setDragState] = useState(null)
@@ -977,8 +987,9 @@ export default function PianoRoll({
       localStorage.setItem('roll.order', JSON.stringify(panelOrder))
       localStorage.setItem('roll.w', JSON.stringify(panelW))
       localStorage.setItem('roll.h', JSON.stringify(panelH))
+      localStorage.setItem('roll.collapsed', JSON.stringify(panelCollapsed))
     } catch {}
-  }, [panelOrder, panelW, panelH])
+  }, [panelOrder, panelW, panelH, panelCollapsed])
   const setPanelWidth = (key, w) =>
     setPanelW((prev) => ({ ...prev, [key]: w }))
   const setPanelHeight = (key, h) =>
@@ -986,8 +997,9 @@ export default function PianoRoll({
   // Flex/order style for a panel. The roll flexes (no fixed width); a resized
   // panel is bottom-anchored so it grows toward the TOP.
   const panelStyle = (key) => {
-    const w = key === 'roll' ? null : panelW[key]
-    const h = panelH[key]
+    const collapsed = key !== 'roll' && panelCollapsed[key]
+    const w = collapsed ? COLLAPSED_W : key === 'roll' ? null : panelW[key]
+    const h = collapsed ? null : panelH[key]
     const dragging = dragState && dragState.key === key
     return {
       order: panelOrder.indexOf(key) * 2,
@@ -5520,10 +5532,31 @@ export default function PianoRoll({
         <aside
           className={`variation-panel resizable ${
             dragState?.key === 'templates' ? 'reordering' : ''
-          }`}
+          } ${panelCollapsed.templates ? 'collapsed' : ''}`}
           data-panel="templates"
           style={panelStyle('templates')}
         >
+          <button
+            type="button"
+            className="panel-collapsed-view"
+            onClick={() => toggleCollapse('templates')}
+            title="Expand panel"
+            aria-label="Expand panel"
+          >
+            <ChevronLeft size={15} />
+            <span className="panel-collapsed-name">
+              {fretboardView === 'vertical' ? 'Fretboard' : 'Templates'}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="panel-collapse-btn"
+            onClick={() => toggleCollapse('templates')}
+            title="Collapse panel"
+            aria-label="Collapse panel"
+          >
+            <ChevronLeft size={15} />
+          </button>
           <button
             type="button"
             className="panel-anchor"
@@ -6102,10 +6135,29 @@ export default function PianoRoll({
         <aside
           className={`track-sidebar resizable ${
             dragState?.key === 'synth' ? 'reordering' : ''
-          }`}
+          } ${panelCollapsed.synth ? 'collapsed' : ''}`}
           data-panel="synth"
           style={panelStyle('synth')}
         >
+          <button
+            type="button"
+            className="panel-collapsed-view"
+            onClick={() => toggleCollapse('synth')}
+            title="Expand panel"
+            aria-label="Expand panel"
+          >
+            <ChevronLeft size={15} />
+            <span className="panel-collapsed-name">Synth</span>
+          </button>
+          <button
+            type="button"
+            className="panel-collapse-btn synth"
+            onClick={() => toggleCollapse('synth')}
+            title="Collapse panel"
+            aria-label="Collapse panel"
+          >
+            <ChevronRight size={15} />
+          </button>
           <button
             type="button"
             className="panel-anchor"
