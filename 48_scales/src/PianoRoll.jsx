@@ -895,7 +895,7 @@ export default function PianoRoll({
   // "+" creation dropdown, the from-scratch editor modal, and live drag-reorder
   // state. `dragNodeId` = node being dragged (rendered dimmed in place while a
   // floating `dragGhost` follows the cursor and the list reorders live).
-  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const [newMenu, setNewMenu] = useState(null) // null | { x, y } (fixed pos)
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
   const [editingTemplateId, setEditingTemplateId] = useState(null)
@@ -1109,12 +1109,12 @@ export default function PianoRoll({
   selectedRegionIdRef.current = selectedRegionId
   const runeCounterRef = useRef(0)
   useEffect(() => {
-    if (!tabMenu && !groupMenu && !templateMenu && !newMenuOpen) return
+    if (!tabMenu && !groupMenu && !templateMenu && !newMenu) return
     const close = () => {
       setTabMenu(null)
       setGroupMenu(null)
       setTemplateMenu(null)
-      setNewMenuOpen(false)
+      setNewMenu(null)
     }
     // Close on next click anywhere and on Escape — matches OS convention.
     window.addEventListener('mousedown', close)
@@ -1123,7 +1123,7 @@ export default function PianoRoll({
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', close)
     }
-  }, [tabMenu, groupMenu, templateMenu, newMenuOpen])
+  }, [tabMenu, groupMenu, templateMenu, newMenu])
   // A shared drop handler used by both tab-drop and pill-drop targets. It
   // reads `tabDrag.kind` to decide whether the payload is a song (moveSong)
   // or an entire group (moveGroup). Drop targets translate their "before"
@@ -2589,13 +2589,13 @@ export default function PianoRoll({
     ])
     setRenameValue('New folder')
     setRenamingTemplateId(id)
-    setNewMenuOpen(false)
+    setNewMenu(null)
   }
   // Open the editor for a brand-new template, or to edit an existing one.
   const openTemplateEditor = (node = null) => {
     setEditingTemplateId(node ? node.id : null)
     setTemplateEditorOpen(true)
-    setNewMenuOpen(false)
+    setNewMenu(null)
     setTemplateMenu(null)
   }
   // Find an existing template whose musical shape matches `items` (same scalar
@@ -5258,6 +5258,28 @@ export default function PianoRoll({
         )}
         </div>
       </div>
+      {newMenu && (
+        <div
+          className="template-new-menu"
+          style={{ left: newMenu.x, top: newMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="tab-context-menu-item"
+            onClick={() => openTemplateEditor(null)}
+          >
+            <FilePlus size={14} /> New template
+          </button>
+          <button
+            type="button"
+            className="tab-context-menu-item"
+            onClick={createFolder}
+          >
+            <FolderPlus size={14} /> New folder
+          </button>
+        </div>
+      )}
       {templateMenu && (() => {
         const node = templates.find((n) => n.id === templateMenu.id)
         const close = () => setTemplateMenu(null)
@@ -5535,7 +5557,7 @@ export default function PianoRoll({
                 Fretboard
               </button>
             </div>
-            {fretboardView === 'vertical' ? (
+            {fretboardView === 'vertical' && (
               <button
                 type="button"
                 className="panel-swap-btn"
@@ -5544,75 +5566,58 @@ export default function PianoRoll({
               >
                 ⇄ Horizontal
               </button>
-            ) : (
-              <div className="templates-actions">
-                {exportFeedback && (
-                  <span className="templates-feedback">{exportFeedback}</span>
-                )}
-                <div className="template-new-wrap">
-                  <button
-                    type="button"
-                    className={`template-icon-btn ${newMenuOpen ? 'on' : ''}`}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => setNewMenuOpen((v) => !v)}
-                    title="New template or folder"
-                    aria-haspopup="true"
-                    aria-expanded={newMenuOpen}
-                  >
-                    <Plus size={15} strokeWidth={1.8} />
-                  </button>
-                  {newMenuOpen && (
-                    <div
-                      className="template-new-menu"
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="tab-context-menu-item"
-                        onClick={() => openTemplateEditor(null)}
-                      >
-                        <FilePlus size={14} /> New template
-                      </button>
-                      <button
-                        type="button"
-                        className="tab-context-menu-item"
-                        onClick={createFolder}
-                      >
-                        <FolderPlus size={14} /> New folder
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="template-icon-btn"
-                  onClick={pasteTemplates}
-                  title="Paste a template from the clipboard"
-                >
-                  <ClipboardPaste size={14} strokeWidth={1.8} />
-                </button>
-                <button
-                  type="button"
-                  className="template-icon-btn"
-                  onClick={() => templateFileInputRef.current?.click()}
-                  title="Import template(s) from a file"
-                >
-                  <Upload size={14} strokeWidth={1.8} />
-                </button>
-                <input
-                  ref={templateFileInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    importTemplateFiles([...e.target.files])
-                    e.target.value = ''
-                  }}
-                />
-              </div>
             )}
           </div>
+          {fretboardView !== 'vertical' && (
+            // Action icons live on their own scrollable row so more can be
+            // added over time without crowding the Templates/Fretboard toggle.
+            <div className="templates-toolbar">
+              {exportFeedback && (
+                <span className="templates-feedback">{exportFeedback}</span>
+              )}
+              <button
+                type="button"
+                className={`template-icon-btn ${newMenu ? 'on' : ''}`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setNewMenu((m) => (m ? null : { x: r.left, y: r.bottom + 4 }))
+                }}
+                title="New template or folder"
+                aria-haspopup="true"
+                aria-expanded={!!newMenu}
+              >
+                <Plus size={15} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                className="template-icon-btn"
+                onClick={pasteTemplates}
+                title="Paste a template from the clipboard"
+              >
+                <ClipboardPaste size={14} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                className="template-icon-btn"
+                onClick={() => templateFileInputRef.current?.click()}
+                title="Import template(s) from a file"
+              >
+                <Upload size={14} strokeWidth={1.8} />
+              </button>
+              <input
+                ref={templateFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  importTemplateFiles([...e.target.files])
+                  e.target.value = ''
+                }}
+              />
+            </div>
+          )}
           {fretboardView === 'vertical' ? (
             <Fretboard
               orientation="vertical"

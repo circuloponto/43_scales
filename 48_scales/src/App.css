@@ -3103,20 +3103,32 @@
   cursor: default;
 }
 
-/* "+" creation dropdown */
-.template-new-wrap {
-  position: relative;
-  display: inline-flex;
+/* Scrollable row of action icons below the Templates/Fretboard toggle. */
+.templates-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 40%, transparent) transparent;
 }
+.templates-toolbar .template-icon-btn,
+.templates-toolbar .templates-feedback {
+  flex: 0 0 auto;
+}
+
+/* "+" creation dropdown — fixed-positioned so the toolbar's overflow can't
+   clip it (coords are set inline from the button's rect). */
 .template-icon-btn.on {
   color: var(--fg);
   border-color: var(--accent);
 }
 .template-new-menu {
-  position: absolute;
-  top: 26px;
-  left: 0;
-  z-index: 1000;
+  position: fixed;
+  z-index: 2000;
   min-width: 160px;
   padding: 5px;
   background: #000;
