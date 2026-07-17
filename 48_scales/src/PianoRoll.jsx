@@ -7,12 +7,10 @@ import {
   Upload,
   Guitar,
   Plus,
-  Folder,
   FolderPlus,
   FilePlus,
   ChevronRight,
   ChevronLeft,
-  ChevronDown,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -21,6 +19,7 @@ import Fretboard, { adjustFretPosition } from './Fretboard'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
+import TemplateTree from './TemplateTree'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -899,13 +898,6 @@ export default function PianoRoll({
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
   const [editingTemplateId, setEditingTemplateId] = useState(null)
-  // Native HTML5 drag-and-drop: `dragNodeId` = the row being dragged (dimmed in
-  // place while the browser drags a copy under the cursor); `dropTarget` =
-  // where it will land — { id, pos: 'before'|'after'|'inside'|'root' } — shown
-  // as an indicator line / folder highlight, committed on drop.
-  const [dragNodeId, setDragNodeId] = useState(null)
-  const [dropTarget, setDropTarget] = useState(null)
-  const dragOverRef = useRef(null) // last "targetId:pos" applied (drag thrash guard)
   // `paramsOpen` is the centered "Roll settings" modal holding every option;
   // opened by the ⋯ button or the M key. Escape (and its backdrop) close it.
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -4624,184 +4616,6 @@ export default function PianoRoll({
     window.addEventListener('pointercancel', up)
   }
 
-  // ── Template tree rendering + live drag-reorder ───────────────────────
-  const childrenOf = (pid) =>
-    templates.filter((n) => (n.parentId ?? null) === pid)
-
-  // Native HTML5 drag-and-drop. Rows are `draggable`; the browser drags a copy
-  // under the cursor, and `dropTarget` marks where it will land (a line between
-  // rows, or a highlighted folder for "inside"). Clicks still place/toggle
-  // because a plain click never fires a drag.
-  const onNodeDragStart = (e, node) => {
-    setDragNodeId(node.id)
-    e.dataTransfer.effectAllowed = 'move'
-    try {
-      e.dataTransfer.setData('text/plain', node.id)
-      // Hide the browser's drag-image "ghost" — the live reorder + landing line
-      // is the only cue we want.
-      const empty = document.createElement('div')
-      empty.style.cssText =
-        'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px'
-      document.body.appendChild(empty)
-      e.dataTransfer.setDragImage(empty, 0, 0)
-      setTimeout(() => empty.remove(), 0)
-    } catch {}
-  }
-  const onNodeDragOver = (e, node) => {
-    if (!dragNodeId || dragNodeId === node.id) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-    const r = e.currentTarget.getBoundingClientRect()
-    const y = e.clientY - r.top
-    let pos
-    if (isFolder(node)) {
-      // Most of a folder = drop INSIDE; thin top/bottom edges reorder around it.
-      if (y < r.height * 0.25) pos = 'before'
-      else if (y > r.height * 0.75) pos = 'after'
-      else pos = 'inside'
-    } else {
-      pos = y < r.height / 2 ? 'before' : 'after'
-    }
-    // Just mark where it will land — nothing moves until the drop, so the
-    // indicator stays put no matter which direction you approach from.
-    setDropTarget((cur) =>
-      cur && cur.id === node.id && cur.pos === pos ? cur : { id: node.id, pos }
-    )
-  }
-  const onNodeDrop = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (dragNodeId && dropTarget)
-      moveNode(dragNodeId, dropTarget.id, dropTarget.pos)
-    setDragNodeId(null)
-    setDropTarget(null)
-    dragOverRef.current = null
-  }
-  const onNodeDragEnd = () => {
-    setDragNodeId(null)
-    setDropTarget(null)
-    dragOverRef.current = null
-  }
-
-  const renderTemplateNode = (node, depth) => {
-    const dragging = dragNodeId === node.id
-    const indent = { paddingLeft: 12 + depth * 14 }
-    const renaming = renamingTemplateId === node.id
-    const renameInput = (
-      <input
-        className="template-rename"
-        autoFocus
-        value={renameValue}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setRenameValue(e.target.value)}
-        onBlur={() => {
-          renameTemplate(node.id, renameValue)
-          setRenamingTemplateId(null)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur()
-          else if (e.key === 'Escape') setRenamingTemplateId(null)
-        }}
-      />
-    )
-    if (isFolder(node)) {
-      const kids = childrenOf(node.id)
-      return (
-        <li key={node.id} className="template-tree-item">
-          <div
-            className={`folder-row ${dragging ? 'dragging' : ''} ${
-              dropTarget && dropTarget.id === node.id ? `drop-${dropTarget.pos}` : ''
-            }`}
-            data-node-id={node.id}
-            style={indent}
-            draggable={!renaming}
-            onDragStart={(e) => onNodeDragStart(e, node)}
-            onDragOver={(e) => onNodeDragOver(e, node)}
-            onDrop={onNodeDrop}
-            onDragEnd={onNodeDragEnd}
-            onClick={() => toggleFolder(node.id)}
-            title="Click to open/close · drag to move · right-click for options"
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setTemplateMenu({ x: e.clientX, y: e.clientY, id: node.id })
-            }}
-          >
-            <button
-              type="button"
-              className="folder-toggle"
-              onClick={(e) => {
-                e.stopPropagation()
-                toggleFolder(node.id)
-              }}
-              aria-label={node.collapsed ? 'expand folder' : 'collapse folder'}
-            >
-              {node.collapsed ? (
-                <ChevronRight size={14} />
-              ) : (
-                <ChevronDown size={14} />
-              )}
-            </button>
-            <Folder size={14} className="folder-icon" />
-            {renaming ? renameInput : <span className="folder-name">{node.name}</span>}
-          </div>
-          {!node.collapsed && kids.length > 0 && (
-            <ul className="templates-list nested">
-              {kids.map((k) => renderTemplateNode(k, depth + 1))}
-            </ul>
-          )}
-        </li>
-      )
-    }
-    return (
-      <li key={node.id} className="template-tree-item">
-        <div
-          className={`template-row ${
-            pendingTemplate && pendingTemplate.id === node.id ? 'pending' : ''
-          } ${selectedTemplateIds.has(node.id) ? 'checked' : ''} ${
-            dragging ? 'dragging' : ''
-          } ${
-            dropTarget && dropTarget.id === node.id ? `drop-${dropTarget.pos}` : ''
-          }`}
-          data-node-id={node.id}
-          style={indent}
-          draggable={!renaming}
-          onDragStart={(e) => onNodeDragStart(e, node)}
-          onDragOver={(e) => onNodeDragOver(e, node)}
-          onDrop={onNodeDrop}
-          onDragEnd={onNodeDragEnd}
-          onClick={() => handleTemplateClick(node)}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setTemplateMenu({ x: e.clientX, y: e.clientY, id: node.id })
-          }}
-          title={
-            pendingTemplate && pendingTemplate.id === node.id
-              ? 'Click on the grid to place this template — Esc to cancel'
-              : `Click to place · tick to select · drag to move · right-click for options`
-          }
-        >
-          <input
-            type="checkbox"
-            className="template-check"
-            checked={selectedTemplateIds.has(node.id)}
-            onClick={(e) => e.stopPropagation()}
-            onChange={() =>
-              setSelectedTemplateIds((prev) => {
-                const next = new Set(prev)
-                next.has(node.id) ? next.delete(node.id) : next.add(node.id)
-                return next
-              })
-            }
-            title="Select for copy / export / delete"
-            aria-label={`Select ${node.name}`}
-          />
-          {renaming ? renameInput : <span className="template-name">{node.name}</span>}
-        </div>
-      </li>
-    )
-  }
-
   return (
     <div
       className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''} ${pendingTemplate ? 'placing-template' : ''}`}
@@ -5658,30 +5472,32 @@ export default function PianoRoll({
               Use + to create a template or a folder.
             </div>
           ) : (
-            <ul
-              className={`templates-list root ${
-                dropTarget && dropTarget.pos === 'root' ? 'drop-root' : ''
-              }`}
-              onDragOver={(e) => {
-                // Empty area below the tree → drop at the root end.
-                if (dragNodeId && e.target === e.currentTarget) {
-                  e.preventDefault()
-                  setDropTarget((cur) =>
-                    cur && cur.pos === 'root' ? cur : { id: null, pos: 'root' }
-                  )
-                }
+            <TemplateTree
+              templates={templates}
+              onMove={moveNode}
+              selectedTemplateIds={selectedTemplateIds}
+              onToggleSelect={(id) =>
+                setSelectedTemplateIds((prev) => {
+                  const next = new Set(prev)
+                  next.has(id) ? next.delete(id) : next.add(id)
+                  return next
+                })
+              }
+              renamingTemplateId={renamingTemplateId}
+              renameValue={renameValue}
+              setRenameValue={setRenameValue}
+              commitRename={(id) => {
+                renameTemplate(id, renameValue)
+                setRenamingTemplateId(null)
               }}
-              onDrop={(e) => {
-                if (dragNodeId && dropTarget && dropTarget.pos === 'root') {
-                  e.preventDefault()
-                  moveNode(dragNodeId, null, 'root')
-                }
-                setDragNodeId(null)
-                setDropTarget(null)
-              }}
-            >
-              {childrenOf(null).map((n) => renderTemplateNode(n, 0))}
-            </ul>
+              cancelRename={() => setRenamingTemplateId(null)}
+              pendingTemplate={pendingTemplate}
+              onPlace={handleTemplateClick}
+              onToggleFolder={toggleFolder}
+              onContextMenu={(e, id) =>
+                setTemplateMenu({ x: e.clientX, y: e.clientY, id })
+              }
+            />
           )}
         </aside>
         <div
