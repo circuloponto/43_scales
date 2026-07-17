@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -66,6 +66,7 @@ function Row({ item, ctx }) {
 
   const common = {
     ref: setRef,
+    'data-node-id': node.id,
     style: { paddingLeft: 12 + depth * 14 },
     ...drag.attributes,
     ...drag.listeners,
@@ -153,9 +154,35 @@ export default function TemplateTree({
   const [activeId, setActiveId] = useState(null)
   const [overInfo, setOverInfo] = useState(null)
   const overRef = useRef(null)
+  const listRef = useRef(null)
+  const posRef = useRef(new Map())
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
+
+  // FLIP: after any layout change (reorder, nest, collapse) slide each row from
+  // its previous position to the new one, so moves animate instead of snapping.
+  useLayoutEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const prev = posRef.current
+    const next = new Map()
+    for (const el of list.querySelectorAll('[data-node-id]')) {
+      const id = el.getAttribute('data-node-id')
+      const top = el.getBoundingClientRect().top
+      next.set(id, top)
+      const old = prev.get(id)
+      if (old != null && Math.abs(old - top) > 0.5) {
+        el.style.transition = 'none'
+        el.style.transform = `translateY(${old - top}px)`
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 0.18s var(--ease, ease)'
+          el.style.transform = ''
+        })
+      }
+    }
+    posRef.current = next
+  })
 
   const flat = flatten(templates)
 
@@ -221,7 +248,10 @@ export default function TemplateTree({
         overRef.current = null
       }}
     >
-      <ul className={`templates-list root ${activeId ? 'is-dnd-active' : ''}`}>
+      <ul
+        ref={listRef}
+        className={`templates-list root ${activeId ? 'is-dnd-active' : ''}`}
+      >
         {flat.map((item) => (
           <Row key={item.node.id} item={item} ctx={ctx} />
         ))}
