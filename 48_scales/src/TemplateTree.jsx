@@ -67,22 +67,31 @@ function Row({ item, ctx }) {
   const common = {
     ref: setRef,
     'data-node-id': node.id,
-    style: { paddingLeft: 12 + depth * 14 },
+    style: { paddingLeft: 12 + depth * 38 },
     ...drag.attributes,
     ...drag.listeners,
+  }
+  const nestedCls = depth > 0 ? 'nested' : ''
+  const selected = ctx.selectedTemplateIds.has(node.id)
+  // Shift-click = toggle selection (for bulk manage) without placing/opening.
+  const onRowClick = (action) => (e) => {
+    if (e.shiftKey) ctx.onToggleSelect(node.id)
+    else action()
   }
 
   if (isFolder(node)) {
     return (
       <li className="template-tree-item" {...common}>
         <div
-          className={`folder-row ${isDragging ? 'dragging' : ''} ${dropCls}`}
-          onClick={() => ctx.onToggleFolder(node.id)}
+          className={`folder-row ${nestedCls} ${
+            selected ? 'checked' : ''
+          } ${isDragging ? 'dragging' : ''} ${dropCls}`}
+          onClick={onRowClick(() => ctx.onToggleFolder(node.id))}
           onContextMenu={(e) => {
             e.preventDefault()
             ctx.onContextMenu(e, node.id)
           }}
-          title="Click to open/close · drag to move · right-click for options"
+          title="Click to open/close · shift-click to select · drag to move · right-click for options"
         >
           <button
             type="button"
@@ -110,26 +119,16 @@ function Row({ item, ctx }) {
           ctx.pendingTemplate && ctx.pendingTemplate.id === node.id
             ? 'pending'
             : ''
-        } ${ctx.selectedTemplateIds.has(node.id) ? 'checked' : ''} ${
+        } ${selected ? 'checked' : ''} ${
           isDragging ? 'dragging' : ''
-        } ${dropCls}`}
-        onClick={() => ctx.onPlace(node)}
+        } ${nestedCls} ${dropCls}`}
+        onClick={onRowClick(() => ctx.onPlace(node))}
         onContextMenu={(e) => {
           e.preventDefault()
           ctx.onContextMenu(e, node.id)
         }}
-        title="Click to place · tick to select · drag to move · right-click for options"
+        title="Click to place · shift-click to select · drag to move · right-click for options"
       >
-        <input
-          type="checkbox"
-          className="template-check"
-          checked={ctx.selectedTemplateIds.has(node.id)}
-          onClick={stop}
-          onPointerDown={stop}
-          onChange={() => ctx.onToggleSelect(node.id)}
-          title="Select for copy / export / delete"
-          aria-label={`Select ${node.name}`}
-        />
         {renaming ? renameInput : <span className="template-name">{node.name}</span>}
       </div>
     </li>

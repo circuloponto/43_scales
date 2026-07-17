@@ -2661,6 +2661,18 @@ export default function PianoRoll({
       )
     )
   }
+  // Delete every node in a selection (mixed folders + templates). Any child of
+  // a deleted folder that isn't itself deleted is reparented to the root.
+  const deleteSelection = (ids) => {
+    if (!setTemplates) return
+    const idSet = new Set(ids)
+    setTemplates(
+      templates
+        .filter((n) => !idSet.has(n.id))
+        .map((n) => (idSet.has(n.parentId) ? { ...n, parentId: null } : n))
+    )
+    setSelectedTemplateIds(new Set())
+  }
   // Delete a folder but keep its contents — its children move up to the
   // folder's own parent.
   const deleteFolder = (id) => {
@@ -5102,6 +5114,62 @@ export default function PianoRoll({
       {templateMenu && (() => {
         const node = templates.find((n) => n.id === templateMenu.id)
         const close = () => setTemplateMenu(null)
+        // Multi-selection management (shift-selected several rows): bulk copy /
+        // export the templates in the selection, or delete everything selected.
+        if (
+          selectedTemplateIds.has(templateMenu.id) &&
+          selectedTemplateIds.size > 1
+        ) {
+          const sel = templates.filter((t) => selectedTemplateIds.has(t.id))
+          const tpls = sel.filter((t) => !isFolder(t))
+          return (
+            <div
+              className="tab-context-menu"
+              style={{ left: templateMenu.x, top: templateMenu.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="tab-context-menu-title">
+                {sel.length} selected
+              </div>
+              {tpls.length > 0 && (
+                <button
+                  type="button"
+                  className="tab-context-menu-item"
+                  onClick={() => {
+                    copyTemplates(tpls)
+                    close()
+                  }}
+                >
+                  Copy {tpls.length} template{tpls.length > 1 ? 's' : ''}
+                </button>
+              )}
+              {tpls.length > 0 && (
+                <button
+                  type="button"
+                  className="tab-context-menu-item"
+                  onClick={() => {
+                    downloadTemplates(tpls)
+                    setSelectedTemplateIds(new Set())
+                    close()
+                  }}
+                >
+                  Export {tpls.length} to file
+                </button>
+              )}
+              <div className="tab-context-menu-divider" />
+              <button
+                type="button"
+                className="tab-context-menu-item danger"
+                onClick={() => {
+                  deleteSelection(sel.map((t) => t.id))
+                  close()
+                }}
+              >
+                Delete {sel.length} item{sel.length > 1 ? 's' : ''}
+              </button>
+            </div>
+          )
+        }
         // Folder menu: rename + delete (delete keeps the contents).
         if (isFolder(node)) {
           return (

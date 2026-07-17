@@ -3138,18 +3138,22 @@
 
 /* Checkbox to multi-select rows (copy / export / delete). Sits at the left;
    clicking it toggles selection without placing the template. */
-.template-check {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
+/* dnd-kit makes rows focusable (keyboard drag); suppress the focus ring so a
+   click/shift-click doesn't draw a white outline. */
+.template-tree-item:focus,
+.template-tree-item:focus-visible,
+.template-row:focus,
+.folder-row:focus {
+  outline: none;
 }
-/* A ticked row gets only a faint tint — the checkbox itself is the signal. */
-.template-row.checked {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+
+/* Shift-selected rows (folders + templates) for bulk manage. Clear accent
+   fill + border, since there's no checkbox to signal selection. */
+.template-row.checked,
+.folder-row.checked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .template-rename {
@@ -3310,14 +3314,12 @@
 .folder-row.dragging {
   opacity: 0.4;
 }
-/* While dragging, suppress the row hover highlight — the landing line is the
-   only cue for a reorder (folders keep their "inside" highlight). */
-.templates-list.root.is-dnd-active .template-row:hover {
-  border-color: var(--hairline);
-  background: color-mix(in srgb, var(--off) 50%, transparent);
-}
-.templates-list.root.is-dnd-active .folder-row:hover:not(.drop-inside) {
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+/* While dragging, rows ignore the pointer so :hover never fires — the landing
+   line / folder highlight (set from drag state, not hover) is the only cue.
+   dnd-kit's drop detection is coordinate-based, so this doesn't affect it. */
+.templates-list.root.is-dnd-active .template-row,
+.templates-list.root.is-dnd-active .folder-row {
+  pointer-events: none;
 }
 .template-row,
 .folder-row {
@@ -3349,6 +3351,12 @@
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Rows nested inside a folder: stepped further in with a left accent guide so
+   the hierarchy is obvious. */
+.template-row.nested,
+.folder-row.nested {
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--hairline));
 }
 .template-tree-item {
   transition: transform 0.12s var(--ease);
