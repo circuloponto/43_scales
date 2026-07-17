@@ -2497,14 +2497,38 @@ export default function PianoRoll({
       return null
     }
     const arr = Array.isArray(data) ? data : [data]
-    return arr
-      .filter((t) => t && Array.isArray(t.notes))
-      .map((t) => ({
-        id: newTemplateId(),
+    // Keep templates (need a notes array) and folders (type 'folder').
+    const valid = arr.filter(
+      (t) => t && (t.type === 'folder' || Array.isArray(t.notes))
+    )
+    if (!valid.length) return null
+    // Fresh ids, but remap parentId through the same map so a folder keeps its
+    // children; parents outside this payload collapse to root (parentId null).
+    const idMap = new Map()
+    for (const t of valid) idMap.set(t.id, newTemplateId())
+    return valid.map((t) => {
+      const parentId =
+        t.parentId != null && idMap.has(t.parentId)
+          ? idMap.get(t.parentId)
+          : null
+      if (t.type === 'folder') {
+        return {
+          id: idMap.get(t.id),
+          type: 'folder',
+          name: typeof t.name === 'string' ? t.name : 'Folder',
+          parentId,
+          collapsed: !!t.collapsed,
+        }
+      }
+      return {
+        id: idMap.get(t.id),
+        type: 'template',
         name: typeof t.name === 'string' ? t.name : 'Imported',
+        parentId,
         capturedFrom: t.capturedFrom || { scaleId: scale.id, root },
         notes: t.notes,
-      }))
+      }
+    })
   }
   const deleteTemplate = (id) => {
     if (!setTemplates) return
@@ -2527,10 +2551,11 @@ export default function PianoRoll({
   }
   const downloadTemplates = (tpls) => {
     if (!tpls.length) return
-    const name =
-      tpls.length === 1
-        ? `${tpls[0].name.replace(/[^\w-]+/g, '_') || 'template'}.json`
-        : 'templates.json'
+    // Name the file after a single item or the folder at the head of a subtree.
+    const first = tpls[0]
+    const base =
+      tpls.length === 1 || first.type === 'folder' ? first.name : 'templates'
+    const name = `${(base || 'templates').replace(/[^\w-]+/g, '_') || 'templates'}.json`
     const blob = new Blob([templatesToJSON(tpls)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -2582,6 +2607,20 @@ export default function PianoRoll({
     }
     const t = templates.find((x) => x.id === id)
     return t ? [t] : []
+  }
+  // Expand a set of node ids to include every descendant, returned in template
+  // order (parents before children) so a folder travels with its full contents.
+  const withDescendants = (ids) => {
+    const roots = Array.isArray(ids) ? ids : [ids]
+    const wanted = new Set()
+    const add = (id) => {
+      if (wanted.has(id)) return
+      wanted.add(id)
+      for (const child of templates)
+        if (child.parentId === id) add(child.id)
+    }
+    roots.forEach(add)
+    return templates.filter((t) => wanted.has(t.id))
   }
 
   // ── Folders + creation + drag-reorder ─────────────────────────────────
@@ -5162,7 +5201,12 @@ export default function PianoRoll({
           selectedTemplateIds.size > 1
         ) {
           const sel = templates.filter((t) => selectedTemplateIds.has(t.id))
-          const tpls = sel.filter((t) => !isFolder(t))
+          // Include the contents of any selected folder, structure preserved.
+          const exportSet = withDescendants(sel.map((t) => t.id))
+          const tplCount = exportSet.filter((t) => !isFolder(t)).length
+          const tplLabel = tplCount
+            ? `${tplCount} template${tplCount > 1 ? 's' : ''}`
+            : 'selection'
           return (
             <div
               className="tab-context-menu"
@@ -5172,29 +5216,29 @@ export default function PianoRoll({
               <div className="tab-context-menu-title">
                 {sel.length} selected
               </div>
-              {tpls.length > 0 && (
+              {exportSet.length > 0 && (
                 <button
                   type="button"
                   className="tab-context-menu-item"
                   onClick={() => {
-                    copyTemplates(tpls)
+                    copyTemplates(exportSet)
                     close()
                   }}
                 >
-                  Copy {tpls.length} template{tpls.length > 1 ? 's' : ''}
+                  Copy {tplLabel}
                 </button>
               )}
-              {tpls.length > 0 && (
+              {exportSet.length > 0 && (
                 <button
                   type="button"
                   className="tab-context-menu-item"
                   onClick={() => {
-                    downloadTemplates(tpls)
+                    downloadTemplates(exportSet)
                     setSelectedTemplateIds(new Set())
                     close()
                   }}
                 >
-                  Export {tpls.length} to file
+                  Export {tplLabel} to file
                 </button>
               )}
               <div className="tab-context-menu-divider" />
@@ -5211,8 +5255,10 @@ export default function PianoRoll({
             </div>
           )
         }
-        // Folder menu: rename + delete (delete keeps the contents).
+        // Folder menu: rename, copy/export the whole subtree, delete.
         if (isFolder(node)) {
+          const sub = withDescendants(node.id)
+          const tplCount = sub.filter((t) => !isFolder(t)).length
           return (
             <div
               className="tab-context-menu"
@@ -5229,6 +5275,26 @@ export default function PianoRoll({
                 }}
               >
                 Rename folder
+              </button>
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  copyTemplates(sub)
+                  close()
+                }}
+              >
+                Copy folder{tplCount ? ` (${tplCount})` : ''}
+              </button>
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  downloadTemplates(sub)
+                  close()
+                }}
+              >
+                Export folder{tplCount ? ` (${tplCount})` : ''} to file
               </button>
               <div className="tab-context-menu-divider" />
               <button
