@@ -3103,8 +3103,7 @@
 }
 
 .template-row:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
 }
 
 /* Pending placement state: template waiting for the user's grid click.
