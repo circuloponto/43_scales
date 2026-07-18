@@ -1731,17 +1731,22 @@
 
 .roll-scale-tag {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--mute);
   user-select: none;
 }
+/* Shift only the leading "Scale" label so its word sits under the header's
+   "back" word (the back button indents its text past its icon). */
+.roll-scale-bar > .roll-scale-tag:first-of-type {
+  margin-left: 29px;
+}
 
 .roll-scale-pattern {
   display: grid;
-  grid-template-columns: repeat(12, 30px);
+  grid-template-columns: repeat(12, 27px);
   gap: 4px;
 }
 
