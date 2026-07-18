@@ -4762,7 +4762,7 @@ export default function PianoRoll({
         {/* Frequently-used controls live inline; everything else is in the
             Roll settings modal (M key or the ⋯ button). */}
         <NumberField
-          label="Tempo"
+          label="BPM"
           value={bpm}
           min={MIN_BPM}
           max={MAX_BPM}
@@ -6413,7 +6413,7 @@ export default function PianoRoll({
                 <div className="roll-params-section-title">Timing</div>
                 <div className="roll-params-fields">
                   <NumberField
-                    label="Tempo"
+                    label="BPM"
                     value={bpm}
                     min={MIN_BPM}
                     max={MAX_BPM}
