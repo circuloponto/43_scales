@@ -140,7 +140,15 @@ function SongTab({
       }}
       title={`${song.name}${isActive ? ' · double-click to rename · right-click for groups' : ''}`}
     >
-      <span className="song-tab-name">{song.name}</span>
+      <span className="song-tab-name">
+        {(() => {
+          // Show just the trailing number (drop the "Song" word); names without
+          // a number render as-is.
+          const m = song.name.match(/^.*?(\d+)\s*$/)
+          if (!m) return song.name
+          return <span className="song-tab-num">{m[1]}</span>
+        })()}
+      </span>
       {canClose && onRemove && (
         <button
           type="button"
