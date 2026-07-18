@@ -11,6 +11,8 @@ import {
   FilePlus,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -979,6 +981,17 @@ export default function PianoRoll({
   const COLLAPSED_W = 40
   const toggleCollapse = (key) =>
     setPanelCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
+  // The whole top chrome (settings header + scale spelling + tabs) collapses
+  // into a thin summary row (play · BPM · quick tab switcher) so the stage
+  // below reclaims the vertical space. Persisted.
+  const [topCollapsed, setTopCollapsed] = useState(() =>
+    loadJSON('roll.topCollapsed', false)
+  )
+  useEffect(() => {
+    try {
+      localStorage.setItem('roll.topCollapsed', JSON.stringify(topCollapsed))
+    } catch {}
+  }, [topCollapsed])
   // While reordering: { key, dx } — the panel being dragged and how far it has
   // moved from its slot (so it follows the cursor). null when not dragging.
   const [dragState, setDragState] = useState(null)
@@ -1002,7 +1015,9 @@ export default function PianoRoll({
   const panelStyle = (key) => {
     const collapsed = key !== 'roll' && panelCollapsed[key]
     const w = collapsed ? COLLAPSED_W : key === 'roll' ? null : panelW[key]
-    const h = collapsed ? null : panelH[key]
+    // The roll (main timeline) always stretches to fill the available height so
+    // it grows when the top chrome collapses; only side panels take a saved height.
+    const h = collapsed || key === 'roll' ? null : panelH[key]
     const dragging = dragState && dragState.key === key
     return {
       order: panelOrder.indexOf(key) * 2,
@@ -4737,6 +4752,61 @@ export default function PianoRoll({
       className={`roll-view ${allowOutOfScale ? 'allow-oos' : ''} ${pendingTemplate ? 'placing-template' : ''}`}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {topCollapsed ? (
+        <div className="roll-top-collapsed">
+          <button
+            className="play roll-play"
+            onClick={togglePlay}
+            aria-label="play roll"
+            title="Space: play/pause · Enter: play from start"
+          >
+            <PlayIcon />
+          </button>
+          <button
+            type="button"
+            className="roll-top-expand"
+            onClick={() => setTopCollapsed(false)}
+            title="Expand controls"
+            aria-label="Expand controls"
+          >
+            <ChevronDown size={18} strokeWidth={2.2} />
+          </button>
+          <span className="roll-top-bpm" title="Tempo (BPM)">
+            {bpm}
+            <span className="roll-top-bpm-unit">BPM</span>
+          </span>
+          <div className="roll-mini-tabs" role="tablist" aria-label="songs">
+            {songs.map((s) => {
+              const m = s.name.match(/^.*?(\d+)\s*$/)
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={s.id === activeSongId}
+                  className={`song-tab ${s.id === activeSongId ? 'active' : ''}`}
+                  onClick={() => onSelectSong?.(s.id)}
+                  title={s.name}
+                >
+                  {m ? m[1] : s.name}
+                </button>
+              )
+            })}
+            {onAddSong && (
+              <button
+                type="button"
+                className="song-tab-add"
+                onClick={onAddSong}
+                title="New song"
+                aria-label="New song"
+              >
+                +
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
       <header className={`roll-header ${mobileMenuOpen ? 'menu-open' : ''}`}>
         <button className="back-btn" onClick={onBack} aria-label="back to matrix">
           <BackIcon />
@@ -4893,6 +4963,15 @@ export default function PianoRoll({
           title="Space: play/pause · Enter: play from start"
         >
           <PlayIcon />
+        </button>
+        <button
+          type="button"
+          className="roll-top-collapse"
+          onClick={() => setTopCollapsed(true)}
+          title="Collapse controls to a summary row"
+          aria-label="Collapse controls"
+        >
+          <ChevronUp size={18} strokeWidth={2.2} />
         </button>
       </header>
 
@@ -5193,6 +5272,8 @@ export default function PianoRoll({
         )}
         </div>
       </div>
+        </>
+      )}
       {newMenu && (
         <div
           className="template-new-menu"
@@ -5723,12 +5804,6 @@ export default function PianoRoll({
           >
             <AnchorGripIcon />
           </button>
-          <div
-            className="panel-resize-y top"
-            onPointerDown={startHeightResize('roll', 'top')}
-            onDoubleClick={() => setPanelHeight('roll', null)}
-            title="Drag to resize height · double-click to reset"
-          />
           <div className="stage-view-bar">
             <div className="panel-view-toggle">
               <button

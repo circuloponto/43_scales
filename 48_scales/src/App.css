@@ -1708,6 +1708,74 @@
 
 /* Scale summary strip — quick reference for which pitch classes the
    current scale contains, mirroring the matrix's row. */
+/* Collapsed top chrome: a single summary row (play · BPM · quick tab switcher
+   · expand chevron) that replaces the header + scale bar so the stage grows. */
+.roll-top-collapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--roll-gap);
+  padding-bottom: 12px;
+  /* Clear the absolutely-positioned theme picker, like the header does. */
+  padding-right: 160px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.roll-top-bpm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--fg);
+  flex-shrink: 0;
+}
+.roll-top-bpm-unit {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.roll-mini-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.roll-mini-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* Expand / collapse toggle — accent-tinted so it's easy to spot as the drawer
+   handle (the plain outlined version was too easy to miss). */
+.roll-top-expand,
+.roll-top-collapse {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 46px;
+  height: var(--roll-ctl-h);
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 8px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.roll-top-expand:hover,
+.roll-top-collapse:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
 .roll-scale-bar {
   display: flex;
   align-items: center;
@@ -1746,7 +1814,8 @@
 
 .roll-scale-pattern {
   display: grid;
-  grid-template-columns: repeat(12, 27px);
+  /* Cell width tuned so the 12th note's right edge lands on the Swing box. */
+  grid-template-columns: repeat(12, 27.2px);
   gap: 4px;
 }
 
