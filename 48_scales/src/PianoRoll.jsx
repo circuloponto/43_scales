@@ -4914,9 +4914,9 @@ export default function PianoRoll({
           })}
         </div>
 
-        {/* Chrome-style song tabs — moved inline with the scale spelling to
-            free a row; each tab is its own piano-roll workspace, optionally
-            grouped under a coloured strip. */}
+        {/* Song tabs — inline with the scale spelling; each tab is its own
+            piano-roll workspace, optionally grouped under a coloured strip. */}
+        <span className="roll-scale-tag">Tabs</span>
         <div className="song-tabs" role="tablist" aria-label="songs">
         {/* The baseline lives on .song-tabs-list so it only spans the
             actual tabs, not the trailing + button or padding. */}
