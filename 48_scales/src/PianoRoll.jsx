@@ -3067,42 +3067,58 @@ export default function PianoRoll({
     setSelectedKeys(newSel)
   }
 
-  // Linear length increment of the selection by the rhythm selector's current
-  // value. dir = +1 grows, -1 shrinks. Each selected note's LENGTH changes by
-  // one rhythm-selector unit (a 16th, an 8th, a triplet, …) — positions stay
-  // put, so it adds/removes exactly that value each press instead of doubling.
+  // Proportional stretch / compress of the selection — augmentation and
+  // diminution. dir = +1 grows the shortest note by one rhythm-selector unit,
+  // -1 shrinks it; every other note (and every gap) scales by the same factor.
+  // The internal rhythm (the ratios between note values and gaps) is preserved
+  // and notes never overlap: when a note grows, the ones after it slide along
+  // so the next starts where it left off.
   const stretchSelection = (dir) => {
     if (selectedKeys.size === 0) return
     const FLOOR = 1 / 32 // finest note length in cells
     const stepCells = rhythmLength > 0 ? rhythmLength : 1
-    const delta = dir * stepCells
+    const round = (x) => Math.round(x * 1e6) / 1e6
     const cur = notesRef.current
     const items = []
+    let anchor = Infinity
+    let minLen = Infinity
     for (const key of selectedKeys) {
       const [bStr, midiStr] = key.split('-')
-      items.push({
-        key,
-        beat: Number(bStr),
-        len: cur.get(key) ?? 1,
-      })
+      const beat = Number(bStr)
+      const len = cur.get(key) ?? 1
+      items.push({ key, beat, midi: Number(midiStr), len })
+      if (beat < anchor) anchor = beat
+      if (len < minLen) minLen = len
     }
-    // Grow the timeline (Ableton-style) if any note now reaches past the end.
+    if (!(minLen > 0)) return
+    // The shortest note changes by exactly one rhythm-selector unit; derive the
+    // scale factor from that so every note grows in proportion. Compression is
+    // clamped so the shortest note can't collapse below the finest length.
+    const targetMin = Math.max(FLOOR, minLen + dir * stepCells)
+    const factor = targetMin / minLen
+    const scaled = items.map((it) => ({
+      midi: it.midi,
+      beat: round(anchor + (it.beat - anchor) * factor),
+      len: Math.max(FLOOR, round(it.len * factor)),
+    }))
+    // Grow the timeline (Ableton-style) if the stretched phrase reaches past it.
     let maxEnd = 0
-    for (const it of items) {
-      const nl = Math.max(FLOOR, it.len + delta)
-      if (it.beat + nl > maxEnd) maxEnd = it.beat + nl
-    }
+    for (const s of scaled) if (s.beat + s.len > maxEnd) maxEnd = s.beat + s.len
     const effectiveTotal = growBeatsForEnd(maxEnd)
-    // Positions (and thus keys) are unchanged — only the length values move.
+    const newSel = new Set()
     setNotes((prev) => {
       const next = new Map(prev)
-      for (const it of items) {
-        let nl = Math.max(FLOOR, it.len + delta)
-        nl = Math.min(nl, effectiveTotal - it.beat)
-        next.set(it.key, nl)
+      for (const it of items) next.delete(it.key)
+      for (const s of scaled) {
+        const beat = Math.min(s.beat, effectiveTotal - FLOOR)
+        const len = Math.min(s.len, effectiveTotal - beat)
+        const nk = `${beat}-${s.midi}`
+        next.set(nk, len)
+        newSel.add(nk)
       }
       return next
     })
+    setSelectedKeys(newSel)
   }
   const growSelection = () => {
     if (selectedKeys.size === 0) return
