@@ -1806,7 +1806,7 @@
   right: 0;
   bottom: 0;
   height: 1px;
-  background: var(--fg);
+  background: var(--accent);
   z-index: 2;
   pointer-events: none;
 }
@@ -1841,10 +1841,10 @@
   z-index: 2;
 }
 .song-tab.active {
-  /* White background + dark text — pops cleanly against dimmer neighbors. */
-  color: var(--ink);
-  background: var(--fg);
-  border-color: var(--fg);
+  /* Accent background + light text — pops cleanly against dimmer neighbors. */
+  color: var(--fg);
+  background: var(--accent);
+  border-color: var(--accent);
   /* Scoop upward: taller top padding so the active tab lifts above the
      inactive ones, and it visually connects through the baseline. */
   padding-top: 10px;
@@ -1868,12 +1868,12 @@
 .song-tab.active::before {
   left: -9px;
   border-bottom-right-radius: 9px;
-  box-shadow: 4px 4px 0 4px var(--fg);
+  box-shadow: 4px 4px 0 4px var(--accent);
 }
 .song-tab.active::after {
   right: -9px;
   border-bottom-left-radius: 9px;
-  box-shadow: -4px 4px 0 4px var(--fg);
+  box-shadow: -4px 4px 0 4px var(--accent);
 }
 .song-tab-name {
   overflow: hidden;
