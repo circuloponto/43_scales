@@ -498,6 +498,41 @@ function PlayIcon() {
   )
 }
 
+// Orientation toggle glyph: a minimal fret-grid (tic-tac-toe style — inner
+// lines only, no outer border). ONE persistent SVG so switching animates: the
+// core 3×3 turns a quarter-turn while the two outer columns grow in, so it
+// literally "turns the guitar and gets wider". `orientation` = current view.
+function FretDiagramIcon({ orientation = 'horizontal' }) {
+  const s = { stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' }
+  return (
+    <svg
+      className={`fret-orient-icon ${orientation}`}
+      width="17"
+      height="17"
+      viewBox="-11 -11 22 22"
+      aria-hidden="true"
+    >
+      {/* core 3×3 (always shown) */}
+      <line x1="-2" y1="-6" x2="-2" y2="6" {...s} />
+      <line x1="2" y1="-6" x2="2" y2="6" {...s} />
+      <line x1="-6" y1="-2" x2="6" y2="-2" {...s} />
+      <line x1="-6" y1="2" x2="6" y2="2" {...s} />
+      {/* extra column on the right — grows in for the wide (horizontal) board */}
+      <g className="fret-orient-col">
+        <line x1="6" y1="-6" x2="6" y2="6" {...s} />
+        <line x1="6" y1="-2" x2="10" y2="-2" {...s} />
+        <line x1="6" y1="2" x2="10" y2="2" {...s} />
+      </g>
+      {/* extra column on the left */}
+      <g className="fret-orient-col">
+        <line x1="-6" y1="-6" x2="-6" y2="6" {...s} />
+        <line x1="-10" y1="-2" x2="-6" y2="-2" {...s} />
+        <line x1="-10" y1="2" x2="-6" y2="2" {...s} />
+      </g>
+    </svg>
+  )
+}
+
 // Six-dot "grip" used as the panel reorder anchor.
 function AnchorGripIcon() {
   return (
@@ -5690,14 +5725,23 @@ export default function PianoRoll({
                 Fretboard
               </button>
             </div>
-            {fretboardView === 'vertical' && (
+            {fretboardView !== 'off' && (
               <button
                 type="button"
                 className="panel-swap-btn"
-                onClick={() => setFretboardView('horizontal')}
-                title="Move the fretboard to a horizontal neck over the roll"
+                onClick={() =>
+                  setFretboardView(
+                    fretboardView === 'vertical' ? 'horizontal' : 'vertical'
+                  )
+                }
+                title={
+                  fretboardView === 'vertical'
+                    ? 'Switch to a horizontal neck over the roll'
+                    : 'Switch to a vertical neck in the sidebar'
+                }
+                aria-label="Toggle fretboard orientation"
               >
-                ⇄ Horizontal
+                <FretDiagramIcon orientation={fretboardView} />
               </button>
             )}
           </div>
@@ -5836,16 +5880,6 @@ export default function PianoRoll({
                 Fretboard
               </button>
             </div>
-            {fretboardView === 'horizontal' && (
-              <button
-                type="button"
-                className="panel-swap-btn"
-                onClick={() => setFretboardView('vertical')}
-                title="Move the fretboard to a vertical neck in the sidebar"
-              >
-                ⇄ Vertical
-              </button>
-            )}
           </div>
           {fretboardView === 'horizontal' && (
             <div className="fretboard-stage">

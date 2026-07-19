@@ -2811,15 +2811,15 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .panel-swap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
   background: transparent;
   border: 1px solid var(--hairline);
-  border-radius: 4px;
-  padding: 3px 7px;
-  font-family: var(--sans);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  border-radius: 5px;
   color: var(--mute);
   cursor: pointer;
   transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
@@ -2827,6 +2827,36 @@
 .panel-swap-btn:hover {
   color: var(--fg);
   border-color: var(--mute);
+}
+/* Orientation glyph: turn the whole board a quarter-turn while the two outer
+   columns grow in — so switching literally turns the guitar and widens it. */
+.panel-swap-btn {
+  overflow: visible; /* let the icon spin without clipping the corners */
+}
+.fret-orient-icon {
+  transition: transform 0.4s var(--ease);
+}
+.fret-orient-icon .fret-orient-col {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.4s var(--ease), opacity 0.4s var(--ease);
+}
+/* Vertical (current view): turned a quarter-turn, outer columns collapsed → a
+   compact 3×3 board. */
+.fret-orient-icon.vertical {
+  transform: rotate(90deg);
+}
+.fret-orient-icon.vertical .fret-orient-col {
+  transform: scaleX(0);
+  opacity: 0;
+}
+/* Horizontal (current view): upright, wide 5×3 board. */
+.fret-orient-icon.horizontal {
+  transform: rotate(0deg);
+}
+.fret-orient-icon.horizontal .fret-orient-col {
+  transform: scaleX(1);
+  opacity: 1;
 }
 
 .fretboard {
