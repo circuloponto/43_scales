@@ -6126,12 +6126,13 @@ export default function PianoRoll({
                         style={{
                           width: totalBeats * BEAT_WIDTH,
                           // Grid lines scale with the horizontal zoom and the
-                          // time signature: a light line per cell (16th) and
-                          // a heavier one per beat (cellsPerBeat cells), so
-                          // they stay aligned with the notes + timeline ticks.
-                          backgroundSize: `${BEAT_WIDTH}px 100%, ${
-                            BEAT_WIDTH * cellsPerBeat
-                          }px 100%`,
+                          // time signature: a light line per SUBDIVISION (the
+                          // current rhythm's base division, in cells) and a
+                          // heavier one per beat, so the grid matches the chosen
+                          // subdiv and stays aligned with the notes + ticks.
+                          backgroundSize: `${
+                            BEAT_WIDTH * rhythmBaseCells
+                          }px 100%, ${BEAT_WIDTH * cellsPerBeat}px 100%`,
                         }}
                         onPointerDown={(e) => handleRowMouseDown(e, midi)}
                         onMouseMove={(e) => {

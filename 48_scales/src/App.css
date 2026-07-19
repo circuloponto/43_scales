@@ -3903,12 +3903,12 @@
   background-image:
     linear-gradient(
       to right,
-      color-mix(in srgb, var(--hairline) 55%, transparent) 1px,
+      color-mix(in srgb, var(--mute) 26%, transparent) 1px,
       transparent 1px
     ),
     linear-gradient(
       to right,
-      color-mix(in srgb, var(--mute) 35%, transparent) 1px,
+      color-mix(in srgb, var(--mute) 48%, transparent) 1px,
       transparent 1px
     );
   /* background-size is set inline so the grid lines scale with the zoom;
