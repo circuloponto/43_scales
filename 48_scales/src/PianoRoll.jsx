@@ -17,7 +17,7 @@ import {
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
-import Fretboard, { adjustFretPosition } from './Fretboard'
+import Fretboard from './Fretboard'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
@@ -3778,9 +3778,8 @@ export default function PianoRoll({
           return next
         })
         auditionNote(placeMidi, 0.3, 0.3)
-        // Shift the fretboard position if this note falls outside the current
-        // 5-fret span (it becomes the new upper/lower boundary).
-        setFretPosition((p) => adjustFretPosition(p, placeMidi))
+        // The fretboard position stays where the user set it (P + number); a
+        // note outside the 5-fret span just renders at its real fret outside it.
         setSelectedKeys(new Set())
       } else {
         const m = marqueeRef.current
@@ -4779,17 +4778,31 @@ export default function PianoRoll({
             {songs.map((s) => {
               const m = s.name.match(/^.*?(\d+)\s*$/)
               return (
-                <button
+                <div
                   key={s.id}
-                  type="button"
                   role="tab"
                   aria-selected={s.id === activeSongId}
                   className={`song-tab ${s.id === activeSongId ? 'active' : ''}`}
                   onClick={() => onSelectSong?.(s.id)}
                   title={s.name}
                 >
-                  {m ? m[1] : s.name}
-                </button>
+                  <span className="song-tab-name">{m ? m[1] : s.name}</span>
+                  {songs.length > 1 && onRemoveSong && (
+                    <button
+                      type="button"
+                      className="song-tab-close"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRemoveSong(s.id)
+                      }}
+                      aria-label={`Close ${s.name}`}
+                      title="Close song"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               )
             })}
             {onAddSong && (

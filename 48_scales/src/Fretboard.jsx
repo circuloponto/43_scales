@@ -60,18 +60,26 @@ export default function Fretboard({
   const pitches = notePitches || new Set()
   const lo = position
   const hi = position + SPAN
-  // Choose exactly ONE fret per sounding pitch, within the current position
-  // (lowest fret in the span), so a note never lights two frets. Keyed "s-f".
+  // One fret per sounding pitch, at its TRUE pitch (no octave folding). If the
+  // note can be fretted inside the chosen position [lo, hi] it shows there;
+  // otherwise it shows at its nearest real fret outside the window — so out-of-
+  // position notes appear where they actually are, not moved into the box.
   const chosen = new Set()
   for (const midi of pitches) {
-    let best = null
+    let best = null // { key, fret, dist } — dist = frets from the window (0 = in)
     for (let s = 0; s < TUNING.length; s++) {
       const fret = midi - TUNING[s]
-      if (fret >= lo && fret <= hi && (best === null || fret < best.fret)) {
-        best = { s, fret }
+      if (fret < 0 || fret > FRETS) continue
+      const dist = fret < lo ? lo - fret : fret > hi ? fret - hi : 0
+      if (
+        best === null ||
+        dist < best.dist ||
+        (dist === best.dist && fret < best.fret)
+      ) {
+        best = { key: `${s}-${fret}`, fret, dist }
       }
     }
-    if (best) chosen.add(`${best.s}-${best.fret}`)
+    if (best) chosen.add(best.key)
   }
   return (
     <div className={`fretboard ${orientation}`}>
