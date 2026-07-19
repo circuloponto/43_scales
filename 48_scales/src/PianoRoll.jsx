@@ -1487,6 +1487,14 @@ export default function PianoRoll({
   // inherit it so the user can pick a duration once and keep adding notes
   // at that length without re-resizing each one.
   const defaultNoteLengthRef = useRef(1)
+  // Mirror the default length in state so render consumers (the grid hover box)
+  // resize the instant it changes — e.g. picking a new subdivision — instead of
+  // only on the next mouse move. The ref stays for synchronous handler reads.
+  const [defaultNoteLen, setDefaultNoteLen] = useState(1)
+  const setDefaultNoteLength = (len) => {
+    defaultNoteLengthRef.current = len
+    setDefaultNoteLen(len)
+  }
   // Rhythm entry system. The reference UNIT is either a beat (4 cells) or a
   // bar/measure (16 cells) — toggled via `rhythmUnit`. A digit 1-9 divides
   // that unit exactly: ÷1 = the whole unit, ÷2 = half, ÷3 = a triplet, ÷4 =
@@ -1502,6 +1510,7 @@ export default function PianoRoll({
   const rhythmLength = rhythmBaseCells * rhythmMult
   useEffect(() => {
     defaultNoteLengthRef.current = rhythmLength
+    setDefaultNoteLen(rhythmLength)
   }, [rhythmLength])
   // Auto-cancel the multiplier prompt if the user doesn't follow up with
   // a digit within a couple of seconds — otherwise a stray digit later
@@ -3635,7 +3644,7 @@ export default function PianoRoll({
         trackEl.removeEventListener('pointercancel', up)
         try { trackEl.releasePointerCapture?.(e.pointerId) } catch {}
         const finalLength = notesRef.current.get(currentKey)
-        if (finalLength != null) defaultNoteLengthRef.current = finalLength
+        if (finalLength != null) setDefaultNoteLength(finalLength)
         auditionNote(midi, 0.3, 0.3)
       }
       trackEl.addEventListener('pointermove', move)
@@ -4239,7 +4248,7 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
-      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
+      if (snapshotPushed) setDefaultNoteLength(lastDraggedLength)
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
@@ -4320,7 +4329,7 @@ export default function PianoRoll({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
-      if (snapshotPushed) defaultNoteLengthRef.current = lastDraggedLength
+      if (snapshotPushed) setDefaultNoteLength(lastDraggedLength)
     }
     document.body.style.cursor = 'ew-resize'
     window.addEventListener('pointermove', move)
@@ -6021,9 +6030,7 @@ export default function PianoRoll({
                       // (from picking a rhythm OR resizing). Deliberately
                       // DETACHED from the rhythm selector, which resizing never
                       // rewrites. (Hidden entirely while over a placed note.)
-                      width: `${
-                        (defaultNoteLengthRef.current ?? 1) * BEAT_WIDTH
-                      }px`,
+                      width: `${(defaultNoteLen ?? 1) * BEAT_WIDTH}px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
                   />
