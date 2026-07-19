@@ -1614,6 +1614,14 @@ export default function PianoRoll({
     // cursor; the epsilon absorbs float error on exact grid lines.
     return clamp(Math.floor(raw / step + 1e-9) * step)
   }
+  // Snap a DRAGGED beat to the current subdivision grid (nearest, so a moved
+  // note lands on the same divisions placement uses — not the raw 16th/cell
+  // grid). The multiplier only affects length, so snap to rhythmBaseCells.
+  const snapDragBeat = (b) => {
+    if (freeMode) return b
+    const step = rhythmBaseCells > 0 ? rhythmBaseCells : 1
+    return Math.round(b / step) * step
+  }
   // No overlaps allowed: if a snapped placement start lands INSIDE an existing
   // note on the row (the grid tiles from beat 0, so the floored start can fall
   // back into the preceding note), begin at that note's end instead — the box
@@ -4044,7 +4052,7 @@ export default function PianoRoll({
       // cross beat 0 disappear off the left edge instead of stacking on
       // beat 0. Top bound still clamps so notes can't run past totalBeats.
       let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
-      if (!freeMode) newAnchorBeat = Math.round(newAnchorBeat)
+      newAnchorBeat = snapDragBeat(newAnchorBeat)
       // Ableton-style: dragging toward the end grows the timeline rather than
       // clamping. Grow to fit the furthest note end in the group, then clamp
       // the anchor to whatever length we ended up with (MAX_BEATS ceiling).
@@ -4084,12 +4092,12 @@ export default function PianoRoll({
 
       const newPositions = drag.group.map((g) => {
         let nb = g.originalBeat + beatDelta
-        // Snap each note to the current grid, not just the drag delta. Notes
-        // placed off-grid (free mode, or a different subdivision) otherwise
-        // keep their original fractional offset because only the anchor gets
-        // rounded — this pulls every note onto the live grid. On-grid notes
-        // round to themselves, so group intervals are preserved.
-        if (!freeMode) nb = Math.round(nb)
+        // Snap each note to the current subdivision grid, not just the drag
+        // delta. Notes placed off-grid (free mode, or a different subdivision)
+        // otherwise keep their original fractional offset because only the
+        // anchor gets snapped — this pulls every note onto the live grid.
+        // On-grid notes snap to themselves, so group intervals are preserved.
+        nb = snapDragBeat(nb)
         const offscreen = nb < 0
         if (!offscreen) nb = Math.min(curTotal - 0.001, nb)
         let nm
