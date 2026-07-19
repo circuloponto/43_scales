@@ -5889,13 +5889,6 @@ export default function PianoRoll({
               >
                 Piano roll
               </button>
-              <button
-                type="button"
-                className={fretboardView === 'horizontal' ? 'on' : ''}
-                onClick={() => setFretboardView('horizontal')}
-              >
-                Fretboard
-              </button>
             </div>
           </div>
           {fretboardView === 'horizontal' && (
