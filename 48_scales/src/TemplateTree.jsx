@@ -16,11 +16,19 @@ const isFolder = (n) => n && n.type === 'folder'
 // children), tagging each node with its depth for indentation. With a search
 // query, nesting is ignored — it returns a flat list of the templates AND
 // folders whose name matches (case-insensitive), found anywhere in the tree.
-function flatten(templates, searchQuery) {
+function flatten(templates, searchQuery, tagFilter) {
   const q = (searchQuery || '').trim().toLowerCase()
-  if (q) {
+  const filterTags = (tagFilter || []).map((t) => t.toLowerCase())
+  if (q || filterTags.length) {
     return templates
-      .filter((n) => (n.name || '').toLowerCase().includes(q))
+      .filter((n) => {
+        const nameOk = !q || (n.name || '').toLowerCase().includes(q)
+        const tagOk =
+          !filterTags.length ||
+          (!isFolder(n) &&
+            (n.tags || []).some((t) => filterTags.includes(t.toLowerCase())))
+        return nameOk && tagOk
+      })
       .map((node) => ({ node, depth: 0 }))
   }
   const byParent = new Map()
@@ -154,6 +162,7 @@ function Row({ item, ctx }) {
 export default function TemplateTree({
   templates,
   searchQuery,
+  tagFilter,
   onMove,
   onMoveMany,
   selectedTemplateIds,
@@ -208,7 +217,7 @@ export default function TemplateTree({
     posRef.current = next
   })
 
-  const flat = flatten(templates, searchQuery)
+  const flat = flatten(templates, searchQuery, tagFilter)
 
   // Rows are stable, so over.rect is accurate. Folder = before / inside / after
   // by cursor band; template = before / after by the halfway line.
@@ -303,9 +312,10 @@ export default function TemplateTree({
         {flat.map((item) => (
           <Row key={item.node.id} item={item} ctx={ctx} />
         ))}
-        {searchQuery && flat.length === 0 && (
-          <li className="templates-search-empty">No matches.</li>
-        )}
+        {(searchQuery || (tagFilter && tagFilter.length > 0)) &&
+          flat.length === 0 && (
+            <li className="templates-search-empty">No matches.</li>
+          )}
       </ul>
     </DndContext>
   )

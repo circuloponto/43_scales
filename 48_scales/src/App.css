@@ -3367,6 +3367,312 @@
   color: var(--mute);
 }
 
+/* ── Tags ─────────────────────────────────────────────────────────────── */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tag-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.tag-chip-x:hover {
+  color: var(--fg);
+}
+.template-editor-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 2px 2px;
+}
+.template-editor-tags-label {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-right: 2px;
+}
+.template-editor-tag-input {
+  flex: 1;
+  min-width: 100px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.template-editor-tag-input::placeholder {
+  color: var(--mute);
+}
+
+.tags-modal {
+  width: 360px;
+  max-height: 78vh;
+  gap: 8px;
+}
+.tags-modal-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tags-modal-new {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.tags-new-input {
+  width: 84px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.tags-new-input::placeholder {
+  color: var(--mute);
+}
+.tags-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  border: none;
+  border-left: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+.tags-new-btn:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.tags-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.tags-action:hover:not(:disabled) {
+  border-color: var(--mute);
+}
+.tags-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tags-action.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.tags-modal .finder-modal-close {
+  margin-left: auto;
+}
+.tags-filter-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+}
+.tags-clear-filter,
+.templates-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+}
+.tags-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+}
+.tags-modal-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--fg);
+}
+.tags-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 3px 2px;
+}
+.tags-section-title {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 6px;
+}
+.tags-working {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 20px;
+}
+.tags-working-empty {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+}
+.tags-divider {
+  height: 1px;
+  background: var(--hairline);
+}
+.tags-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tags-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  align-items: center;
+  gap: 8px;
+}
+.tag-del,
+.tag-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+}
+.tag-del {
+  background: color-mix(in srgb, #ff5f56 82%, transparent);
+}
+.tag-del:hover {
+  background: #ff5f56;
+}
+.tag-add {
+  background: color-mix(in srgb, #3fb765 80%, transparent);
+}
+.tag-add:hover:not(:disabled) {
+  background: #3fb765;
+}
+.tag-add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tag-name {
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 4px;
+}
+.tag-name:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.tag-name.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.tag-rename-input {
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  text-align: center;
+  padding: 4px;
+}
+.tags-empty {
+  padding: 10px;
+  text-align: center;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.templates-filter-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 4px 0 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+.templates-filter-tags {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.templates-filter-clear {
+  flex-shrink: 0;
+}
+
 /* "+" creation dropdown — fixed-positioned so the toolbar's overflow can't
    clip it (coords are set inline from the button's rect). */
 .template-icon-btn.on {

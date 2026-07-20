@@ -8,6 +8,7 @@ import {
   Guitar,
   Search,
   X,
+  Tags,
   Plus,
   FolderPlus,
   FilePlus,
@@ -25,6 +26,7 @@ import { isHotkey } from './hotkeys'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
+import TagsModal from './TagsModal'
 import TemplateTree from './TemplateTree'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
@@ -1000,6 +1002,71 @@ export default function PianoRoll({
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [searchOpen])
+  // ── Tags ────────────────────────────────────────────────────────────────
+  // The tag library = a persisted registry (tags created but not yet applied)
+  // unioned with every tag found on a template. The Tags modal manages this
+  // library and builds a "working set" that can be applied as a filter.
+  const [tagsModalOpen, setTagsModalOpen] = useState(false)
+  const [workingTags, setWorkingTags] = useState([]) // the "Tags" working set
+  const [tagRegistry, setTagRegistry] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('eightFold.tagRegistry') || '[]')
+      return Array.isArray(v) ? v : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('eightFold.tagRegistry', JSON.stringify(tagRegistry))
+    } catch {}
+  }, [tagRegistry])
+  const allTags = useMemo(() => {
+    const seen = new Map()
+    const add = (t) => {
+      if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t)
+    }
+    tagRegistry.forEach(add)
+    for (const n of templates) (n.tags || []).forEach(add)
+    return [...seen.values()].sort((a, b) => a.localeCompare(b))
+  }, [tagRegistry, templates])
+  const registerTags = (names) =>
+    setTagRegistry((prev) => {
+      const set = new Set(prev.map((t) => t.toLowerCase()))
+      const extra = names.filter((n) => n && !set.has(n.toLowerCase()))
+      return extra.length ? [...prev, ...extra] : prev
+    })
+  const deleteTagEverywhere = (tag) => {
+    const low = tag.toLowerCase()
+    setTagRegistry((prev) => prev.filter((t) => t.toLowerCase() !== low))
+    if (setTemplates)
+      setTemplates((prev) =>
+        prev.map((n) =>
+          n.tags?.some((t) => t.toLowerCase() === low)
+            ? { ...n, tags: n.tags.filter((t) => t.toLowerCase() !== low) }
+            : n
+        )
+      )
+    setWorkingTags((prev) => prev.filter((t) => t.toLowerCase() !== low))
+  }
+  const renameTagEverywhere = (oldTag, newName) => {
+    const nn = (newName || '').trim()
+    const low = oldTag.toLowerCase()
+    if (!nn || nn.toLowerCase() === low) return
+    const swap = (arr) => [
+      ...new Set(arr.map((t) => (t.toLowerCase() === low ? nn : t))),
+    ]
+    setTagRegistry((prev) => swap(prev))
+    if (setTemplates)
+      setTemplates((prev) =>
+        prev.map((n) =>
+          n.tags?.some((t) => t.toLowerCase() === low)
+            ? { ...n, tags: swap(n.tags) }
+            : n
+        )
+      )
+    setWorkingTags((prev) => swap(prev))
+  }
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
   const [editingTemplateId, setEditingTemplateId] = useState(null)
@@ -2792,7 +2859,7 @@ export default function PianoRoll({
   }
   // Save from the editor. Stores scale-relative records so it replays on any
   // scale. Updates the existing template when editing, else appends a new one.
-  const saveNewTemplate = (name, items) => {
+  const saveNewTemplate = (name, items, tags = []) => {
     if (!setTemplates || !items.length) {
       setTemplateEditorOpen(false)
       setEditingTemplateId(null)
@@ -2807,6 +2874,7 @@ export default function PianoRoll({
                 name: name || t.name,
                 capturedFrom: { scaleId: scale.id, root },
                 notes: items,
+                tags,
               }
             : t
         )
@@ -2822,9 +2890,12 @@ export default function PianoRoll({
           parentId: null,
           capturedFrom: { scaleId: scale.id, root },
           notes: items,
+          tags,
         },
       ])
     }
+    // Any brand-new tag names join the library registry.
+    if (tags.length) registerTags(tags)
     setTemplateEditorOpen(false)
     setEditingTemplateId(null)
   }
@@ -5911,6 +5982,14 @@ export default function PianoRoll({
               >
                 <Search size={14} strokeWidth={1.8} />
               </button>
+              <button
+                type="button"
+                className={`template-icon-btn ${tagsModalOpen ? 'on' : ''}`}
+                onClick={() => setTagsModalOpen(true)}
+                title="Manage tags"
+              >
+                <Tags size={14} strokeWidth={1.8} />
+              </button>
               <input
                 ref={templateFileInputRef}
                 type="file"
@@ -6916,9 +6995,21 @@ export default function PianoRoll({
               }}
               initialName={editing ? editing.name : ''}
               initialNotes={editing ? editing.notes : null}
+              initialTags={editing ? editing.tags || [] : []}
             />
           )
         })()}
+      {tagsModalOpen && (
+        <TagsModal
+          allTags={allTags}
+          workingTags={workingTags}
+          setWorkingTags={setWorkingTags}
+          onNewTag={(name) => registerTags([name])}
+          onDeleteTag={deleteTagEverywhere}
+          onRenameTag={renameTagEverywhere}
+          onClose={() => setTagsModalOpen(false)}
+        />
+      )}
 
 
       {chordModalOpen && (

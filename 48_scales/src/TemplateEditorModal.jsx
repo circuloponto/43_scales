@@ -31,12 +31,34 @@ export default function TemplateEditorModal({
   onClose,
   initialName = '',
   initialNotes = null,
+  initialTags = [],
 }) {
   const baseRoot = 60 + root
   const midiOf = (it) =>
     baseRoot + scale.notes[it.degree] + it.octave * 12 + (it.semis || 0)
 
   const [name, setName] = useState(initialName)
+  // Tags for this template (free-text chips).
+  const [tags, setTags] = useState(() =>
+    Array.isArray(initialTags) ? initialTags : []
+  )
+  const [tagInput, setTagInput] = useState('')
+  const addTag = (raw) => {
+    // A comma-separated list adds one tag per name.
+    const parts = (raw || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!parts.length) return
+    setTags((prev) => {
+      const out = [...prev]
+      for (const p of parts)
+        if (!out.some((x) => x.toLowerCase() === p.toLowerCase())) out.push(p)
+      return out
+    })
+    setTagInput('')
+  }
+  const removeTag = (t) => setTags((prev) => prev.filter((x) => x !== t))
   // Map "midi:beat" -> length (cells).
   const [notes, setNotes] = useState(() => {
     const m = new Map()
@@ -304,7 +326,7 @@ export default function TemplateEditorModal({
         return
       }
     }
-    onSave(name.trim(), items)
+    onSave(name.trim(), items, tags)
   }
 
   const kbdHeight = (MIDI_HIGH - MIDI_LOW + 1) * ROW_H
@@ -337,6 +359,36 @@ export default function TemplateEditorModal({
           >
             ×
           </button>
+        </div>
+        <div className="template-editor-tags">
+          <span className="template-editor-tags-label">Tags</span>
+          {tags.map((t) => (
+            <span key={t} className="tag-chip">
+              {t}
+              <button
+                type="button"
+                className="tag-chip-x"
+                onClick={() => removeTag(t)}
+                aria-label={`Remove tag ${t}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            className="template-editor-tag-input"
+            value={tagInput}
+            placeholder={tags.length ? 'Add tag…' : 'Add tags…'}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault()
+                addTag(tagInput)
+              } else if (e.key === 'Backspace' && !tagInput && tags.length) {
+                removeTag(tags[tags.length - 1])
+              }
+            }}
+          />
         </div>
         <p className="modal-sub">
           Click empty space to add · drag a note to move it · drag its right
