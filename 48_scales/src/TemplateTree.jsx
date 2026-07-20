@@ -14,13 +14,13 @@ const isFolder = (n) => n && n.type === 'folder'
 
 // Flatten the tree into the visible, ordered list (collapsed folders hide their
 // children), tagging each node with its depth for indentation. With a search
-// query, folders/nesting are ignored — it returns a flat list of the templates
-// whose name matches (case-insensitive), found anywhere in the tree.
+// query, nesting is ignored — it returns a flat list of the templates AND
+// folders whose name matches (case-insensitive), found anywhere in the tree.
 function flatten(templates, searchQuery) {
   const q = (searchQuery || '').trim().toLowerCase()
   if (q) {
     return templates
-      .filter((n) => !isFolder(n) && (n.name || '').toLowerCase().includes(q))
+      .filter((n) => (n.name || '').toLowerCase().includes(q))
       .map((node) => ({ node, depth: 0 }))
   }
   const byParent = new Map()
@@ -95,8 +95,12 @@ function Row({ item, ctx }) {
         <div
           className={`folder-row ${nestedCls} ${
             selected ? 'checked' : ''
-          } ${isDragging ? 'dragging' : ''} ${dropCls}`}
-          onClick={onRowClick(() => ctx.onToggleFolder(node.id))}
+          } ${isDragging ? 'dragging' : ''} ${
+            ctx.flashId === node.id ? 'flash' : ''
+          } ${dropCls}`}
+          onClick={onRowClick(() =>
+            ctx.searchQuery ? ctx.onReveal(node) : ctx.onToggleFolder(node.id)
+          )}
           onContextMenu={(e) => {
             e.preventDefault()
             ctx.onContextMenu(e, node.id)
@@ -300,7 +304,7 @@ export default function TemplateTree({
           <Row key={item.node.id} item={item} ctx={ctx} />
         ))}
         {searchQuery && flat.length === 0 && (
-          <li className="templates-search-empty">No templates match.</li>
+          <li className="templates-search-empty">No matches.</li>
         )}
       </ul>
     </DndContext>

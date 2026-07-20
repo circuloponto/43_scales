@@ -3193,19 +3193,20 @@
 .roll-view.placing-template .grid-area .beats-track {
   cursor: crosshair !important;
 }
-/* Brief highlight when a search result is revealed in the full list. */
+/* Reveal cue when a search result is jumped to — a neutral pulse (NOT the
+   accent, so it doesn't read as the "selected for placing" state). */
 @keyframes template-flash {
-  0% {
-    background: color-mix(in srgb, var(--accent) 28%, transparent);
-    box-shadow: 0 0 0 2px var(--accent),
-      0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
-  }
+  0%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fg) 50%, transparent);
   }
 }
-.template-row.flash {
-  animation: template-flash 1.5s var(--ease);
+.template-row.flash,
+.folder-row.flash {
+  animation: template-flash 0.5s var(--ease) 3;
 }
 
 .template-name {

@@ -992,6 +992,9 @@ export default function PianoRoll({
         searchBtnRef.current?.contains(e.target)
       )
         return
+      // A click on a result row must reach the row's own click (which reveals
+      // and closes) — don't pre-empt it here.
+      if (e.target.closest?.('[data-node-id]')) return
       closeSearch()
     }
     document.addEventListener('mousedown', onDown)
