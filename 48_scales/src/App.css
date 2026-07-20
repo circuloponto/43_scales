@@ -3428,6 +3428,206 @@
 .template-editor-tag-input::placeholder {
   color: var(--mute);
 }
+.template-editor-paste {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-right: 8px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), color 0.12s var(--ease);
+}
+.template-editor-paste:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Import-conflict resolution dialog */
+.import-conflicts-modal {
+  width: 480px;
+  max-height: 80vh;
+  gap: 10px;
+}
+.import-conflicts-title {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.import-conflicts-modal .settings-modal-header {
+  align-items: center;
+}
+.import-conflicts-modal .finder-modal-close {
+  margin-left: auto;
+}
+.import-conflicts-sub {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--mute);
+  line-height: 1.4;
+}
+.import-conflicts-sub strong {
+  color: var(--fg);
+}
+.import-conflicts-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.import-conflicts-bulk button {
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), color 0.12s var(--ease);
+}
+.import-conflicts-bulk button:hover {
+  border-color: var(--mute);
+  color: var(--fg);
+}
+.import-conflicts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.import-conflict-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.import-conflict-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.import-conflict-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+}
+.import-conflict-label {
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.import-conflict-kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.import-conflict-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--mute);
+}
+.import-conflict-msg {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.import-conflict-choices {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.import-conflict-choices button {
+  padding: 5px 9px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--hairline);
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.import-conflict-choices button:first-child {
+  border-left: none;
+}
+.import-conflict-choices button:hover:not(:disabled) {
+  color: var(--fg);
+}
+.import-conflict-choices button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--mute);
+}
+.import-conflict-choices button.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.import-conflicts-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.import-conflicts-cancel {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+.import-conflicts-cancel:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.import-conflicts-go {
+  padding: 7px 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--bg);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.import-conflicts-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 .tags-modal {
   width: 360px;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClipboardPaste } from 'lucide-react'
 
 // Template builder / editor. This reuses the REAL piano-roll timeline markup
 // and CSS (.roll-content / .kbd-column / .piano-key / .grid-area / .grid-row /
@@ -32,6 +33,7 @@ export default function TemplateEditorModal({
   initialName = '',
   initialNotes = null,
   initialTags = [],
+  getPasteNotes,
 }) {
   const baseRoot = 60 + root
   const midiOf = (it) =>
@@ -142,13 +144,32 @@ export default function TemplateEditorModal({
     return out
   }, [])
 
-  const COLS = useMemo(() => {
+  const [cols, setCols] = useState(() => {
     let c = 32
     if (initialNotes)
       for (const it of initialNotes) c = Math.max(c, it.beat + (it.length || 1))
     return Math.max(32, Math.ceil((c + 1) / 16) * 16)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  })
+
+  // Paste the roll's copied selection (module clipboard, via getPasteNotes) into
+  // this grid: the copied notes' MIDI pitches land at their relative beats
+  // starting at 0. Grows the grid width if the paste is wider than it.
+  const pasteRollSelection = () => {
+    const clip = getPasteNotes?.()
+    if (!clip || !clip.items || !clip.items.length) return
+    const maxEnd = Math.max(
+      ...clip.items.map((it) => it.relBeat + (it.length || 1))
+    )
+    setCols((c) => Math.max(c, Math.ceil((maxEnd + 1) / 16) * 16))
+    setNotes((prev) => {
+      const m = new Map(prev)
+      for (const it of clip.items) {
+        const midi = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, it.midi))
+        m.set(`${midi}:${it.relBeat}`, it.length || 1)
+      }
+      return m
+    })
+  }
 
   // Center the view on the root octave when it opens.
   useEffect(() => {
@@ -167,7 +188,11 @@ export default function TemplateEditorModal({
         if (e.key === 'Escape') onClose()
         return
       }
-      if (e.code === 'Space') {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
+        // Paste the roll's copied selection into the template grid.
+        e.preventDefault()
+        pasteRollSelection()
+      } else if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
       } else if (e.code === 'Enter') {
@@ -223,7 +248,7 @@ export default function TemplateEditorModal({
     // its length for the new note — same idea as the roll.
     const sub = rhythm && rhythm.subdivision > 0 ? rhythm.subdivision : 1
     const len = rhythm && rhythm.length > 0 ? rhythm.length : 1
-    const beat = Math.max(0, Math.min(COLS - len, Math.round(raw / sub) * sub))
+    const beat = Math.max(0, Math.min(cols - len, Math.round(raw / sub) * sub))
     if (covers(midi, beat)) return
     setNotes((prev) => new Map(prev).set(`${midi}:${beat}`, len))
     onAudition?.(midi)
@@ -248,7 +273,7 @@ export default function TemplateEditorModal({
     let curBeat = beat
     const move = (mv) => {
       let nb = beat + (mv.clientX - startX) / BEAT_W
-      nb = Math.max(0, Math.min(COLS - len, Math.round(nb / sub) * sub))
+      nb = Math.max(0, Math.min(cols - len, Math.round(nb / sub) * sub))
       const dRows = Math.round((mv.clientY - startY) / ROW_H)
       const nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, midi - dRows))
       if (nm === curMidi && nb === curBeat) return
@@ -284,7 +309,7 @@ export default function TemplateEditorModal({
       const dx = mv.clientX - startX
       const len = Math.max(
         1,
-        Math.min(COLS - beat, startLen + Math.round(dx / BEAT_W))
+        Math.min(cols - beat, startLen + Math.round(dx / BEAT_W))
       )
       setNotes((prev) => new Map(prev).set(`${midi}:${beat}`, len))
     }
@@ -351,6 +376,16 @@ export default function TemplateEditorModal({
               if (e.key === 'Enter') save()
             }}
           />
+          {getPasteNotes?.()?.items?.length > 0 && (
+            <button
+              type="button"
+              className="template-editor-paste"
+              onClick={pasteRollSelection}
+              title="Paste the copied roll selection (Ctrl/⌘ + V)"
+            >
+              <ClipboardPaste size={13} /> Paste selection
+            </button>
+          )}
           <button
             type="button"
             className="finder-modal-close"
@@ -499,7 +534,7 @@ export default function TemplateEditorModal({
                     <div
                       className="beats-track"
                       style={{
-                        width: COLS * BEAT_W,
+                        width: cols * BEAT_W,
                         backgroundSize: `${BEAT_W}px 100%, ${
                           BEAT_W * CELLS_PER_BEAT
                         }px 100%`,

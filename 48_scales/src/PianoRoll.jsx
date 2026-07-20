@@ -27,6 +27,7 @@ import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
 import TagsModal from './TagsModal'
+import ImportConflictsModal from './ImportConflictsModal'
 import TemplateTree from './TemplateTree'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
@@ -1007,6 +1008,7 @@ export default function PianoRoll({
   // unioned with every tag found on a template. The Tags modal manages this
   // library and builds a "working set" that can be applied as a filter.
   const [tagsModalOpen, setTagsModalOpen] = useState(false)
+  const [importConflicts, setImportConflicts] = useState(null)
   const [workingTags, setWorkingTags] = useState([]) // the "Tags" working set
   const [tagRegistry, setTagRegistry] = useState(() => {
     try {
@@ -2768,10 +2770,177 @@ export default function PianoRoll({
     const name = `${(base || 'templates').replace(/[^\w-]+/g, '_') || 'templates'}.json`
     requestSave(templatesToJSON(tpls), name)
   }
-  const addTemplates = (incoming) => {
-    if (!setTemplates || !incoming || !incoming.length) return
-    setTemplates([...templates, ...incoming])
+  const exactKey = (t) =>
+    `${(t.name || '').toLowerCase()}|${JSON.stringify(t.notes || [])}`
+
+  // All descendants (templates + nested folders) of a node within a flat list.
+  const collectSubtree = (nodes, rootId) => {
+    const byParent = new Map()
+    nodes.forEach((n) => {
+      const p = n.parentId ?? null
+      if (!byParent.has(p)) byParent.set(p, [])
+      byParent.get(p).push(n)
+    })
+    const out = []
+    const walk = (id) => {
+      for (const child of byParent.get(id) || []) {
+        out.push(child)
+        if (isFolder(child)) walk(child.id)
+      }
+    }
+    walk(rootId)
+    return out
   }
+  // Name-agnostic content fingerprint of a folder: the sorted multiset of its
+  // descendant template signatures. Two folders with the same templates (in any
+  // order, at any depth) share a content sig.
+  const folderContentSig = (nodes, folderId) =>
+    JSON.stringify(
+      collectSubtree(nodes, folderId)
+        .filter((n) => !isFolder(n))
+        .map((n) => templateSignature(n.notes || []))
+        .sort()
+    )
+
+  // Classify each TOP-LEVEL import unit against the existing library so the
+  // dialog can explain conflicts. A unit is a root-level template or a root-level
+  // folder (which carries its whole subtree). Templates: CONTENT duplicate =
+  // matches an existing one by signature or exact name+notes; NAME clash = same
+  // name, different notes. Folders: CONTENT duplicate = an existing folder shares
+  // its name AND its contents; NAME clash = same folder name, different contents.
+  // A folder's children ride with the folder's decision — skipping a duplicate
+  // folder drops its subtree too.
+  const classifyImport = (incoming) => {
+    const roots = incoming.filter((n) => (n.parentId ?? null) === null)
+
+    const existingTpls = templates.filter((t) => !isFolder(t))
+    const sigToName = new Map()
+    const exactToName = new Map()
+    existingTpls.forEach((t) => {
+      const s = templateSignature(t.notes || [])
+      if (!sigToName.has(s)) sigToName.set(s, t.name || 'Template')
+      exactToName.set(exactKey(t), t.name || 'Template')
+    })
+    const tplNames = new Set(existingTpls.map((t) => (t.name || '').toLowerCase()))
+
+    // Existing folders: name -> set of content sigs sharing that name.
+    const folderContentByName = new Map()
+    templates.filter(isFolder).forEach((f) => {
+      const key = (f.name || '').toLowerCase()
+      if (!folderContentByName.has(key)) folderContentByName.set(key, new Set())
+      folderContentByName.get(key).add(folderContentSig(templates, f.id))
+    })
+
+    return roots.map((node) => {
+      if (isFolder(node)) {
+        const subtree = collectSubtree(incoming, node.id)
+        const childCount = subtree.filter((n) => !isFolder(n)).length
+        const key = (node.name || '').toLowerCase()
+        const base = { node, subtree, kind: 'folder', childCount }
+        if (folderContentByName.has(key)) {
+          const sameContent = folderContentByName
+            .get(key)
+            .has(folderContentSig(incoming, node.id))
+          return {
+            ...base,
+            status: sameContent ? 'content-dup' : 'name-clash',
+            matchName: node.name,
+          }
+        }
+        return { ...base, status: 'new' }
+      }
+      const sig = templateSignature(node.notes || [])
+      const ek = exactKey(node)
+      const base = { node, subtree: [], kind: 'template' }
+      if (sigToName.has(sig) || exactToName.has(ek)) {
+        return {
+          ...base,
+          status: 'content-dup',
+          matchName: sigToName.get(sig) || exactToName.get(ek),
+        }
+      }
+      if (tplNames.has((node.name || '').toLowerCase())) {
+        return { ...base, status: 'name-clash', matchName: node.name }
+      }
+      return { ...base, status: 'new' }
+    })
+  }
+
+  // Write the resolved import. `units` are classified top-level units carrying a
+  // `choice` ('skip' drops the unit and — for a folder — its whole subtree).
+  // Names stay unique per kind: a kept template/folder whose name collides is
+  // suffixed "(2)", "(3)"…; a folder's inner names are left untouched.
+  const commitImport = (units) => {
+    if (!setTemplates) return { added: 0, skipped: 0 }
+    const kept = units.filter((u) => u.choice !== 'skip')
+    const tplNames = new Set(
+      templates.filter((t) => !isFolder(t)).map((t) => (t.name || '').toLowerCase())
+    )
+    const folderNames = new Set(
+      templates.filter(isFolder).map((f) => (f.name || '').toLowerCase())
+    )
+    const uniqueName = (name, taken, fallback) => {
+      let out = name || fallback
+      if (taken.has(out.toLowerCase())) {
+        let n = 2
+        while (taken.has(`${out} (${n})`.toLowerCase())) n++
+        out = `${out} (${n})`
+      }
+      taken.add(out.toLowerCase())
+      return out
+    }
+    const additions = []
+    for (const u of kept) {
+      if (u.kind === 'folder') {
+        const name = uniqueName(u.node.name, folderNames, 'Folder')
+        additions.push({ ...u.node, name })
+        // Subtree ids are already fresh and internally consistent — append as-is.
+        additions.push(...u.subtree)
+      } else {
+        const name = uniqueName(u.node.name, tplNames, 'Template')
+        additions.push({ ...u.node, name })
+      }
+    }
+    if (additions.length) setTemplates([...templates, ...additions])
+    return { added: kept.length, skipped: units.length - kept.length }
+  }
+
+  // Entry point for every import path. If nothing conflicts, it imports
+  // silently with a flash; otherwise it opens the conflict dialog so the user
+  // decides per item before anything is written.
+  const beginImport = (incoming) => {
+    if (!incoming || !incoming.length) {
+      flashExport('No template')
+      return
+    }
+    const classified = classifyImport(incoming)
+    const conflicts = classified.filter((c) => c.status !== 'new')
+    if (!conflicts.length) {
+      const { added, skipped } = commitImport(
+        classified.map((c) => ({ ...c, choice: 'import' }))
+      )
+      importFeedback(added, skipped)
+      return
+    }
+    setImportConflicts(classified)
+  }
+
+  const resolveImport = (resolved) => {
+    setImportConflicts(null)
+    const { added, skipped } = commitImport(resolved)
+    importFeedback(added, skipped)
+  }
+
+  const importFeedback = (added, skipped) =>
+    flashExport(
+      added
+        ? skipped
+          ? `+${added} · ${skipped} skipped`
+          : `+${added}`
+        : skipped
+        ? `${skipped} skipped`
+        : 'No template'
+    )
   const pasteTemplates = async () => {
     let text = ''
     try {
@@ -2785,8 +2954,7 @@ export default function PianoRoll({
       flashExport('No template')
       return
     }
-    addTemplates(parsed)
-    flashExport(`+${parsed.length}`)
+    beginImport(parsed)
   }
   const importTemplateFiles = async (files) => {
     const all = []
@@ -2794,12 +2962,7 @@ export default function PianoRoll({
       const parsed = parseTemplates(await file.text())
       if (parsed) all.push(...parsed)
     }
-    if (all.length) {
-      addTemplates(all)
-      flashExport(`+${all.length}`)
-    } else {
-      flashExport('No template')
-    }
+    beginImport(all)
   }
   // Templates a menu/action targets: the multi-selection if the clicked one is
   // part of it, otherwise just the clicked template.
@@ -6996,6 +7159,7 @@ export default function PianoRoll({
               initialName={editing ? editing.name : ''}
               initialNotes={editing ? editing.notes : null}
               initialTags={editing ? editing.tags || [] : []}
+              getPasteNotes={() => clipboardRef.current}
             />
           )
         })()}
@@ -7008,6 +7172,14 @@ export default function PianoRoll({
           onDeleteTag={deleteTagEverywhere}
           onRenameTag={renameTagEverywhere}
           onClose={() => setTagsModalOpen(false)}
+        />
+      )}
+
+      {importConflicts && (
+        <ImportConflictsModal
+          items={importConflicts}
+          onConfirm={resolveImport}
+          onCancel={() => setImportConflicts(null)}
         />
       )}
 
