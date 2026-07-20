@@ -13,8 +13,16 @@ import { Folder, ChevronRight, ChevronDown } from 'lucide-react'
 const isFolder = (n) => n && n.type === 'folder'
 
 // Flatten the tree into the visible, ordered list (collapsed folders hide their
-// children), tagging each node with its depth for indentation.
-function flatten(templates) {
+// children), tagging each node with its depth for indentation. With a search
+// query, folders/nesting are ignored — it returns a flat list of the templates
+// whose name matches (case-insensitive), found anywhere in the tree.
+function flatten(templates, searchQuery) {
+  const q = (searchQuery || '').trim().toLowerCase()
+  if (q) {
+    return templates
+      .filter((n) => !isFolder(n) && (n.name || '').toLowerCase().includes(q))
+      .map((node) => ({ node, depth: 0 }))
+  }
   const byParent = new Map()
   for (const n of templates) {
     const pid = n.parentId ?? null
@@ -123,8 +131,10 @@ function Row({ item, ctx }) {
             : ''
         } ${selected ? 'checked' : ''} ${
           isDragging ? 'dragging' : ''
-        } ${nestedCls} ${dropCls}`}
-        onClick={onRowClick(() => ctx.onPlace(node))}
+        } ${ctx.flashId === node.id ? 'flash' : ''} ${nestedCls} ${dropCls}`}
+        onClick={onRowClick(() =>
+          ctx.searchQuery ? ctx.onReveal(node) : ctx.onPlace(node)
+        )}
         onContextMenu={(e) => {
           e.preventDefault()
           ctx.onContextMenu(e, node.id)
@@ -139,6 +149,7 @@ function Row({ item, ctx }) {
 
 export default function TemplateTree({
   templates,
+  searchQuery,
   onMove,
   onMoveMany,
   selectedTemplateIds,
@@ -150,6 +161,8 @@ export default function TemplateTree({
   cancelRename,
   pendingTemplate,
   onPlace,
+  onReveal,
+  flashId,
   onToggleFolder,
   onContextMenu,
 }) {
@@ -191,7 +204,7 @@ export default function TemplateTree({
     posRef.current = next
   })
 
-  const flat = flatten(templates)
+  const flat = flatten(templates, searchQuery)
 
   // Rows are stable, so over.rect is accurate. Folder = before / inside / after
   // by cursor band; template = before / after by the halfway line.
@@ -227,6 +240,9 @@ export default function TemplateTree({
     cancelRename,
     pendingTemplate,
     onPlace,
+    onReveal,
+    flashId,
+    searchQuery,
     onToggleFolder,
     onContextMenu,
   }
@@ -283,6 +299,9 @@ export default function TemplateTree({
         {flat.map((item) => (
           <Row key={item.node.id} item={item} ctx={ctx} />
         ))}
+        {searchQuery && flat.length === 0 && (
+          <li className="templates-search-empty">No templates match.</li>
+        )}
       </ul>
     </DndContext>
   )

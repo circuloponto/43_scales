@@ -6,6 +6,8 @@ import {
   ClipboardPaste,
   Upload,
   Guitar,
+  Search,
+  X,
   Plus,
   FolderPlus,
   FilePlus,
@@ -943,6 +945,58 @@ export default function PianoRoll({
   // state. `dragNodeId` = node being dragged (rendered dimmed in place while a
   // floating `dragGhost` follows the cursor and the list reorders live).
   const [newMenu, setNewMenu] = useState(null) // null | { x, y } (fixed pos)
+  // Template search: an icon toggles a filter bar; typing narrows the list
+  // (case-insensitive, by name). Dismissed by the icon or an outside click.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const searchWrapRef = useRef(null)
+  const searchBtnRef = useRef(null)
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setTemplateSearch('')
+  }
+  // Clicking a search result jumps to that template in the full list: close the
+  // filter, expand its ancestor folders, centre it in view and flash it.
+  const [flashTemplateId, setFlashTemplateId] = useState(null)
+  const flashTimerRef = useRef(null)
+  const revealTemplate = (node) => {
+    closeSearch()
+    const byId = new Map(templates.map((n) => [n.id, n]))
+    const toExpand = new Set()
+    let p = node.parentId
+    while (p != null && byId.has(p)) {
+      toExpand.add(p)
+      p = byId.get(p).parentId
+    }
+    if (toExpand.size && setTemplates) {
+      setTemplates((prev) =>
+        prev.map((n) => (toExpand.has(n.id) ? { ...n, collapsed: false } : n))
+      )
+    }
+    setFlashTemplateId(node.id)
+    // Wait for the filter-close + folder-expand to render, then centre it.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-node-id="${node.id}"]`)
+        if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+    )
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+    flashTimerRef.current = setTimeout(() => setFlashTemplateId(null), 1500)
+  }
+  useEffect(() => {
+    if (!searchOpen) return
+    const onDown = (e) => {
+      if (
+        searchWrapRef.current?.contains(e.target) ||
+        searchBtnRef.current?.contains(e.target)
+      )
+        return
+      closeSearch()
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [searchOpen])
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
   const [editingTemplateId, setEditingTemplateId] = useState(null)
@@ -5844,6 +5898,16 @@ export default function PianoRoll({
               >
                 <Upload size={14} strokeWidth={1.8} />
               </button>
+              <button
+                ref={searchBtnRef}
+                type="button"
+                className={`template-icon-btn ${searchOpen ? 'on' : ''}`}
+                onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                title="Search templates"
+                aria-expanded={searchOpen}
+              >
+                <Search size={14} strokeWidth={1.8} />
+              </button>
               <input
                 ref={templateFileInputRef}
                 type="file"
@@ -5855,6 +5919,32 @@ export default function PianoRoll({
                   e.target.value = ''
                 }}
               />
+            </div>
+          )}
+          {fretboardView !== 'vertical' && searchOpen && (
+            <div className="templates-search" ref={searchWrapRef}>
+              <Search size={13} className="templates-search-icon" />
+              <input
+                className="templates-search-input"
+                placeholder="Search templates…"
+                value={templateSearch}
+                autoFocus
+                onChange={(e) => setTemplateSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') closeSearch()
+                }}
+              />
+              {templateSearch && (
+                <button
+                  type="button"
+                  className="templates-search-clear"
+                  onClick={() => setTemplateSearch('')}
+                  title="Clear"
+                  aria-label="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
           )}
           {fretboardView === 'vertical' ? (
@@ -5873,6 +5963,9 @@ export default function PianoRoll({
           ) : (
             <TemplateTree
               templates={templates}
+              searchQuery={templateSearch}
+              onReveal={revealTemplate}
+              flashId={flashTemplateId}
               onMove={moveNode}
               onMoveMany={moveNodes}
               selectedTemplateIds={selectedTemplateIds}

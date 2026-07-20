@@ -3193,6 +3193,20 @@
 .roll-view.placing-template .grid-area .beats-track {
   cursor: crosshair !important;
 }
+/* Brief highlight when a search result is revealed in the full list. */
+@keyframes template-flash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: 0 0 0 2px var(--accent),
+      0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.template-row.flash {
+  animation: template-flash 1.5s var(--ease);
+}
 
 .template-name {
   flex: 1;
@@ -3295,6 +3309,61 @@
 .templates-toolbar .template-icon-btn,
 .templates-toolbar .templates-feedback {
   flex: 0 0 auto;
+}
+
+/* Template search bar — appears below the icon row when the search icon is on. */
+.templates-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 4px 0 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--off) 50%, transparent);
+}
+.templates-search-icon {
+  color: var(--mute);
+  flex-shrink: 0;
+}
+.templates-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.templates-search-input::placeholder {
+  color: var(--mute);
+}
+.templates-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+}
+.templates-search-clear:hover {
+  color: var(--fg);
+}
+.templates-search-empty {
+  list-style: none;
+  padding: 10px 12px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--mute);
 }
 
 /* "+" creation dropdown — fixed-positioned so the toolbar's overflow can't
