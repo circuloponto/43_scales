@@ -19,6 +19,7 @@ import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import Fretboard from './Fretboard'
 import { useSaveAs } from './useSaveAs'
+import { isHotkey } from './hotkeys'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
@@ -1839,32 +1840,27 @@ export default function PianoRoll({
       }
       const meta = e.ctrlKey || e.metaKey
       const k = (e.key || '').toLowerCase()
-      // Ctrl/Cmd + Shift + Z → redo. Plain Ctrl/Cmd + Z → undo.
-      if (meta && (e.code === 'KeyZ' || k === 'z')) {
+      // Editable action hotkeys (see hotkeys.js). Ctrl/Cmd + Y stays a fixed
+      // redo alias alongside the rebindable redo binding.
+      if (isHotkey('undo', e)) {
         e.preventDefault()
-        if (e.shiftKey) redo()
-        else undo()
-      } else if (
-        meta &&
-        (e.code === 'KeyY' || e.code === 'KeyX' || k === 'y' || k === 'x')
-      ) {
+        undo()
+      } else if (isHotkey('redo', e) || (meta && e.code === 'KeyY')) {
         e.preventDefault()
         redo()
-      } else if (meta && e.code === 'KeyC') {
+      } else if (isHotkey('copy', e)) {
         e.preventDefault()
         copyNotes()
-      } else if (meta && !e.shiftKey && e.code === 'KeyV') {
-        // Ctrl/Cmd+V → paste. With Shift held this branch is skipped so the
-        // gesture can fall through to the flipVertical handler below.
+      } else if (isHotkey('paste', e)) {
         e.preventDefault()
         pasteNotes()
-      } else if (meta && (e.code === 'KeyA' || k === 'a')) {
+      } else if (isHotkey('selectAll', e)) {
         e.preventDefault()
         setSelectedKeys(new Set(notesRef.current.keys()))
-      } else if (e.code === 'Space') {
+      } else if (isHotkey('play', e)) {
         e.preventDefault()
         togglePlay()
-      } else if (e.code === 'Enter') {
+      } else if (isHotkey('returnPlayhead', e)) {
         // Enter returns the playhead to where playback last started; pressing
         // it again there (or when that start was already 0) jumps to the very
         // beginning. Stop first if playing so the rAF doesn't overwrite the
@@ -1880,7 +1876,7 @@ export default function PianoRoll({
         // Update the ref immediately so a rapid second Enter reads the new
         // position rather than the pre-render value.
         playheadBeatRef.current = target
-      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+      } else if (isHotkey('delete', e) || e.code === 'Backspace') {
         // A selected region takes priority: delete it, baking its window notes
         // onto the timeline.
         if (selectedRegionIdRef.current) {
@@ -1908,19 +1904,19 @@ export default function PianoRoll({
           tHeldRef.current = false
           setTHeld(false)
         }
-      } else if (e.shiftKey && e.code === 'KeyH') {
+      } else if (isHotkey('flipH', e)) {
         e.preventDefault()
         flipHorizontal()
-      } else if (e.shiftKey && e.code === 'KeyV') {
+      } else if (isHotkey('flipV', e)) {
         e.preventDefault()
         flipVertical()
-      } else if (e.code === 'BracketRight') {
+      } else if (isHotkey('stretch', e)) {
         e.preventDefault()
         growSelection()
-      } else if (e.code === 'BracketLeft') {
+      } else if (isHotkey('compress', e)) {
         e.preventDefault()
         shrinkSelection()
-      } else if (e.code === 'KeyT') {
+      } else if (isHotkey('rotate', e)) {
         // Toggle: press T to enter Rotate mode (badge stays lit, arrow
         // keys rotate the selection's pitches). Press T again to exit.
         if (!e.repeat) {
@@ -1944,7 +1940,7 @@ export default function PianoRoll({
             1500
           )
         }
-      } else if (e.code === 'KeyR' && selectedKeys.size > 0) {
+      } else if (isHotkey('rune', e) && selectedKeys.size > 0) {
         // Turn the selection into a MIDI region. The pattern is tiled across
         // every octave that fits the keyboard, but laid out SEQUENTIALLY IN
         // TIME (lowest octave first, ascending) into a hidden source sequence.

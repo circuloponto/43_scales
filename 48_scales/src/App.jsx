@@ -7,6 +7,8 @@ import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
 import { useSaveAs } from './useSaveAs'
+import { isHotkey } from './hotkeys'
+import HotkeyEditor from './HotkeyEditor'
 import './App.css'
 
 const ORIGINAL_PURPLE = '#9c36b5'
@@ -853,14 +855,10 @@ function App() {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
       const meta = e.ctrlKey || e.metaKey
-      if (meta && (e.code === 'KeyZ' || (e.key || '').toLowerCase() === 'z')) {
+      if (isHotkey('undo', e)) {
         e.preventDefault()
-        if (e.shiftKey) redoSongState()
-        else undoSongState()
-      } else if (
-        meta &&
-        (e.code === 'KeyY' || (e.key || '').toLowerCase() === 'y')
-      ) {
+        undoSongState()
+      } else if (isHotkey('redo', e) || (meta && e.code === 'KeyY')) {
         e.preventDefault()
         redoSongState()
       }
@@ -2266,39 +2264,21 @@ function App() {
               </button>
             </div>
             <p className="modal-sub">
-              All shortcuts are active in the piano roll unless noted.
+              Click a shortcut to rebind it, then press the new keys (Esc to
+              cancel). All are active in the piano roll unless noted.
+            </p>
+            <HotkeyEditor />
+            <p className="modal-sub shortcuts-fixed-note">
+              The keys and gestures below aren’t rebindable.
             </p>
             {[
               {
-                title: 'Playback',
+                title: 'More keys',
                 items: [
-                  ['Space', 'Play / pause'],
-                  ['Enter', 'Return playhead to last start; press again for beat 0'],
-                ],
-              },
-              {
-                title: 'Edit',
-                items: [
-                  ['Ctrl / ⌘ + Z', 'Undo'],
-                  ['Ctrl / ⌘ + Shift + Z, Ctrl + Y', 'Redo'],
-                  ['Ctrl / ⌘ + A', 'Select all notes'],
-                  ['Ctrl / ⌘ + C', 'Copy selection'],
-                  ['Ctrl / ⌘ + V', 'Paste at playhead (or origin beat)'],
                   ['P + number', 'Set the fretboard position (lower fret of the 5-fret span)'],
-                  ['R', 'Make a Rune from the selection (drag to climb; Delete to bake)'],
-                  ['Delete / Backspace', 'Delete selected notes'],
                   ['Escape', 'Clear selection / cancel template / drop loop'],
-                ],
-              },
-              {
-                title: 'Transform selection',
-                items: [
-                  ['Shift + H', 'Flip horizontally (mirror in time)'],
-                  ['Shift + V', 'Flip vertically (mirror in pitch)'],
-                  ['] / [', 'Stretch / compress selection in time (lengths + gaps scale together)'],
-                  ['T', 'Toggle Rotate mode (↑ / ↓ rotate pitches)'],
                   ['Arrow keys', 'Move selection by one step / beat'],
-                  ['T + ↑ / ↓', 'Rotate the selection’s pitches'],
+                  ['T + ↑ / ↓', 'Rotate the selection’s pitches (Rotate mode on)'],
                 ],
               },
               {

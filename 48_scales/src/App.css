@@ -4692,6 +4692,75 @@
   color: var(--fg);
 }
 
+/* Editable hotkeys */
+.hotkey-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.hotkey-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.hotkey-binding {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 4px 10px;
+  min-width: 100px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.hotkey-binding:hover {
+  border-color: var(--mute);
+}
+.hotkey-binding.capturing {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.hotkey-warning {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: #ff8f6b;
+  padding: 4px 6px;
+}
+.hotkey-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 6px 0 2px;
+}
+.hotkey-editor-actions button {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.hotkey-editor-actions button:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.shortcuts-fixed-note {
+  margin-top: 10px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
 /* Scale picker trigger — inline text button that sits next to the settings
    gear and opens the show/hide-scales popover. */
 /* Vertical column sandwiched between .matrix and .panel — hosts the
