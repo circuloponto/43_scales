@@ -1375,6 +1375,9 @@ function App() {
             setTemplates={setTemplates}
             modeStep={modeStep}
             settings={settings}
+            overlayOpen={
+              settingsOpen || shortcutsOpen || scaleSettingsOpen || finderOpen
+            }
             songs={songs}
             activeSongId={activeSongId}
             onSelectSong={setActiveSongId}

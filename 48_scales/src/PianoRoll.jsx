@@ -619,6 +619,7 @@ export default function PianoRoll({
   setTemplates,
   modeStep = null,
   settings = {},
+  overlayOpen = false,
   songs = [],
   activeSongId = null,
   onSelectSong,
@@ -1831,6 +1832,9 @@ export default function PianoRoll({
       // The template editor modal owns all shortcuts (its own transport) while
       // it's open — don't let the roll react underneath it.
       if (templateEditorOpen) return
+      // App-level modals (settings / shortcuts / finder / scale settings) also
+      // own the keyboard while open — suppress roll shortcuts underneath them.
+      if (overlayOpen) return
       // While the chord-voicings viewer is open, ←/→ cycle through voicings
       // (and take precedence over the note-nudge arrows below).
       if (chordVoicingOpen && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
@@ -1904,19 +1908,22 @@ export default function PianoRoll({
           tHeldRef.current = false
           setTHeld(false)
         }
-      } else if (isHotkey('flipH', e)) {
+      } else if (isHotkey('flipH', e) && selectedKeys.size > 0) {
         e.preventDefault()
         flipHorizontal()
-      } else if (isHotkey('flipV', e)) {
+      } else if (isHotkey('flipV', e) && selectedKeys.size > 0) {
         e.preventDefault()
         flipVertical()
-      } else if (isHotkey('stretch', e)) {
+      } else if (isHotkey('stretch', e) && selectedKeys.size > 0) {
         e.preventDefault()
         growSelection()
-      } else if (isHotkey('compress', e)) {
+      } else if (isHotkey('compress', e) && selectedKeys.size > 0) {
         e.preventDefault()
         shrinkSelection()
-      } else if (isHotkey('rotate', e)) {
+      } else if (
+        isHotkey('rotate', e) &&
+        (selectedKeys.size > 0 || tHeldRef.current)
+      ) {
         // Toggle: press T to enter Rotate mode (badge stays lit, arrow
         // keys rotate the selection's pitches). Press T again to exit.
         if (!e.repeat) {
@@ -1927,9 +1934,11 @@ export default function PianoRoll({
         // Toggle the full Roll settings modal.
         e.preventDefault()
         setParamsOpen((v) => !v)
-      } else if (e.code === 'KeyP') {
-        // Prime fretboard-position entry: the next digit(s) set the position
-        // (lower fret of the 5-fret span). Ends on Enter/Escape or a timeout.
+      } else if (e.code === 'KeyP' && fretboardView !== 'off') {
+        // Prime fretboard-position entry — only when a fretboard is actually
+        // open, so P doesn't hijack the digit keys (rhythm entry) otherwise.
+        // The next digit(s) set the position (lower fret of the 5-fret span).
+        // Ends on Enter/Escape or a timeout.
         if (!e.repeat) {
           e.preventDefault()
           setFretPosPriming(true)
@@ -1991,8 +2000,9 @@ export default function PianoRoll({
         // the type-ahead accumulator (e.g. "3" → "333…"), landing on the wrong
         // subdivision. Only the initial press counts.
         if (e.repeat) return
-        // While P-primed, digits build the fretboard position instead.
-        if (fretPosPrimingRef.current) {
+        // While P-primed (and a fretboard is open), digits build the fretboard
+        // position instead of the rhythm value.
+        if (fretPosPrimingRef.current && fretboardView !== 'off') {
           const d = e.code.slice(5)
           fretPosBufRef.current = (fretPosBufRef.current + d).slice(-2)
           setFretPosition(
