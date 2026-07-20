@@ -6,6 +6,7 @@ import { templates as defaultTemplates } from './templates'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
+import { useSaveAs } from './useSaveAs'
 import './App.css'
 
 const ORIGINAL_PURPLE = '#9c36b5'
@@ -635,6 +636,8 @@ function App() {
   // confirm. A `version` field lets us evolve the schema later without
   // breaking older exports (we only accept v1 for now).
   const SESSION_VERSION = 1
+  // Custom "Save as" dialog for all file exports (session / templates).
+  const { requestSave, saveAsModal } = useSaveAs()
   const exportSession = () => {
     const session = {
       version: SESSION_VERSION,
@@ -655,16 +658,8 @@ function App() {
     }
     try {
       const json = JSON.stringify(session, null, 2)
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
       const stamp = new Date().toISOString().slice(0, 10)
-      a.download = `8fold-session-${stamp}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      requestSave(json, `8fold-session-${stamp}.json`)
     } catch (err) {
       window.alert('Could not export session: ' + err.message)
     }
@@ -674,16 +669,8 @@ function App() {
   const exportTemplatesLibrary = () => {
     try {
       const json = JSON.stringify(templates, null, 2)
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
       const stamp = new Date().toISOString().slice(0, 10)
-      a.download = `8fold-templates-${stamp}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      requestSave(json, `8fold-templates-${stamp}.json`)
     } catch (err) {
       window.alert('Could not export templates: ' + err.message)
     }
@@ -2766,6 +2753,7 @@ function App() {
           </div>
         )
       })()}
+      {saveAsModal}
     </div>
   )
 }

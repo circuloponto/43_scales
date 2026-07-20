@@ -18,6 +18,7 @@ import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import Fretboard from './Fretboard'
+import { useSaveAs } from './useSaveAs'
 import ChordDiagram from './ChordDiagram'
 import { buildVoicings, FAMILIES } from './voicings'
 import TemplateEditorModal from './TemplateEditorModal'
@@ -2163,6 +2164,10 @@ export default function PianoRoll({
     return list
   }, [])
 
+  // Custom "Save as" dialog for template / folder exports (declared above the
+  // early return so hook order stays consistent).
+  const { requestSave, saveAsModal } = useSaveAs()
+
   if (!scale) return null
 
   const inScale = (pc) =>
@@ -2631,15 +2636,7 @@ export default function PianoRoll({
     const base =
       tpls.length === 1 || first.type === 'folder' ? first.name : 'templates'
     const name = `${(base || 'templates').replace(/[^\w-]+/g, '_') || 'templates'}.json`
-    const blob = new Blob([templatesToJSON(tpls)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    requestSave(templatesToJSON(tpls), name)
   }
   const addTemplates = (incoming) => {
     if (!setTemplates || !incoming || !incoming.length) return
@@ -5380,6 +5377,7 @@ export default function PianoRoll({
       </div>
         </>
       )}
+      {saveAsModal}
       {newMenu && (
         <div
           className="template-new-menu"
@@ -5449,7 +5447,7 @@ export default function PianoRoll({
                     close()
                   }}
                 >
-                  Export {tplLabel} to file
+                  Save {tplLabel} as…
                 </button>
               )}
               <div className="tab-context-menu-divider" />
@@ -5505,7 +5503,7 @@ export default function PianoRoll({
                   close()
                 }}
               >
-                Export folder{tplCount ? ` (${tplCount})` : ''} to file
+                Save folder as…{tplCount ? ` (${tplCount})` : ''}
               </button>
               <div className="tab-context-menu-divider" />
               <button
@@ -5558,7 +5556,7 @@ export default function PianoRoll({
                 close()
               }}
             >
-              Export{many ? ` (${targets.length})` : ''} to file
+              Save as…{many ? ` (${targets.length})` : ''}
             </button>
             {!many && (
               <button
