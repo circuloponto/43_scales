@@ -4602,6 +4602,47 @@ export default function PianoRoll({
     rafRef.current = requestAnimationFrame(tick)
   }
 
+  // Current musical beat of the running playback (null when stopped). Mirrors
+  // the tick's clock math so we can re-schedule from the exact live position.
+  const currentPlaybackBeat = () => {
+    const st = playStateRef.current
+    const ctx = audioCtxRef.current
+    if (!st || !ctx) return null
+    const elapsed = ctx.currentTime - st.startTime
+    let swungBeat
+    if (st.mode === 'loop') {
+      if (elapsed < st.firstIterEndTime - st.startTime) {
+        swungBeat = st.swungStart + elapsed / st.cellDur
+      } else {
+        const t =
+          (elapsed - (st.firstIterEndTime - st.startTime)) % st.iterationDur
+        swungBeat = st.swungLoopStart + t / st.cellDur
+      }
+    } else {
+      swungBeat = st.swungStart + elapsed / st.cellDur
+    }
+    return Math.max(0, unswingTimeBeat(swungBeat, st.swing))
+  }
+
+  // Tempo / swing / loop edits take effect DURING playback: Web Audio events are
+  // queued at absolute times, so what's already scheduled can't be retuned in
+  // place — instead re-lay the timeline from the live playhead with the new
+  // values (playFromBeat re-reads bpm/swing/loop). Debounced so a tempo scrub or
+  // a loop-region drag re-schedules once it settles, not on every pixel.
+  const rescheduleTimerRef = useRef(null)
+  useEffect(() => {
+    if (playStateRef.current == null) return
+    if (rescheduleTimerRef.current) clearTimeout(rescheduleTimerRef.current)
+    rescheduleTimerRef.current = setTimeout(() => {
+      const beat = currentPlaybackBeat()
+      if (beat != null) playFromBeat(beat)
+    }, 90)
+    return () => {
+      if (rescheduleTimerRef.current) clearTimeout(rescheduleTimerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bpm, swingPct, loop])
+
   const addTrack = () => {
     pushHistory()
     const id = makeTrackId()
