@@ -18,16 +18,22 @@ const isFolder = (n) => n && n.type === 'folder'
 // folders whose name matches (case-insensitive), found anywhere in the tree.
 function flatten(templates, searchQuery, tagFilter) {
   const q = (searchQuery || '').trim().toLowerCase()
-  const filterTags = (tagFilter || []).map((t) => t.toLowerCase())
-  if (q || filterTags.length) {
+  const inc = (tagFilter?.include || []).map((t) => t.toLowerCase())
+  const exc = (tagFilter?.exclude || []).map((t) => t.toLowerCase())
+  const tagActive = inc.length > 0 || exc.length > 0
+  if (q || tagActive) {
     return templates
       .filter((n) => {
         const nameOk = !q || (n.name || '').toLowerCase().includes(q)
-        const tagOk =
-          !filterTags.length ||
-          (!isFolder(n) &&
-            (n.tags || []).some((t) => filterTags.includes(t.toLowerCase())))
-        return nameOk && tagOk
+        if (!nameOk) return false
+        if (!tagActive) return true
+        // Folders carry no tags, so a tag filter hides them.
+        if (isFolder(n)) return false
+        const tags = (n.tags || []).map((t) => t.toLowerCase())
+        // Included tags are an OR-match; any excluded tag rules the template out.
+        if (inc.length && !inc.some((t) => tags.includes(t))) return false
+        if (exc.length && exc.some((t) => tags.includes(t))) return false
+        return true
       })
       .map((node) => ({ node, depth: 0 }))
   }
@@ -312,7 +318,9 @@ export default function TemplateTree({
         {flat.map((item) => (
           <Row key={item.node.id} item={item} ctx={ctx} />
         ))}
-        {(searchQuery || (tagFilter && tagFilter.length > 0)) &&
+        {(searchQuery ||
+          (tagFilter &&
+            (tagFilter.include?.length > 0 || tagFilter.exclude?.length > 0))) &&
           flat.length === 0 && (
             <li className="templates-search-empty">No matches.</li>
           )}

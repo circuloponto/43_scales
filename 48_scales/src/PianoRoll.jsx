@@ -1009,7 +1009,14 @@ export default function PianoRoll({
   // library and builds a "working set" that can be applied as a filter.
   const [tagsModalOpen, setTagsModalOpen] = useState(false)
   const [importConflicts, setImportConflicts] = useState(null)
-  const [workingTags, setWorkingTags] = useState([]) // the "Tags" working set
+  // Tag filter. `tagFilter` is the selection being built in the Tags modal
+  // (green = include, red = exclude); `appliedTagFilter` is what the template
+  // list actually filters by — committed via the modal's "Apply as filters".
+  const EMPTY_TAG_FILTER = { include: [], exclude: [] }
+  const [tagFilter, setTagFilter] = useState(EMPTY_TAG_FILTER)
+  const [appliedTagFilter, setAppliedTagFilter] = useState(EMPTY_TAG_FILTER)
+  const tagFilterActive =
+    appliedTagFilter.include.length > 0 || appliedTagFilter.exclude.length > 0
   const [tagRegistry, setTagRegistry] = useState(() => {
     try {
       const v = JSON.parse(localStorage.getItem('eightFold.tagRegistry') || '[]')
@@ -1049,12 +1056,19 @@ export default function PianoRoll({
             : n
         )
       )
-    setWorkingTags((prev) => prev.filter((t) => t.toLowerCase() !== low))
+    const strip = (f) => ({
+      include: f.include.filter((t) => t.toLowerCase() !== low),
+      exclude: f.exclude.filter((t) => t.toLowerCase() !== low),
+    })
+    setTagFilter(strip)
+    setAppliedTagFilter(strip)
   }
+  // Renaming is case-SENSITIVE: "jazz" → "Jazz" is a real rename, so only an
+  // exact-string match (or an empty name) is a no-op.
   const renameTagEverywhere = (oldTag, newName) => {
     const nn = (newName || '').trim()
     const low = oldTag.toLowerCase()
-    if (!nn || nn.toLowerCase() === low) return
+    if (!nn || nn === oldTag) return
     const swap = (arr) => [
       ...new Set(arr.map((t) => (t.toLowerCase() === low ? nn : t))),
     ]
@@ -1067,7 +1081,12 @@ export default function PianoRoll({
             : n
         )
       )
-    setWorkingTags((prev) => swap(prev))
+    const swapFilter = (f) => ({
+      include: swap(f.include),
+      exclude: swap(f.exclude),
+    })
+    setTagFilter(swapFilter)
+    setAppliedTagFilter(swapFilter)
   }
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   // id of the template being edited (null = creating a brand-new one).
@@ -6020,7 +6039,11 @@ export default function PianoRoll({
         <aside
           className={`variation-panel resizable ${
             dragState?.key === 'templates' ? 'reordering' : ''
-          } ${panelCollapsed.templates ? 'collapsed' : ''}`}
+          } ${panelCollapsed.templates ? 'collapsed' : ''} ${
+            // The Tags modal veils the app but deliberately spares this panel,
+            // so the template list stays sharp and usable while you filter.
+            tagsModalOpen ? 'above-veil' : ''
+          }`}
           data-panel="templates"
           style={panelStyle('templates')}
         >
@@ -6192,6 +6215,30 @@ export default function PianoRoll({
               )}
             </div>
           )}
+          {tagFilterActive && (
+            <div className="templates-filter-banner">
+              <span className="templates-filter-tags">
+                {appliedTagFilter.include.length > 0 && (
+                  <>with {appliedTagFilter.include.join(', ')}</>
+                )}
+                {appliedTagFilter.include.length > 0 &&
+                  appliedTagFilter.exclude.length > 0 &&
+                  ' · '}
+                {appliedTagFilter.exclude.length > 0 && (
+                  <>without {appliedTagFilter.exclude.join(', ')}</>
+                )}
+              </span>
+              <button
+                type="button"
+                className="templates-filter-clear"
+                onClick={() => setAppliedTagFilter(EMPTY_TAG_FILTER)}
+                title="Clear tag filter"
+                aria-label="Clear tag filter"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
           {fretboardView === 'vertical' ? (
             <Fretboard
               orientation="vertical"
@@ -6209,6 +6256,7 @@ export default function PianoRoll({
             <TemplateTree
               templates={templates}
               searchQuery={templateSearch}
+              tagFilter={appliedTagFilter}
               onReveal={revealTemplate}
               flashId={flashTemplateId}
               onMove={moveNode}
@@ -7166,8 +7214,11 @@ export default function PianoRoll({
       {tagsModalOpen && (
         <TagsModal
           allTags={allTags}
-          workingTags={workingTags}
-          setWorkingTags={setWorkingTags}
+          tagFilter={tagFilter}
+          setTagFilter={setTagFilter}
+          onApply={() => setAppliedTagFilter(tagFilter)}
+          onClearFilter={() => setAppliedTagFilter(EMPTY_TAG_FILTER)}
+          filtering={tagFilterActive}
           onNewTag={(name) => registerTags([name])}
           onDeleteTag={deleteTagEverywhere}
           onRenameTag={renameTagEverywhere}

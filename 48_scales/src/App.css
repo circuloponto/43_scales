@@ -3381,6 +3381,17 @@
   font-size: 11px;
   white-space: nowrap;
 }
+/* Filter chips: green = included, red = excluded. */
+.tag-chip.include {
+  background: color-mix(in srgb, #3fb765 18%, transparent);
+  border-color: color-mix(in srgb, #3fb765 55%, transparent);
+}
+.tag-chip.exclude {
+  background: color-mix(in srgb, #ff5f56 16%, transparent);
+  border-color: color-mix(in srgb, #ff5f56 55%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, #ff5f56 70%, transparent);
+}
 .tag-chip-x {
   display: inline-flex;
   align-items: center;
@@ -3826,9 +3837,74 @@
 .tag-name:hover {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
-.tag-name.active {
-  color: var(--accent);
+.tag-name.included {
+  color: #3fb765;
   font-weight: 600;
+}
+.tag-name.excluded {
+  color: color-mix(in srgb, #ff5f56 85%, var(--fg));
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+/* An armed filter button gets a ring so the current include/exclude state is
+   readable at a glance. */
+.tag-del.active,
+.tag-add.active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fg) 45%, transparent);
+}
+.tag-del.active {
+  background: #ff5f56;
+}
+.tag-add.active {
+  background: #3fb765;
+}
+/* Edit mode: rename field + trash can only, so the row loses its side columns. */
+.tags-list.editing .tags-row {
+  grid-template-columns: 1fr 26px;
+}
+.tag-trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.tag-trash:hover {
+  color: #ff5f56;
+  border-color: color-mix(in srgb, #ff5f56 60%, transparent);
+}
+.tags-apply-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tags-apply {
+  padding: 5px 11px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.tags-apply:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.tags-apply:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--hairline);
+  color: var(--mute);
 }
 .tag-rename-input {
   background: transparent;
@@ -4110,6 +4186,36 @@
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  transition: background 0.18s var(--ease), backdrop-filter 0.18s var(--ease);
+}
+/* The Tags modal splits the usual backdrop into two layers so the templates
+   panel can sit BETWEEN them — the app dims and blurs, the template list stays
+   sharp and clickable, and the modal floats above both.
+     veil (2000) < templates panel (2001) < modal layer (2002)           */
+.tags-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+.tags-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Transparent to clicks so the raised templates panel stays reachable; only
+     the modal itself takes pointer events. */
+  pointer-events: none;
+}
+.tags-modal-layer > .modal {
+  pointer-events: auto;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7);
+}
+.variation-panel.above-veil {
+  z-index: 2001;
 }
 
 .modal {
