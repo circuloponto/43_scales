@@ -4166,6 +4166,11 @@
 }
 
 /* Scroll frame that hosts the real roll timeline markup (.roll-content etc.). */
+/* Focused on open so paste/transport keys land here — no focus ring wanted. */
+.template-editor-roll:focus,
+.template-editor-roll:focus-visible {
+  outline: none;
+}
 .template-editor-roll {
   border: 1px solid var(--hairline);
   border-radius: 6px;

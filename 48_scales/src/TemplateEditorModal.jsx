@@ -45,19 +45,22 @@ export default function TemplateEditorModal({
     Array.isArray(initialTags) ? initialTags : []
   )
   const [tagInput, setTagInput] = useState('')
-  const addTag = (raw) => {
-    // A comma-separated list adds one tag per name.
-    const parts = (raw || '')
+  // A comma-separated list yields one tag per name.
+  const parseTags = (raw) =>
+    (raw || '')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+  const mergeTags = (prev, parts) => {
+    const out = [...prev]
+    for (const p of parts)
+      if (!out.some((x) => x.toLowerCase() === p.toLowerCase())) out.push(p)
+    return out
+  }
+  const addTag = (raw) => {
+    const parts = parseTags(raw)
     if (!parts.length) return
-    setTags((prev) => {
-      const out = [...prev]
-      for (const p of parts)
-        if (!out.some((x) => x.toLowerCase() === p.toLowerCase())) out.push(p)
-      return out
-    })
+    setTags((prev) => mergeTags(prev, parts))
     setTagInput('')
   }
   const removeTag = (t) => setTags((prev) => prev.filter((x) => x !== t))
@@ -176,6 +179,10 @@ export default function TemplateEditorModal({
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = Math.max(0, (MIDI_HIGH - (baseRoot + 6)) * ROW_H - 120)
+    // Focus the roll rather than the name field: the transport/paste shortcuts
+    // are window-level but bail while a text input has focus, so landing here
+    // means Ctrl/⌘+V, Space and the rhythm digits work without a click first.
+    el.focus({ preventScroll: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -351,7 +358,9 @@ export default function TemplateEditorModal({
         return
       }
     }
-    onSave(name.trim(), items, tags)
+    // Flush a tag that was typed but never committed with Enter/comma —
+    // otherwise clicking Save silently drops it.
+    onSave(name.trim(), items, mergeTags(tags, parseTags(tagInput)))
   }
 
   const kbdHeight = (MIDI_HIGH - MIDI_LOW + 1) * ROW_H
@@ -370,7 +379,6 @@ export default function TemplateEditorModal({
             className="template-editor-name"
             value={name}
             placeholder="Template name"
-            autoFocus
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') save()
@@ -485,7 +493,7 @@ export default function TemplateEditorModal({
           </span>
         </div>
 
-        <div className="template-editor-roll" ref={scrollRef}>
+        <div className="template-editor-roll" ref={scrollRef} tabIndex={-1}>
           <div className="roll-content">
             <div className="kbd-column" style={{ height: kbdHeight }}>
               {pitches.map((midi) => {
