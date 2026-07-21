@@ -101,6 +101,43 @@ function NoteGlyph({ value = 4, size = 16 }) {
   )
 }
 
+// A fixed-position context menu that keeps itself on screen. Opened at the
+// cursor, it measures itself and — if it would run past the bottom edge — flips
+// above the cursor instead (then clamps, for menus taller than the viewport).
+// The same goes for the right edge. It stays hidden for the measuring frame so
+// it never flashes at the un-clamped spot.
+function ContextMenu({ x, y, className = 'tab-context-menu', children, ...rest }) {
+  const ref = useRef(null)
+  const [pos, setPos] = useState(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    const M = 8 // viewport margin
+    let top = y
+    if (top + height > window.innerHeight - M) top = y - height // flip up
+    top = Math.max(M, Math.min(top, window.innerHeight - M - height))
+    let left = x
+    if (left + width > window.innerWidth - M) left = x - width // flip left
+    left = Math.max(M, Math.min(left, window.innerWidth - M - width))
+    setPos({ left, top })
+  }, [x, y])
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={
+        pos
+          ? { left: pos.left, top: pos.top }
+          : { left: x, top: y, visibility: 'hidden' }
+      }
+      {...rest}
+    >
+      {children}
+    </div>
+  )
+}
+
 // A single song tab with HTML5 drag/drop wiring. Kept at module scope so
 // PianoRoll's giant render body stays readable; state changes come in via
 // props (dragState / setDragState) so all tabs share one drag session.
@@ -5733,9 +5770,9 @@ export default function PianoRoll({
             ? `${tplCount} template${tplCount > 1 ? 's' : ''}`
             : 'selection'
           return (
-            <div
-              className="tab-context-menu"
-              style={{ left: templateMenu.x, top: templateMenu.y }}
+            <ContextMenu
+              x={templateMenu.x}
+              y={templateMenu.y}
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="tab-context-menu-title">
@@ -5777,7 +5814,7 @@ export default function PianoRoll({
               >
                 Delete {sel.length} item{sel.length > 1 ? 's' : ''}
               </button>
-            </div>
+            </ContextMenu>
           )
         }
         // Folder menu: rename, copy/export the whole subtree, delete.
@@ -5785,9 +5822,9 @@ export default function PianoRoll({
           const sub = withDescendants(node.id)
           const tplCount = sub.filter((t) => !isFolder(t)).length
           return (
-            <div
-              className="tab-context-menu"
-              style={{ left: templateMenu.x, top: templateMenu.y }}
+            <ContextMenu
+              x={templateMenu.x}
+              y={templateMenu.y}
               onMouseDown={(e) => e.stopPropagation()}
             >
               <button
@@ -5832,16 +5869,16 @@ export default function PianoRoll({
               >
                 Delete folder (keep contents)
               </button>
-            </div>
+            </ContextMenu>
           )
         }
         const targets = templateTargets(templateMenu.id)
         if (!targets.length) return null
         const many = targets.length > 1
         return (
-          <div
-            className="tab-context-menu"
-            style={{ left: templateMenu.x, top: templateMenu.y }}
+          <ContextMenu
+            x={templateMenu.x}
+            y={templateMenu.y}
             onMouseDown={(e) => e.stopPropagation()}
           >
             {!many && (
@@ -5898,7 +5935,7 @@ export default function PianoRoll({
             >
               Delete{many ? ` (${targets.length})` : ''}
             </button>
-          </div>
+          </ContextMenu>
         )
       })()}
       {tabMenu && (() => {
