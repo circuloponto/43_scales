@@ -2354,7 +2354,7 @@ export default function PianoRoll({
 
   // Native OS save dialog for template / folder exports (declared above the
   // early return so hook order stays consistent).
-  const { requestSave } = useSaveAs()
+  const { requestSave, requestSaveTree } = useSaveAs()
 
   if (!scale) return null
 
@@ -2825,6 +2825,21 @@ export default function PianoRoll({
       tpls.length === 1 || first.type === 'folder' ? first.name : 'templates'
     const name = `${(base || 'templates').replace(/[^\w-]+/g, '_') || 'templates'}.json`
     requestSave(templatesToJSON(tpls), name)
+  }
+  // Export as real files on disk: one .json per template, folders recreated as
+  // subdirectories. `rootName` nests everything in a new directory of that name
+  // (a folder export); without it the items land straight in the chosen folder
+  // (a multi-selection export). Where there's no directory picker (Firefox /
+  // Safari) the same tree arrives as a .zip. Bulk-export-all lives in Settings.
+  const exportTemplateTree = async (nodes, rootName) => {
+    if (!nodes.length) return
+    const res = await requestSaveTree(
+      nodes,
+      (node) => JSON.stringify(node, null, 2),
+      rootName
+    )
+    if (res.ok)
+      flashExport(`Exported ${res.count}${res.zipped ? ' (zip)' : ''}`)
   }
   const exactKey = (t) =>
     `${(t.name || '').toLowerCase()}|${JSON.stringify(t.notes || [])}`
@@ -5794,7 +5809,8 @@ export default function PianoRoll({
                   type="button"
                   className="tab-context-menu-item"
                   onClick={() => {
-                    downloadTemplates(exportSet)
+                    // Multi-selection: each template saved as its own file.
+                    exportTemplateTree(exportSet)
                     setSelectedTemplateIds(new Set())
                     close()
                   }}
@@ -5851,7 +5867,14 @@ export default function PianoRoll({
                 type="button"
                 className="tab-context-menu-item"
                 onClick={() => {
-                  downloadTemplates(sub)
+                  // Folder: a real directory of individual template files,
+                  // subfolders preserved as subdirectories. The folder node
+                  // itself is dropped — its name already becomes the directory,
+                  // so keeping it would nest Chords/Chords/…
+                  exportTemplateTree(
+                    sub.filter((t) => t.id !== node.id),
+                    node.name
+                  )
                   close()
                 }}
               >
@@ -5903,7 +5926,10 @@ export default function PianoRoll({
               type="button"
               className="tab-context-menu-item"
               onClick={() => {
-                downloadTemplates(targets)
+                // One template → a single file picker; several → individual
+                // files in a chosen directory.
+                if (many) exportTemplateTree(targets)
+                else downloadTemplates(targets)
                 setSelectedTemplateIds(new Set())
                 close()
               }}
