@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, Plus, Minus, Copy, Pencil, Trash2 } from 'lucide-react'
+import { Search, Plus, Minus, Copy, Check, Pencil, Trash2 } from 'lucide-react'
 
 // Tag library manager + filter builder. The red [−] and green [+] buttons on a
 // tag build a FILTER — red excludes that tag, green includes it — they don't
@@ -62,6 +62,11 @@ export default function TagsModal({
     newRef.current.focus()
   }
 
+  // Copy confirms itself for a beat — the button swaps to a check + "Copied"
+  // so the click clearly landed.
+  const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef(null)
+  useEffect(() => () => clearTimeout(copiedTimer.current), [])
   const copyText = async () => {
     const text = include.join(', ')
     try {
@@ -76,6 +81,9 @@ export default function TagsModal({
       } catch {}
       document.body.removeChild(ta)
     }
+    setCopied(true)
+    clearTimeout(copiedTimer.current)
+    copiedTimer.current = setTimeout(() => setCopied(false), 1400)
   }
 
   useEffect(() => {
@@ -115,12 +123,20 @@ export default function TagsModal({
           </div>
           <button
             type="button"
-            className="tags-action"
+            className={`tags-action ${copied ? 'copied' : ''}`}
             onClick={copyText}
             disabled={!include.length}
             title="Copy the included tags as text"
           >
-            <Copy size={13} /> Copy
+            {copied ? (
+              <>
+                <Check size={13} /> Copied
+              </>
+            ) : (
+              <>
+                <Copy size={13} /> Copy
+              </>
+            )}
           </button>
           <button
             type="button"

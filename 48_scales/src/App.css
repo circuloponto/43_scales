@@ -3711,6 +3711,12 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+/* Copy confirmation — green tick for a moment after a successful copy. */
+.tags-action.copied {
+  color: #3fb765;
+  border-color: color-mix(in srgb, #3fb765 60%, transparent);
+  background: color-mix(in srgb, #3fb765 12%, transparent);
+}
 .tags-modal .finder-modal-close {
   margin-left: auto;
 }
