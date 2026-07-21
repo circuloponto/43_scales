@@ -2352,9 +2352,9 @@ export default function PianoRoll({
     return list
   }, [])
 
-  // Custom "Save as" dialog for template / folder exports (declared above the
+  // Native OS save dialog for template / folder exports (declared above the
   // early return so hook order stays consistent).
-  const { requestSave, saveAsModal } = useSaveAs()
+  const { requestSave } = useSaveAs()
 
   if (!scale) return null
 
@@ -5730,7 +5730,6 @@ export default function PianoRoll({
       </div>
         </>
       )}
-      {saveAsModal}
       {newMenu && (
         <div
           className="template-new-menu"
@@ -5800,7 +5799,7 @@ export default function PianoRoll({
                     close()
                   }}
                 >
-                  Save {tplLabel} as…
+                  Export {tplLabel}
                 </button>
               )}
               <div className="tab-context-menu-divider" />
@@ -5856,7 +5855,7 @@ export default function PianoRoll({
                   close()
                 }}
               >
-                Save folder as…{tplCount ? ` (${tplCount})` : ''}
+                Export folder{tplCount ? ` (${tplCount})` : ''}
               </button>
               <div className="tab-context-menu-divider" />
               <button
@@ -5909,7 +5908,7 @@ export default function PianoRoll({
                 close()
               }}
             >
-              Save as…{many ? ` (${targets.length})` : ''}
+              Export{many ? ` (${targets.length})` : ''}
             </button>
             {!many && (
               <button

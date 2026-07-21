@@ -638,8 +638,8 @@ function App() {
   // confirm. A `version` field lets us evolve the schema later without
   // breaking older exports (we only accept v1 for now).
   const SESSION_VERSION = 1
-  // Custom "Save as" dialog for all file exports (session / templates).
-  const { requestSave, saveAsModal } = useSaveAs()
+  // Native OS save dialog for all file exports (session / templates).
+  const { requestSave } = useSaveAs()
   const exportSession = () => {
     const session = {
       version: SESSION_VERSION,
@@ -2736,7 +2736,6 @@ function App() {
           </div>
         )
       })()}
-      {saveAsModal}
     </div>
   )
 }

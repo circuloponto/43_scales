@@ -1,8 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-
-// Trigger the actual file download once a name is chosen. (In a browser the OS
-// write still goes through the download mechanism; this just controls the name
-// via our own UI instead of relying on the browser's auto-name / native prompt.)
+// Fallback for browsers without the File System Access API: a plain download,
+// which lands in the browser's download folder with no way to choose a location.
 function triggerDownload(content, filename, type) {
   const blob = new Blob([content], { type: type || 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -15,78 +12,50 @@ function triggerDownload(content, filename, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// Custom "Save as" dialog. Replaces the bare auto-download with an in-app modal
-// that lets the user name the file before it's written.
-function SaveAsModal({ defaultName, onSave, onCancel }) {
-  const [name, setName] = useState(defaultName)
-  const inputRef = useRef(null)
-  useEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-    el.focus()
-    // Preselect the base name (before the extension) for quick renaming.
-    const dot = el.value.lastIndexOf('.')
-    el.setSelectionRange(0, dot > 0 ? dot : el.value.length)
-  }, [])
-  const finalName = () => {
-    const t = name.trim()
-    if (!t) return ''
-    return /\.[a-z0-9]+$/i.test(t) ? t : `${t}.json`
+// Derive a picker file-type entry from the extension so the native dialog shows
+// a sensible filter and appends the extension when the user omits it.
+function describeType(filename, type) {
+  const m = /\.([a-z0-9]+)$/i.exec(filename || '')
+  const ext = m ? `.${m[1].toLowerCase()}` : '.json'
+  const mime = type || (ext === '.json' ? 'application/json' : 'text/plain')
+  return {
+    suggestedName: filename || `export${ext}`,
+    types: [
+      {
+        description: ext === '.json' ? 'JSON file' : `${ext.slice(1).toUpperCase()} file`,
+        accept: { [mime]: [ext] },
+      },
+    ],
   }
-  const commit = () => {
-    const n = finalName()
-    if (n) onSave(n)
-  }
-  return (
-    <div className="modal-backdrop" onMouseDown={onCancel}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h3>Save as</h3>
-        <label className="modal-sub">
-          File name
-          <input
-            ref={inputRef}
-            value={name}
-            spellCheck={false}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit()
-              else if (e.key === 'Escape') onCancel()
-            }}
-          />
-        </label>
-        <div className="modal-actions">
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={commit}
-            disabled={!name.trim()}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
-// Hook: `requestSave(content, defaultName, type?)` opens the dialog; render the
-// returned `saveAsModal` node somewhere in the component's JSX.
+// Hook: `requestSave(content, defaultName, type?)` opens the NATIVE OS save
+// dialog, so the destination folder is the user's choice. Falls back to a plain
+// download where showSaveFilePicker isn't available (e.g. Firefox/Safari).
+//
+// `saveAsModal` is kept in the return shape (always null) so existing call sites
+// that render it don't need to change.
 export function useSaveAs() {
-  const [pending, setPending] = useState(null) // { content, defaultName, type }
-  const requestSave = (content, defaultName, type) =>
-    setPending({ content, defaultName: defaultName || 'export.json', type })
-  const saveAsModal = pending ? (
-    <SaveAsModal
-      defaultName={pending.defaultName}
-      onSave={(name) => {
-        triggerDownload(pending.content, name, pending.type)
-        setPending(null)
-      }}
-      onCancel={() => setPending(null)}
-    />
-  ) : null
-  return { requestSave, saveAsModal }
+  const requestSave = async (content, defaultName, type) => {
+    const name = defaultName || 'export.json'
+    if (typeof window !== 'undefined' && window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker(describeType(name, type))
+        const writable = await handle.createWritable()
+        await writable.write(
+          new Blob([content], { type: type || 'application/json' })
+        )
+        await writable.close()
+        return true
+      } catch (err) {
+        // The user dismissing the picker is a normal outcome, not an error.
+        if (err && err.name === 'AbortError') return false
+        // Anything else (permission denied, sandboxed iframe): fall through to
+        // the download path so the export still happens.
+      }
+    }
+    triggerDownload(content, name, type)
+    return true
+  }
+  return { requestSave, saveAsModal: null }
 }
