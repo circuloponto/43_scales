@@ -2690,8 +2690,10 @@ export default function PianoRoll({
 
   // Click handler for a template entry: enter "placement mode" — the next
   // click on the grid commits the template at that cursor position. Click
-  // the same template again (or press Esc) to cancel.
+  // the same template again (or press Esc) to cancel. Arming also dismisses any
+  // multi-selection, the mirror of shift-click clearing the placement arm.
   const handleTemplateClick = (tpl) => {
+    if (selectedTemplateIds.size > 0) setSelectedTemplateIds(new Set())
     setPendingTemplate((cur) => (cur && cur.id === tpl.id ? null : tpl))
   }
 
