@@ -6335,7 +6335,10 @@ export default function PianoRoll({
                 ref={searchBtnRef}
                 type="button"
                 className={`template-icon-btn ${searchOpen ? 'on' : ''}`}
-                onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                onClick={() => {
+                  setPendingTemplate(null)
+                  searchOpen ? closeSearch() : setSearchOpen(true)
+                }}
                 title="Search templates"
                 aria-expanded={searchOpen}
               >
@@ -6344,7 +6347,10 @@ export default function PianoRoll({
               <button
                 type="button"
                 className={`template-icon-btn ${tagsModalOpen ? 'on' : ''}`}
-                onClick={() => setTagsModalOpen(true)}
+                onClick={() => {
+                  setPendingTemplate(null)
+                  setTagsModalOpen(true)
+                }}
                 title="Manage tags"
               >
                 <Tags size={14} strokeWidth={1.8} />
@@ -6435,13 +6441,16 @@ export default function PianoRoll({
               onMove={moveNode}
               onMoveMany={moveNodes}
               selectedTemplateIds={selectedTemplateIds}
-              onToggleSelect={(id) =>
+              onToggleSelect={(id) => {
+                // Starting a multi-select drops any "regular selection" — the
+                // template armed for placement — so the two don't coexist.
+                setPendingTemplate(null)
                 setSelectedTemplateIds((prev) => {
                   const next = new Set(prev)
                   next.has(id) ? next.delete(id) : next.add(id)
                   return next
                 })
-              }
+              }}
               renamingTemplateId={renamingTemplateId}
               renameValue={renameValue}
               setRenameValue={setRenameValue}
@@ -6453,9 +6462,11 @@ export default function PianoRoll({
               pendingTemplate={pendingTemplate}
               onPlace={handleTemplateClick}
               onToggleFolder={toggleFolder}
-              onContextMenu={(e, id) =>
+              onContextMenu={(e, id) => {
+                // Right-clicking to open the menu also drops the placement arm.
+                setPendingTemplate(null)
                 setTemplateMenu({ x: e.clientX, y: e.clientY, id })
-              }
+              }}
             />
           )}
         </aside>
