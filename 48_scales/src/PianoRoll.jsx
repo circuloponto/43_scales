@@ -296,37 +296,42 @@ const MIN_SWING = 50
 const MAX_SWING = 75
 
 // Map a musical beat (cells on the linear grid) to swung playback time
-// expressed in cells. Pairs of cells form a swing pair: the first cell
-// stretches to swing/100 of the pair, the second compresses to the rest.
-// swingPct = 50 → identity (straight). swingPct = 67 → triplet feel.
-function applySwingBeat(beat, swingPct) {
-  if (swingPct === 50) return beat
+// expressed in cells. Notes are grouped into pairs of `unit` cells — the swing
+// note value — where the first unit stretches to swing/100 of the pair and the
+// second compresses to the rest. `unit` is the current rhythm subdivision (in
+// cells), so swing follows whatever note value is selected: unit 1 (= a 16th)
+// gives 16th swing, unit 2 an 8th swing, etc. swingPct = 50 → identity.
+function applySwingBeat(beat, swingPct, unit = 1) {
+  if (swingPct === 50 || !(unit > 0)) return beat
   const swing = swingPct / 100
-  const pairIdx = Math.floor(beat / 2)
-  const localB = beat - pairIdx * 2
+  const pair = 2 * unit
+  const pairIdx = Math.floor(beat / pair)
+  const local = beat - pairIdx * pair
   let timeInPair
-  if (localB < 1) {
-    timeInPair = localB * (2 * swing)
+  if (local < unit) {
+    timeInPair = (local / unit) * (swing * pair)
   } else {
-    timeInPair = 2 * swing + (localB - 1) * 2 * (1 - swing)
+    timeInPair = swing * pair + ((local - unit) / unit) * ((1 - swing) * pair)
   }
-  return pairIdx * 2 + timeInPair
+  return pairIdx * pair + timeInPair
 }
 
 // Inverse: given swung playback time in cells, recover the musical beat
 // (where the playhead should sit on the linear grid).
-function unswingTimeBeat(t, swingPct) {
-  if (swingPct === 50) return t
+function unswingTimeBeat(t, swingPct, unit = 1) {
+  if (swingPct === 50 || !(unit > 0)) return t
   const swing = swingPct / 100
-  const pairIdx = Math.floor(t / 2)
-  const localT = t - pairIdx * 2
+  const pair = 2 * unit
+  const pairIdx = Math.floor(t / pair)
+  const localT = t - pairIdx * pair
+  const firstDur = swing * pair
   let localMusic
-  if (localT < 2 * swing) {
-    localMusic = localT / (2 * swing)
+  if (localT < firstDur) {
+    localMusic = (localT / firstDur) * unit
   } else {
-    localMusic = 1 + (localT - 2 * swing) / (2 * (1 - swing))
+    localMusic = unit + ((localT - firstDur) / ((1 - swing) * pair)) * unit
   }
-  return pairIdx * 2 + localMusic
+  return pairIdx * pair + localMusic
 }
 
 function padId(id) {
@@ -1732,6 +1737,10 @@ export default function PianoRoll({
   const rhythmUnitCells = rhythmUnit === 'bar' ? cellsPerMeasure : cellsPerBeat
   const rhythmBaseCells = rhythmUnitCells / rhythmDenominator
   const rhythmLength = rhythmBaseCells * rhythmMult
+  // The swing note value = the current subdivision (in cells). Read live by the
+  // scheduler so swing pairs the selected note value instead of always 16ths.
+  const swingUnitRef = useRef(rhythmBaseCells)
+  swingUnitRef.current = rhythmBaseCells > 0 ? rhythmBaseCells : 1
   useEffect(() => {
     defaultNoteLengthRef.current = rhythmLength
     setDefaultNoteLen(rhythmLength)
@@ -4889,6 +4898,7 @@ export default function PianoRoll({
     const cellDur = beatDurForBpm(bpm)
     const startBase = ctx.currentTime + 0.05
     const swing = swingPct
+    const swingUnit = swingUnitRef.current
     const activeLoop = loopRef.current
     if (activeLoop && (startBeat < activeLoop.start || startBeat >= activeLoop.end)) {
       startBeat = activeLoop.start
@@ -4902,7 +4912,8 @@ export default function PianoRoll({
     // state without needing to restart playback.
     const scheduleRange = (rangeStart, rangeEnd, scheduleStartTime) => {
       const liveSwing = swingPctRef.current
-      const swungRangeStart = applySwingBeat(rangeStart, liveSwing)
+      const liveUnit = swingUnitRef.current
+      const swungRangeStart = applySwingBeat(rangeStart, liveSwing, liveUnit)
       // Iterate every track. Mute/solo gating: if any track is soloed,
       // only soloed tracks play; otherwise every non-muted track plays.
       // Per-track volume scales the base peak gain.
@@ -4925,8 +4936,8 @@ export default function PianoRoll({
           const beat = Number(beatStr)
           const midi = Number(midiStr)
           if (beat >= rangeStart && beat < rangeEnd) {
-            const swungNoteStart = applySwingBeat(beat, liveSwing)
-            const swungNoteEnd = applySwingBeat(beat + length, liveSwing)
+            const swungNoteStart = applySwingBeat(beat, liveSwing, liveUnit)
+            const swungNoteEnd = applySwingBeat(beat + length, liveSwing, liveUnit)
             const noteTime =
               scheduleStartTime + (swungNoteStart - swungRangeStart) * cellDur
             const noteDur = Math.max(
@@ -4957,8 +4968,12 @@ export default function PianoRoll({
             for (const region of regions) {
               for (const m of regionNotes(region)) {
                 if (m.beat >= rangeStart && m.beat < rangeEnd) {
-                  const swungNoteStart = applySwingBeat(m.beat, liveSwing)
-                  const swungNoteEnd = applySwingBeat(m.beat + m.len, liveSwing)
+                  const swungNoteStart = applySwingBeat(m.beat, liveSwing, liveUnit)
+                  const swungNoteEnd = applySwingBeat(
+                    m.beat + m.len,
+                    liveSwing,
+                    liveUnit
+                  )
                   const noteTime =
                     scheduleStartTime +
                     (swungNoteStart - swungRangeStart) * cellDur
@@ -4995,9 +5010,9 @@ export default function PianoRoll({
       // never sees a gap.
       const loopStart = activeLoop.start
       const loopEnd = activeLoop.end
-      const swungStart = applySwingBeat(startBeat, swing)
-      const swungLoopStart = applySwingBeat(loopStart, swing)
-      const swungLoopEnd = applySwingBeat(loopEnd, swing)
+      const swungStart = applySwingBeat(startBeat, swing, swingUnit)
+      const swungLoopStart = applySwingBeat(loopStart, swing, swingUnit)
+      const swungLoopEnd = applySwingBeat(loopEnd, swing, swingUnit)
       const firstIterDur = (swungLoopEnd - swungStart) * cellDur
       const iterationDur = (swungLoopEnd - swungLoopStart) * cellDur
       const firstIterEndTime = startBase + firstIterDur
@@ -5007,6 +5022,7 @@ export default function PianoRoll({
         startTime: startBase,
         cellDur,
         swing,
+        swingUnit,
         swungStart,
         swungLoopStart,
         swungLoopEnd,
@@ -5035,14 +5051,15 @@ export default function PianoRoll({
       }
       const endBeat = anyNotes ? lastBeat : totalBeats
       scheduleRange(startBeat, endBeat, startBase)
-      const swungStart = applySwingBeat(startBeat, swing)
+      const swungStart = applySwingBeat(startBeat, swing, swingUnit)
       playStateRef.current = {
         mode: 'oneshot',
         startTime: startBase,
         cellDur,
         swing,
+        swingUnit,
         swungStart,
-        swungEnd: applySwingBeat(endBeat, swing),
+        swungEnd: applySwingBeat(endBeat, swing, swingUnit),
         endBeat,
         offsetBeat: startBeat,
         // Store scheduleRange so a live edit during one-shot playback can
@@ -5094,7 +5111,7 @@ export default function PianoRoll({
           return
         }
       }
-      const musicalBeat = unswingTimeBeat(currentSwungBeat, state.swing)
+      const musicalBeat = unswingTimeBeat(currentSwungBeat, state.swing, state.swingUnit)
       const current = Math.max(0, musicalBeat)
       setPlayheadBeat(current)
       const sc = scrollRef.current
@@ -5131,7 +5148,7 @@ export default function PianoRoll({
     } else {
       swungBeat = st.swungStart + elapsed / st.cellDur
     }
-    return Math.max(0, unswingTimeBeat(swungBeat, st.swing))
+    return Math.max(0, unswingTimeBeat(swungBeat, st.swing, st.swingUnit))
   }
 
   // Tempo / swing / loop edits take effect DURING playback: Web Audio events are
@@ -5150,8 +5167,10 @@ export default function PianoRoll({
     return () => {
       if (rescheduleTimerRef.current) clearTimeout(rescheduleTimerRef.current)
     }
+    // rhythmBaseCells is the swing note value — changing the subdivision mid-
+    // playback re-lays the timeline so the new swing feel takes effect live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bpm, swingPct, loop])
+  }, [bpm, swingPct, loop, rhythmBaseCells])
 
   const addTrack = () => {
     pushHistory()
@@ -5232,7 +5251,7 @@ export default function PianoRoll({
         iterEndTime = st.firstIterEndTime + (nIter + 1) * st.iterationDur
       }
       killScheduledVoices()
-      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
+      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing, st.swingUnit)
       st.scheduleRange(currentMusicalBeat, st.loopEnd, now)
       st.nextIterStartTime = iterEndTime
     } else if (st.mode === 'oneshot') {
@@ -5242,7 +5261,7 @@ export default function PianoRoll({
       // do there. Also cap at endBeat so we don't schedule silence.
       if (currentSwungBeat >= st.swungEnd) return
       killScheduledVoices()
-      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing)
+      const currentMusicalBeat = unswingTimeBeat(currentSwungBeat, st.swing, st.swingUnit)
       st.scheduleRange(currentMusicalBeat, st.endBeat, now)
     }
   }
