@@ -3956,7 +3956,9 @@ export default function PianoRoll({
       if (!freeMode) clickBeat = Math.floor(clickBeat)
       clickBeat = Math.max(0, Math.min(totalBeats - 1, clickBeat))
       commitTemplateAt(pendingTemplate, clickBeat, midi)
-      setPendingTemplate(null)
+      // Alt-click keeps the template armed (ghost + panel highlight stay) so it
+      // can be stamped repeatedly; a plain click places once and disarms.
+      if (!e.altKey) setPendingTemplate(null)
       return
     }
     if (pendingTemplate && isRightClick) {
