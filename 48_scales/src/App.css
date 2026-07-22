@@ -1874,9 +1874,11 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  /* Extra gap + right padding so the × has clear separation from the tab
+     body and can't be hit when you mean to select the tab. */
+  gap: 14px;
   height: var(--roll-ctl-h);
-  padding: 0 16px;
+  padding: 0 14px 0 18px;
   background: color-mix(in srgb, var(--off) 65%, transparent);
   border: none;
   border-radius: 8px;
@@ -1885,7 +1887,7 @@
   font-size: 13px;
   color: var(--mute);
   flex-shrink: 0;
-  max-width: 220px;
+  max-width: 240px;
   z-index: 1;
   transition: color 0.12s var(--ease), background 0.12s var(--ease);
 }
@@ -1978,8 +1980,9 @@
 }
 .song-tabs.tabs-classic .song-tab {
   height: auto;
-  padding: 7px 16px;
-  gap: 6px;
+  /* Match the pill's roomier layout so the × stays clear of the tab body. */
+  padding: 7px 14px 8px 18px;
+  gap: 14px;
   background: color-mix(in srgb, var(--off) 65%, transparent);
   border: 1px solid transparent;
   border-bottom: none;
