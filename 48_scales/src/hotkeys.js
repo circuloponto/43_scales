@@ -17,6 +17,7 @@ export const HOTKEY_ACTIONS = [
   { id: 'copy', label: 'Copy selection', section: 'Edit', default: 'Mod+KeyC' },
   { id: 'paste', label: 'Paste', section: 'Edit', default: 'Mod+KeyV' },
   { id: 'delete', label: 'Delete selection', section: 'Edit', default: 'Delete' },
+  { id: 'clearSelection', label: 'Clear selection', section: 'Edit', default: 'Backspace' },
   { id: 'rune', label: 'Make Rune from selection', section: 'Edit', default: 'KeyR' },
   { id: 'flipH', label: 'Flip horizontally', section: 'Transform', default: 'Shift+KeyH' },
   { id: 'flipV', label: 'Flip vertically', section: 'Transform', default: 'Shift+KeyV' },
@@ -30,7 +31,7 @@ const DEFAULTS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.id, a.default])
 // Keys the fixed gestures / rhythm entry rely on — the editor warns if a rebind
 // would collide with one of these (they aren't rebindable themselves).
 export const RESERVED_SIGS = new Set([
-  'Escape', 'Backspace', 'KeyM', 'KeyP', 'KeyX',
+  'Escape', 'KeyM', 'KeyP', 'KeyX',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
   'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',

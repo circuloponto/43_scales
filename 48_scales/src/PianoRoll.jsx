@@ -2062,7 +2062,7 @@ export default function PianoRoll({
         // Update the ref immediately so a rapid second Enter reads the new
         // position rather than the pre-render value.
         playheadBeatRef.current = target
-      } else if (isHotkey('delete', e) || e.code === 'Backspace') {
+      } else if (isHotkey('delete', e)) {
         // A selected region takes priority: delete it, baking its window notes
         // onto the timeline.
         if (selectedRegionIdRef.current) {
@@ -2078,6 +2078,14 @@ export default function PianoRoll({
           })
           setSelectedKeys(new Set())
         }
+      } else if (isHotkey('clearSelection', e)) {
+        // Just drop the selection — deliberately NOT exiting any active mode
+        // (Rotate, pending Rune, template placement…). That's the whole point:
+        // Escape clears the selection AND leaves modes, this stays put so you
+        // can reselect without breaking your flow.
+        e.preventDefault()
+        if (selectedKeys.size > 0) setSelectedKeys(new Set())
+        if (selectedRegionId) setSelectedRegionId(null)
       } else if (e.code === 'Escape') {
         if (fretPosPriming) setFretPosPriming(false)
         if (pendingTemplate) setPendingTemplate(null)
