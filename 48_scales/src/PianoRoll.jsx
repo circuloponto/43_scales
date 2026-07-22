@@ -2082,10 +2082,12 @@ export default function PianoRoll({
         // Just drop the selection — deliberately NOT exiting any active mode
         // (Rotate, pending Rune, template placement…). That's the whole point:
         // Escape clears the selection AND leaves modes, this stays put so you
-        // can reselect without breaking your flow.
+        // can reselect without breaking your flow. Covers everything selectable:
+        // timeline notes, a selected region, and selected templates.
         e.preventDefault()
         if (selectedKeys.size > 0) setSelectedKeys(new Set())
         if (selectedRegionId) setSelectedRegionId(null)
+        if (selectedTemplateIds.size > 0) setSelectedTemplateIds(new Set())
       } else if (e.code === 'Escape') {
         if (fretPosPriming) setFretPosPriming(false)
         if (pendingTemplate) setPendingTemplate(null)
