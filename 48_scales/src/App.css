@@ -1912,6 +1912,21 @@
   /* Follows the tab's text colour (muted when inactive, white when active). */
   font-weight: 600;
 }
+/* In-place rename field — sits inside the tab, inheriting its text colour. */
+.song-tab-rename {
+  width: 11ch;
+  min-width: 80px;
+  max-width: 200px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid currentColor;
+  outline: none;
+  color: inherit;
+  font-family: var(--sans);
+  font-size: inherit;
+  font-weight: 500;
+  padding: 0;
+}
 .song-tab-close {
   display: inline-flex;
   align-items: center;

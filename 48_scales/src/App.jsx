@@ -338,8 +338,19 @@ function App() {
   const makeSongId = () =>
     `sg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
   const [songs, setSongs] = useState(() => [
-    { id: makeSongId(), name: 'Song 1', tracks: null, activeTrackId: null },
+    { id: makeSongId(), name: 'Tab 1', tracks: null, activeTrackId: null },
   ])
+  // Default tab name: "New Tab N", where N is one past the highest trailing
+  // number already in use — so the number the tab displays stays unique and
+  // increasing even if middle tabs were closed.
+  const nextTabName = (existing) => {
+    let max = 0
+    for (const s of existing) {
+      const m = (s.name || '').match(/(\d+)\s*$/)
+      if (m) max = Math.max(max, Number(m[1]))
+    }
+    return `New Tab ${max + 1}`
+  }
   const [activeSongId, setActiveSongId] = useState(() => songs[0].id)
   // Universal playback (shared tempo / swing / loop / beat count across
   // every song) — only consulted when settings.universalPlayback is on.
@@ -412,7 +423,7 @@ function App() {
   const addSong = () => {
     pushSongHistory()
     const id = makeSongId()
-    const name = `Song ${songs.length + 1}`
+    const name = nextTabName(songs)
     // Inherit playback settings (tempo, swing, loop region, beat count) from
     // whatever tab is currently active — a new song should pick up where you
     // left off rather than resetting to the module defaults.

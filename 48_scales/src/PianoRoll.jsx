@@ -154,6 +154,33 @@ function SongTab({
   onPointerDownTab,
   groupColour,
 }) {
+  // In-place rename: double-click swaps the label for an input (no more
+  // window.prompt). Commits on Enter / blur, cancels on Escape.
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(song.name)
+  const inputRef = useRef(null)
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+  const startEdit = () => {
+    if (!onRename) return
+    setDraft(song.name)
+    setEditing(true)
+  }
+  const commitEdit = () => {
+    if (!editing) return
+    setEditing(false)
+    const t = draft.trim()
+    if (t && t !== song.name) onRename(song.id, t)
+  }
+  const cancelEdit = () => {
+    setEditing(false)
+    setDraft(song.name)
+  }
+
   // While dragging, the tab follows the cursor (translateX by dx) and lifts
   // above the others with no transition so it tracks 1:1. Otherwise it
   // slides to the drop-gap via `shift` with the CSS transition.
@@ -174,27 +201,36 @@ function SongTab({
         groupColour ? 'in-group' : ''
       }`}
       style={style}
-      onPointerDown={(e) => onPointerDownTab?.(e, song)}
-      onDoubleClick={() => {
-        if (!onRename) return
-        const next = window.prompt('Rename song', song.name)
-        if (next != null) onRename(song.id, next)
+      onPointerDown={(e) => {
+        // Don't start a drag from inside the rename input.
+        if (editing) return
+        onPointerDownTab?.(e, song)
       }}
+      onDoubleClick={startEdit}
       onContextMenu={(e) => {
         e.preventDefault()
         onContextMenu?.({ songId: song.id, x: e.clientX, y: e.clientY })
       }}
       title={`${song.name}${isActive ? ' · double-click to rename · right-click for groups' : ''}`}
     >
-      <span className="song-tab-name">
-        {(() => {
-          // Show just the trailing number (drop the "Song" word); names without
-          // a number render as-is.
-          const m = song.name.match(/^.*?(\d+)\s*$/)
-          if (!m) return song.name
-          return <span className="song-tab-num">{m[1]}</span>
-        })()}
-      </span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="song-tab-rename"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitEdit()
+            else if (e.key === 'Escape') cancelEdit()
+            e.stopPropagation()
+          }}
+        />
+      ) : (
+        <span className="song-tab-name">{song.name}</span>
+      )}
       {canClose && onRemove && (
         <button
           type="button"
