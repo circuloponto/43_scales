@@ -1956,6 +1956,81 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+/* ---------- Classic (white Chrome-style) song tabs ---------- */
+/* Opt-in via Settings — the .tabs-classic modifier on .song-tabs restores the
+   original look: top-rounded tabs sitting on a white baseline, the active tab
+   scooping up to solid off-white with curved outies that break through it. The
+   default (.tabs-pill) keeps the accent-filled pill chips above. */
+.song-tabs.tabs-classic .song-tabs-list {
+  align-items: flex-end;
+  gap: 0;
+}
+.song-tabs.tabs-classic .song-tabs-list::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--fg);
+  z-index: 2;
+  pointer-events: none;
+}
+.song-tabs.tabs-classic .song-tab {
+  height: auto;
+  padding: 7px 16px;
+  gap: 6px;
+  background: color-mix(in srgb, var(--off) 65%, transparent);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  margin-right: -1px;
+  font-size: 12px;
+}
+.song-tabs.tabs-classic .song-tab:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--off) 85%, transparent);
+  z-index: 2;
+}
+.song-tabs.tabs-classic .song-tab.active {
+  color: var(--ink);
+  background: var(--fg);
+  border-color: var(--fg);
+  /* Lift above the inactive tabs and connect through the baseline. */
+  padding-top: 10px;
+  padding-bottom: 8px;
+  margin-bottom: -1px;
+  z-index: 3;
+}
+.song-tabs.tabs-classic .song-tab.active .song-tab-num {
+  color: var(--ink);
+}
+.song-tabs.tabs-classic .song-tab.active .song-tab-close {
+  color: color-mix(in srgb, var(--ink) 55%, var(--fg));
+}
+/* Curved outies — the active tab's bottom corners flare out into the baseline
+   via an inverse-rounded corner filled by a thick box-shadow in the tab's fill. */
+.song-tabs.tabs-classic .song-tab.active::before,
+.song-tabs.tabs-classic .song-tab.active::after {
+  content: '';
+  display: block;
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+}
+.song-tabs.tabs-classic .song-tab.active::before {
+  left: -9px;
+  border-bottom-right-radius: 9px;
+  box-shadow: 4px 4px 0 4px var(--fg);
+}
+.song-tabs.tabs-classic .song-tab.active::after {
+  right: -9px;
+  border-bottom-left-radius: 9px;
+  box-shadow: -4px 4px 0 4px var(--fg);
+}
+
 /* ---------- Song-tab groups (Chrome-style, inline) ---------- */
 /* The group is just an inline pill sitting on the tab strip alongside real
    tabs. Its member tabs follow immediately to its right and share a

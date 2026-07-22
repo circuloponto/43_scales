@@ -272,6 +272,10 @@ function App() {
     // 'stop'     — playback stops when the tab changes (current default).
     // 'continue' — playback resumes on the new tab at the same beat.
     tabSwitchPlayback: 'stop',
+    // Song-tab appearance above the piano roll:
+    // 'pill'    — accent-filled rounded chips (current default).
+    // 'classic' — white Chrome-style tabs on a baseline (the original look).
+    tabStyle: 'pill',
   }
   const loadSettings = () => {
     try {
@@ -2465,6 +2469,40 @@ function App() {
                   }
                 >
                   Continue
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <div className="settings-row-label">Song-tab style</div>
+                <div className="settings-row-sub">
+                  Pill — accent-filled rounded chips. Classic — white
+                  Chrome-style tabs that sit on a baseline above the roll.
+                </div>
+              </div>
+              <div className="settings-segmented">
+                <button
+                  type="button"
+                  className={`settings-segmented-btn ${
+                    settings.tabStyle !== 'classic' ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    setSettings((s) => ({ ...s, tabStyle: 'pill' }))
+                  }
+                >
+                  Pill
+                </button>
+                <button
+                  type="button"
+                  className={`settings-segmented-btn ${
+                    settings.tabStyle === 'classic' ? 'on' : ''
+                  }`}
+                  onClick={() =>
+                    setSettings((s) => ({ ...s, tabStyle: 'classic' }))
+                  }
+                >
+                  Classic
                 </button>
               </div>
             </div>
