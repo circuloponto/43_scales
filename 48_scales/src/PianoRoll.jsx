@@ -2103,18 +2103,37 @@ export default function PianoRoll({
           tHeldRef.current = false
           setTHeld(false)
         }
-      } else if (isHotkey('flipH', e) && selectedKeys.size > 0) {
+      } else if (
+        isHotkey('flipH', e) &&
+        (pendingTemplate || selectedKeys.size > 0)
+      ) {
+        // With a template armed for placement, the transforms reshape the GHOST
+        // so you can build a variation before committing; otherwise they act on
+        // the current selection as before.
         e.preventDefault()
-        flipHorizontal()
-      } else if (isHotkey('flipV', e) && selectedKeys.size > 0) {
+        if (pendingTemplate) transformPendingTemplate('flipH')
+        else flipHorizontal()
+      } else if (
+        isHotkey('flipV', e) &&
+        (pendingTemplate || selectedKeys.size > 0)
+      ) {
         e.preventDefault()
-        flipVertical()
-      } else if (isHotkey('stretch', e) && selectedKeys.size > 0) {
+        if (pendingTemplate) transformPendingTemplate('flipV')
+        else flipVertical()
+      } else if (
+        isHotkey('stretch', e) &&
+        (pendingTemplate || selectedKeys.size > 0)
+      ) {
         e.preventDefault()
-        growSelection()
-      } else if (isHotkey('compress', e) && selectedKeys.size > 0) {
+        if (pendingTemplate) transformPendingTemplate('grow')
+        else growSelection()
+      } else if (
+        isHotkey('compress', e) &&
+        (pendingTemplate || selectedKeys.size > 0)
+      ) {
         e.preventDefault()
-        shrinkSelection()
+        if (pendingTemplate) transformPendingTemplate('shrink')
+        else shrinkSelection()
       } else if (
         isHotkey('rotate', e) &&
         (selectedKeys.size > 0 || tHeldRef.current)
@@ -2734,6 +2753,79 @@ export default function PianoRoll({
     }
     return byMidi
   }, [pendingTemplate, templateHover, scale, root, totalBeats])
+
+  // Transform a pending template's notes IN PLACE (template-local coords) so the
+  // ghost can be flipped / stretched before it's ever committed — the same
+  // operations the selection transforms apply to placed notes, but on the armed
+  // template so you can shape a variation, then click to stamp it.
+  const transformTemplateNotes = (notes, op) => {
+    if (!notes || !notes.length) return notes
+    if (op === 'flipH') {
+      // Mirror in time around the pattern's own span.
+      let minB = Infinity
+      let maxEnd = -Infinity
+      for (const n of notes) {
+        const len = n.length ?? 1
+        if (n.beat < minB) minB = n.beat
+        if (n.beat + len > maxEnd) maxEnd = n.beat + len
+      }
+      return notes.map((n) => ({
+        ...n,
+        beat: minB + maxEnd - (n.beat + (n.length ?? 1)),
+      }))
+    }
+    if (op === 'flipV') {
+      // Mirror in pitch across the pattern's span in scale-step space
+      // (octave + degree combined); any chromatic offset rides along.
+      const L = scale.notes.length
+      const pos = (n) => n.octave * L + n.degree
+      let minP = Infinity
+      let maxP = -Infinity
+      for (const n of notes) {
+        const p = pos(n)
+        if (p < minP) minP = p
+        if (p > maxP) maxP = p
+      }
+      const sum = minP + maxP
+      return notes.map((n) => {
+        const np = sum - pos(n)
+        return {
+          ...n,
+          octave: Math.floor(np / L),
+          degree: ((np % L) + L) % L,
+        }
+      })
+    }
+    if (op === 'grow' || op === 'shrink') {
+      // Proportional augmentation / diminution — same math as stretchSelection:
+      // the shortest note changes by one rhythm-selector unit, everything else
+      // scales by that factor, so the internal rhythm is preserved.
+      const dir = op === 'grow' ? 1 : -1
+      const FLOOR = 1 / 32
+      const stepCells = rhythmLength > 0 ? rhythmLength : 1
+      const round = (x) => Math.round(x * 1e6) / 1e6
+      let anchor = Infinity
+      let minLen = Infinity
+      for (const n of notes) {
+        const len = n.length ?? 1
+        if (n.beat < anchor) anchor = n.beat
+        if (len < minLen) minLen = len
+      }
+      if (!(minLen > 0)) return notes
+      const targetMin = Math.max(FLOOR, minLen + dir * stepCells)
+      const factor = targetMin / minLen
+      return notes.map((n) => ({
+        ...n,
+        beat: round(anchor + (n.beat - anchor) * factor),
+        length: Math.max(FLOOR, round((n.length ?? 1) * factor)),
+      }))
+    }
+    return notes
+  }
+  const transformPendingTemplate = (op) =>
+    setPendingTemplate((cur) =>
+      cur ? { ...cur, notes: transformTemplateNotes(cur.notes, op) } : cur
+    )
 
   // ── Template sharing (copy / paste / import / export) ──────────────────
   // (state hooks live up near tabMenu/groupMenu so the close-menu effect can
