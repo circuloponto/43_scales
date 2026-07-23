@@ -4707,6 +4707,29 @@
 .beats-track.free {
   cursor: crosshair;
 }
+/* Swung display: drop the straight per-row CSS gridlines — the warped
+   .grid-swing-lines overlay draws them instead. */
+.beats-track.swung {
+  background-image: none;
+}
+/* Warped gridline overlay, spanning the whole grid area. Mirrors the per-row
+   line colours (subdivision = mute 26%, beat = mute 48%). */
+.grid-swing-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.grid-swing-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--mute) 26%, transparent);
+}
+.grid-swing-line.beat {
+  background: color-mix(in srgb, var(--mute) 48%, transparent);
+}
 
 /* Out-of-scale rows still accept marquee drags for selection; only note
    placement is gated. Use crosshair so it reads as "draggable" rather than

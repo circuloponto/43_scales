@@ -259,6 +259,11 @@ const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11])
 // reference for note-value math. Measure/beat lengths in cells come from
 // the time signature (cellsPerMeasure / cellsPerBeat, computed per render).
 const CELLS_PER_WHOLE = 16
+// Swing groove grid: a FIXED 8th note, independent of the rhythm selector.
+// Swing displaces whatever falls on the off-8th positions by onset, so a phrase
+// mixing quarters, 8ths and triplets all grooves consistently — the selector
+// only governs note ENTRY, never the feel. (16 / 8 = 2 cells = one 8th.)
+const SWING_GRID_CELLS = CELLS_PER_WHOLE / 8
 
 // PC → "white index from top of octave" (0 = B, 1 = A, ..., 6 = C)
 const PC_TO_WHITE_IDX = { 11: 0, 9: 1, 7: 2, 5: 3, 4: 4, 2: 5, 0: 6 }
@@ -291,19 +296,44 @@ const MAX_BEATS = 2048
 const DEFAULT_BPM = 120
 const MIN_BPM = 40
 const MAX_BPM = 300
-const DEFAULT_SWING = 50
-const MIN_SWING = 50
-const MAX_SWING = 75
+// ── Swing / groove ─────────────────────────────────────────────────────────
+// Swing is a monotonic time-warp of the timeline, not a property of individual
+// notes. Notes are stored at RAW (straight) positions; the scheduler warps
+// raw→swung and the playhead / mouse input unwarp swung→raw. Nothing is ever
+// rewritten. The control is BIPOLAR: `amount` runs -1..+1 (shown as -100..+100,
+// detented at 0). +amount swings the offbeat LATE (up to a triplet feel),
+// -amount PUSHES it early; 0 is straight. Downbeats never move at any amount.
+//
+// Internally we carry the ratio `s` (the fraction of a swing pair given to the
+// first note) as swingPct = s*100 — so old saved songs (50 = straight … 75)
+// stay valid — and clamp it to a musically safe, non-degenerate range so the
+// inverse warp can never divide by zero.
+const SWING_TARGET = 2 / 3 // ratio s at full +amount (triplet swing)
+const S_MIN = 0.1
+const S_MAX = 0.9
+const DEFAULT_SWING = 50 // s = 0.5 → straight
+const swClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+// amount (-1..+1) → ratio s. target is the swing CHARACTER at full amount.
+function amountToRatio(amount, target = SWING_TARGET) {
+  const a = swClamp(amount, -1, 1)
+  return swClamp(0.5 + a * (target - 0.5), S_MIN, S_MAX)
+}
+// ratio s → amount (-1..+1). Inverse of amountToRatio within its range.
+function ratioToAmount(s, target = SWING_TARGET) {
+  if (target === 0.5) return 0
+  return swClamp((s - 0.5) / (target - 0.5), -1, 1)
+}
 
-// Map a musical beat (cells on the linear grid) to swung playback time
-// expressed in cells. Notes are grouped into pairs of `unit` cells — the swing
-// note value — where the first unit stretches to swing/100 of the pair and the
-// second compresses to the rest. `unit` is the current rhythm subdivision (in
-// cells), so swing follows whatever note value is selected: unit 1 (= a 16th)
-// gives 16th swing, unit 2 an 8th swing, etc. swingPct = 50 → identity.
+// Map a musical beat (cells on the linear grid) to swung playback time. Notes
+// are grouped into pairs of `unit` cells — the swing note value — where the
+// first unit takes ratio `s` of the pair and the second the rest. s > 0.5 makes
+// the offbeat late (swing), s < 0.5 early (push). `unit` is the swing grid in
+// cells (a fixed 8th by default). Piecewise-linear and strictly monotonic for
+// any 0 < s < 1, so note order can never be violated.
 function applySwingBeat(beat, swingPct, unit = 1) {
-  if (swingPct === 50 || !(unit > 0)) return beat
-  const swing = swingPct / 100
+  if (!(unit > 0)) return beat
+  const swing = swClamp(swingPct / 100, S_MIN, S_MAX)
+  if (swing === 0.5) return beat
   const pair = 2 * unit
   const pairIdx = Math.floor(beat / pair)
   const local = beat - pairIdx * pair
@@ -316,11 +346,12 @@ function applySwingBeat(beat, swingPct, unit = 1) {
   return pairIdx * pair + timeInPair
 }
 
-// Inverse: given swung playback time in cells, recover the musical beat
-// (where the playhead should sit on the linear grid).
+// Inverse: given swung playback time in cells, recover the musical beat (where
+// the playhead should sit on the linear grid). Exact inverse of applySwingBeat.
 function unswingTimeBeat(t, swingPct, unit = 1) {
-  if (swingPct === 50 || !(unit > 0)) return t
-  const swing = swingPct / 100
+  if (!(unit > 0)) return t
+  const swing = swClamp(swingPct / 100, S_MIN, S_MAX)
+  if (swing === 0.5) return t
   const pair = 2 * unit
   const pairIdx = Math.floor(t / pair)
   const localT = t - pairIdx * pair
@@ -971,6 +1002,38 @@ export default function PianoRoll({
   ROW_HEIGHT = ROW_HEIGHT_BASE * zoomY
   KBD_COLUMN_HEIGHT = (MIDI_HIGH - MIDI_LOW + 1) * ROW_HEIGHT
   const [metronome, setMetronome] = useState(false)
+  // ── Swung-grid display (opt-in, default off) ─────────────────────────────
+  // When ON and swing is active, notes AND gridlines draw at their SWUNG
+  // positions, so notes sit visually on the grid and you can see where they
+  // fire. Notes stay STORED raw; `beatToX` warps raw→screen for drawing and
+  // `xToBeat` unwarps screen→raw for input, so dragging / placement still land
+  // on raw positions. Both are the identity when the mode is off (or swing is
+  // straight), leaving the default display byte-for-byte unchanged.
+  const [swungDisplay, setSwungDisplay] = useState(
+    () => localStorage.getItem('roll.swungDisplay') === '1'
+  )
+  useEffect(() => {
+    try {
+      localStorage.setItem('roll.swungDisplay', swungDisplay ? '1' : '0')
+    } catch {}
+  }, [swungDisplay])
+  const swingViewActive = swungDisplay && swingPct !== 50
+  const beatToX = (beat) =>
+    (swingViewActive
+      ? applySwingBeat(beat, swingPct, SWING_GRID_CELLS)
+      : beat) * BEAT_WIDTH
+  const xToBeat = (px) => {
+    const raw = px / BEAT_WIDTH
+    return swingViewActive
+      ? unswingTimeBeat(raw, swingPct, SWING_GRID_CELLS)
+      : raw
+  }
+  // Note WIDTH in swung space is the warped span, not len·BW (warp is non-linear).
+  const spanToX = (beat, len) => beatToX(beat + len) - beatToX(beat)
+  // Move a raw beat by a pixel delta. In straight mode this is beat + dx/BW; in
+  // swung mode the delta is applied in SCREEN space and unwarped, since a fixed
+  // pixel delta is not a fixed beat delta across a pair boundary (spec §5).
+  const shiftBeatByPx = (beat, dxPx) => xToBeat(beatToX(beat) + dxPx)
   const [selectedKeys, setSelectedKeys] = useState(() => new Set())
   // Template waiting to be placed by the user's next grid click. Carries
   // the full template object so the placement handler can compute the
@@ -1737,10 +1800,6 @@ export default function PianoRoll({
   const rhythmUnitCells = rhythmUnit === 'bar' ? cellsPerMeasure : cellsPerBeat
   const rhythmBaseCells = rhythmUnitCells / rhythmDenominator
   const rhythmLength = rhythmBaseCells * rhythmMult
-  // The swing note value = the current subdivision (in cells). Read live by the
-  // scheduler so swing pairs the selected note value instead of always 16ths.
-  const swingUnitRef = useRef(rhythmBaseCells)
-  swingUnitRef.current = rhythmBaseCells > 0 ? rhythmBaseCells : 1
   useEffect(() => {
     defaultNoteLengthRef.current = rhythmLength
     setDefaultNoteLen(rhythmLength)
@@ -3912,7 +3971,7 @@ export default function PianoRoll({
     let pushed = false
     const move = (mv) => {
       const dx = mv.clientX - startX
-      let na = anchor0 + dx / BEAT_WIDTH
+      let na = shiftBeatByPx(anchor0, dx)
       if (!freeMode) na = Math.round(na)
       // Keep the drawn box within the timeline.
       na = Math.max(-leadIn, Math.min(totalBeats - span - leadIn, na))
@@ -3947,7 +4006,7 @@ export default function PianoRoll({
     let pushed = false
     const move = (mv) => {
       const dx = mv.clientX - startX
-      const target = edge0 + dx / BEAT_WIDTH
+      const target = shiftBeatByPx(edge0, dx)
       if (side === 'right') {
         // endK = count of notes whose start is before the edge (min 1 past start).
         let endK = region.startK + 1
@@ -4094,7 +4153,7 @@ export default function PianoRoll({
       e.preventDefault()
       e.stopPropagation()
       const trackRect = e.currentTarget.getBoundingClientRect()
-      let clickBeat = (e.clientX - trackRect.left) / BEAT_WIDTH
+      let clickBeat = xToBeat(e.clientX - trackRect.left)
       if (!freeMode) clickBeat = Math.floor(clickBeat)
       clickBeat = Math.max(0, Math.min(totalBeats - 1, clickBeat))
       commitTemplateAt(pendingTemplate, clickBeat, midi)
@@ -4129,7 +4188,7 @@ export default function PianoRoll({
       try {
         trackEl.setPointerCapture?.(e.pointerId)
       } catch {}
-      let startBeat = (e.clientX - trackRect.left) / BEAT_WIDTH
+      let startBeat = xToBeat(e.clientX - trackRect.left)
       if (!freeMode) startBeat = Math.floor(startBeat)
       startBeat = Math.max(0, Math.min(totalBeats - 1, startBeat))
       pushHistory()
@@ -4143,7 +4202,7 @@ export default function PianoRoll({
       setSelectedKeys(new Set([currentKey]))
       const move = (mv) => {
         if (mv.pointerId !== e.pointerId) return
-        let curBeat = (mv.clientX - trackRect.left) / BEAT_WIDTH
+        let curBeat = xToBeat(mv.clientX - trackRect.left)
         if (!freeMode) curBeat = Math.floor(curBeat)
         curBeat = Math.max(0, Math.min(totalBeats - 0.001, curBeat))
         const newBeat = Math.min(startBeat, curBeat)
@@ -4207,7 +4266,7 @@ export default function PianoRoll({
 
     // Snap the click to the rhythm's division grid (tuplets included) so
     // placed notes tile cleanly. Free mode leaves it continuous.
-    let beat = snapPlacementBeat(startContentX / BEAT_WIDTH)
+    let beat = snapPlacementBeat(xToBeat(startContentX))
     let moved = false
     // Track scroll offset the container was at when the drag started, so
     // that if the container scrolls mid-drag the marquee's rectangle grows
@@ -4362,8 +4421,10 @@ export default function PianoRoll({
           // ones) intersect the marquee at their true horizontal extent.
           // Falls back to 1 beat for entries whose length isn't tracked.
           const noteLen = notes.get(key) ?? 1
-          const nx1 = noteBeat * BEAT_WIDTH
-          const nx2 = nx1 + noteLen * BEAT_WIDTH
+          // Hit-test against the note's on-screen rect, which is warped in swung
+          // display, so the marquee catches what the user actually sees.
+          const nx1 = beatToX(noteBeat)
+          const nx2 = beatToX(noteBeat + noteLen)
           const ny1 = (MIDI_HIGH - noteMidi) * ROW_HEIGHT
           const ny2 = ny1 + ROW_HEIGHT
           return nx1 < m.x2 && nx2 > m.x1 && ny1 < m.y2 && ny2 > m.y1
@@ -4570,7 +4631,7 @@ export default function PianoRoll({
       // Allow the anchor (and thus the delta) to go negative — notes that
       // cross beat 0 disappear off the left edge instead of stacking on
       // beat 0. Top bound still clamps so notes can't run past totalBeats.
-      let newAnchorBeat = drag.originalBeat + dx / BEAT_WIDTH
+      let newAnchorBeat = shiftBeatByPx(drag.originalBeat, dx)
       newAnchorBeat = snapDragBeat(newAnchorBeat)
       // Ableton-style: dragging toward the end grows the timeline rather than
       // clamping. Grow to fit the furthest note end in the group, then clamp
@@ -4744,7 +4805,12 @@ export default function PianoRoll({
         pushHistory()
         snapshotPushed = true
       }
-      let lengthDelta = dx / BEAT_WIDTH
+      // Derive the length change from where the dragged note's RIGHT edge moves
+      // on screen, unwarped — so in swung display a resize still tracks the
+      // pointer across a pair boundary. Straight mode is just dx/BW.
+      let lengthDelta = swingViewActive
+        ? xToBeat(beatToX(beat + currentLength) + dx) - (beat + currentLength)
+        : dx / BEAT_WIDTH
       if (!freeMode) lengthDelta = Math.round(lengthDelta / step) * step
       // Ableton-style: lengthening a note past the end grows the timeline.
       let resizeMaxEnd = -Infinity
@@ -4815,7 +4881,10 @@ export default function PianoRoll({
         pushHistory()
         snapshotPushed = true
       }
-      let beatDelta = dx / BEAT_WIDTH
+      // Left edge follows the pointer in screen space, unwarped (swung display).
+      let beatDelta = swingViewActive
+        ? xToBeat(beatToX(beat) + dx) - beat
+        : dx / BEAT_WIDTH
       if (!freeMode) beatDelta = Math.round(beatDelta)
       const minLen = freeMode ? 0.25 : 1
       const newPositions = group.map((g) => {
@@ -4898,7 +4967,7 @@ export default function PianoRoll({
     const cellDur = beatDurForBpm(bpm)
     const startBase = ctx.currentTime + 0.05
     const swing = swingPct
-    const swingUnit = swingUnitRef.current
+    const swingUnit = SWING_GRID_CELLS
     const activeLoop = loopRef.current
     if (activeLoop && (startBeat < activeLoop.start || startBeat >= activeLoop.end)) {
       startBeat = activeLoop.start
@@ -4912,7 +4981,7 @@ export default function PianoRoll({
     // state without needing to restart playback.
     const scheduleRange = (rangeStart, rangeEnd, scheduleStartTime) => {
       const liveSwing = swingPctRef.current
-      const liveUnit = swingUnitRef.current
+      const liveUnit = SWING_GRID_CELLS
       const swungRangeStart = applySwingBeat(rangeStart, liveSwing, liveUnit)
       // Iterate every track. Mute/solo gating: if any track is soloed,
       // only soloed tracks play; otherwise every non-muted track plays.
@@ -5116,7 +5185,7 @@ export default function PianoRoll({
       setPlayheadBeat(current)
       const sc = scrollRef.current
       if (sc) {
-        const playheadX = current * BEAT_WIDTH + 52
+        const playheadX = beatToX(current) + 52
         const margin = 80
         if (playheadX > sc.scrollLeft + sc.clientWidth - margin) {
           sc.scrollLeft = playheadX - sc.clientWidth + margin * 2
@@ -5167,10 +5236,8 @@ export default function PianoRoll({
     return () => {
       if (rescheduleTimerRef.current) clearTimeout(rescheduleTimerRef.current)
     }
-    // rhythmBaseCells is the swing note value — changing the subdivision mid-
-    // playback re-lays the timeline so the new swing feel takes effect live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bpm, swingPct, loop, rhythmBaseCells])
+  }, [bpm, swingPct, loop])
 
   const addTrack = () => {
     pushHistory()
@@ -5291,7 +5358,7 @@ export default function PianoRoll({
     const snapBeat = (b) => (freeMode ? b : Math.round(b))
     const initialBeat = Math.max(
       0,
-      Math.min(totalBeats, snapBeat(startX / BEAT_WIDTH))
+      Math.min(totalBeats, snapBeat(xToBeat(startX)))
     )
 
     const currentLoop = loopRef.current
@@ -5299,8 +5366,8 @@ export default function PianoRoll({
     let mode = 'create'
     let initialLoopSnap = null
     if (currentLoop) {
-      const loopStartX = currentLoop.start * BEAT_WIDTH
-      const loopEndX = currentLoop.end * BEAT_WIDTH
+      const loopStartX = beatToX(currentLoop.start)
+      const loopEndX = beatToX(currentLoop.end)
       if (Math.abs(startX - loopStartX) <= EDGE_PX) mode = 'resize-start'
       else if (Math.abs(startX - loopEndX) <= EDGE_PX) mode = 'resize-end'
       else if (startX > loopStartX && startX < loopEndX) mode = 'move-loop'
@@ -5313,7 +5380,7 @@ export default function PianoRoll({
       const dx = x - startX
       if (!moved && Math.abs(dx) < 3) return
       moved = true
-      const beat = Math.max(0, Math.min(totalBeats, snapBeat(x / BEAT_WIDTH)))
+      const beat = Math.max(0, Math.min(totalBeats, snapBeat(xToBeat(x))))
 
       if (mode === 'create') {
         const a = Math.min(initialBeat, beat)
@@ -5484,11 +5551,11 @@ export default function PianoRoll({
         />
         <NumberField
           label="Swing"
-          value={swingPct}
-          min={MIN_SWING}
-          max={MAX_SWING}
-          sensitivity={0.25}
-          onCommit={setSwingPct}
+          value={Math.round(ratioToAmount(swingPct / 100) * 100)}
+          min={-100}
+          max={100}
+          sensitivity={0.5}
+          onCommit={(amt) => setSwingPct(amountToRatio(amt / 100) * 100)}
         />
         <button
           type="button"
@@ -6615,8 +6682,8 @@ export default function PianoRoll({
                   <div
                     className="timeline-loop"
                     style={{
-                      left: `${loop.start * BEAT_WIDTH}px`,
-                      width: `${(loop.end - loop.start) * BEAT_WIDTH}px`,
+                      left: `${beatToX(loop.start)}px`,
+                      width: `${beatToX(loop.end) - beatToX(loop.start)}px`,
                     }}
                   />
                 )}
@@ -6681,12 +6748,37 @@ export default function PianoRoll({
                   if (pendingTemplate) setTemplateHover(null)
                 }}
               >
+                {/* Swung-display gridlines: the per-row CSS lines are hidden
+                    (.beats-track.swung) and replaced by these warped verticals,
+                    so the offbeat columns shift and notes sit on the grid. */}
+                {swingViewActive && (
+                  <div className="grid-swing-lines" aria-hidden="true">
+                    {(() => {
+                      const sub = rhythmBaseCells > 0 ? rhythmBaseCells : 1
+                      const lines = []
+                      for (let k = 1; k * sub < totalBeats; k++) {
+                        const cell = k * sub
+                        const isBeat =
+                          Math.abs(cell % cellsPerBeat) < 1e-6 ||
+                          Math.abs((cell % cellsPerBeat) - cellsPerBeat) < 1e-6
+                        lines.push(
+                          <div
+                            key={k}
+                            className={`grid-swing-line ${isBeat ? 'beat' : ''}`}
+                            style={{ left: `${beatToX(cell)}px` }}
+                          />
+                        )
+                      }
+                      return lines
+                    })()}
+                  </div>
+                )}
                 {loop && (
                   <div
                     className="grid-loop"
                     style={{
-                      left: `${loop.start * BEAT_WIDTH}px`,
-                      width: `${(loop.end - loop.start) * BEAT_WIDTH}px`,
+                      left: `${beatToX(loop.start)}px`,
+                      width: `${beatToX(loop.end) - beatToX(loop.start)}px`,
                     }}
                   />
                 )}
@@ -6694,7 +6786,7 @@ export default function PianoRoll({
                   <div
                     className="grid-hover-cell"
                     style={{
-                      left: `${hoveredCell.beat * BEAT_WIDTH}px`,
+                      left: `${beatToX(hoveredCell.beat)}px`,
                       top: `${
                         (MIDI_HIGH - hoveredCell.midi) * ROW_HEIGHT
                       }px`,
@@ -6703,7 +6795,10 @@ export default function PianoRoll({
                       // (from picking a rhythm OR resizing). Deliberately
                       // DETACHED from the rhythm selector, which resizing never
                       // rewrites. (Hidden entirely while over a placed note.)
-                      width: `${(defaultNoteLen ?? 1) * BEAT_WIDTH}px`,
+                      width: `${spanToX(
+                        hoveredCell.beat,
+                        defaultNoteLen ?? 1
+                      )}px`,
                       height: `${ROW_HEIGHT}px`,
                     }}
                   />
@@ -6723,7 +6818,7 @@ export default function PianoRoll({
                   <div
                     className="playhead"
                     style={{
-                      transform: `translateX(${playheadBeat * BEAT_WIDTH}px)`,
+                      transform: `translateX(${beatToX(playheadBeat)}px)`,
                     }}
                   />
                 )}
@@ -6737,9 +6832,9 @@ export default function PianoRoll({
                           key={`rn-${i}`}
                           className="region-note"
                           style={{
-                            left: `${m.beat * BEAT_WIDTH}px`,
+                            left: `${beatToX(m.beat)}px`,
                             top: `${(MIDI_HIGH - m.midi) * ROW_HEIGHT}px`,
-                            width: `${m.len * BEAT_WIDTH}px`,
+                            width: `${spanToX(m.beat, m.len)}px`,
                             height: `${ROW_HEIGHT}px`,
                           }}
                         />
@@ -6749,9 +6844,9 @@ export default function PianoRoll({
                         onPointerDown={(e) => handleRegionBodyDown(e, region)}
                         title="Drag to climb the pattern through the scale · click to select · Delete to bake"
                         style={{
-                          left: `${bounds.left * BEAT_WIDTH}px`,
+                          left: `${beatToX(bounds.left)}px`,
                           top: `${(MIDI_HIGH - topMidi) * ROW_HEIGHT}px`,
-                          width: `${(bounds.right - bounds.left) * BEAT_WIDTH}px`,
+                          width: `${beatToX(bounds.right) - beatToX(bounds.left)}px`,
                           height: `${(topMidi - bottomMidi + 1) * ROW_HEIGHT}px`,
                         }}
                       >
@@ -6795,7 +6890,9 @@ export default function PianoRoll({
                       style={{ height: ROW_HEIGHT }}
                     >
                       <div
-                        className={`beats-track ${freeMode ? 'free' : ''}`}
+                        className={`beats-track ${freeMode ? 'free' : ''} ${
+                          swingViewActive ? 'swung' : ''
+                        }`}
                         style={{
                           width: totalBeats * BEAT_WIDTH,
                           // Grid lines scale with the horizontal zoom and the
@@ -6814,7 +6911,7 @@ export default function PianoRoll({
                           // template preview anchor (when a template is
                           // queued). Snaps to whole beats unless free mode.
                           const rect = e.currentTarget.getBoundingClientRect()
-                          const rawBeat = (e.clientX - rect.left) / BEAT_WIDTH
+                          const rawBeat = xToBeat(e.clientX - rect.left)
                           // Snap to the rhythm division grid so the hover
                           // box lands exactly where a click would place the
                           // note (tuplets included).
@@ -6873,8 +6970,8 @@ export default function PianoRoll({
                             key={`preview-${idx}`}
                             className={`row-note preview ${chordClassFor(midi % 12)}`}
                             style={{
-                              left: `${p.beat * BEAT_WIDTH}px`,
-                              width: `${p.length * BEAT_WIDTH}px`,
+                              left: `${beatToX(p.beat)}px`,
+                              width: `${spanToX(p.beat, p.length)}px`,
                             }}
                           />
                         ))}
@@ -6885,8 +6982,8 @@ export default function PianoRoll({
                               selectedKeys.has(key) ? 'selected' : ''
                             } ${chordClassFor(midi % 12)}`}
                             style={{
-                              left: `${beat * BEAT_WIDTH}px`,
-                              width: `${length * BEAT_WIDTH}px`,
+                              left: `${beatToX(beat)}px`,
+                              width: `${spanToX(beat, length)}px`,
                             }}
                             onPointerDown={(e) =>
                               handleNoteMouseDown(e, key, beat, midi, length)
@@ -7233,11 +7330,11 @@ export default function PianoRoll({
                   />
                   <NumberField
                     label="Swing"
-                    value={swingPct}
-                    min={MIN_SWING}
-                    max={MAX_SWING}
-                    sensitivity={0.25}
-                    onCommit={setSwingPct}
+                    value={Math.round(ratioToAmount(swingPct / 100) * 100)}
+                    min={-100}
+                    max={100}
+                    sensitivity={0.5}
+                    onCommit={(amt) => setSwingPct(amountToRatio(amt / 100) * 100)}
                   />
                   <NumberField
                     label="Beats"
@@ -7294,6 +7391,25 @@ export default function PianoRoll({
                     aria-checked={!freeMode}
                     className={`settings-switch ${!freeMode ? 'on' : ''}`}
                     onClick={() => setFreeMode((v) => !v)}
+                  >
+                    <span className="settings-switch-knob" />
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-text">
+                    <div className="settings-row-label">Swung grid display</div>
+                    <div className="settings-row-sub">
+                      Draw notes and gridlines at their swung positions so notes
+                      sit on the grid and you see where they fire. Off = notes on
+                      the straight grid, swing heard only in playback.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={swungDisplay}
+                    className={`settings-switch ${swungDisplay ? 'on' : ''}`}
+                    onClick={() => setSwungDisplay((v) => !v)}
                   >
                     <span className="settings-switch-knob" />
                   </button>
