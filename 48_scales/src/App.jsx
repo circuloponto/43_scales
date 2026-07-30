@@ -1884,12 +1884,46 @@ function App() {
               <div className="section">
                 <div className="hero custom-hero">
                   <div className="hero-name-row">
-                    <span className="hero-number">{scale.name}</span>
+                    <span className="hero-number">
+                      {(() => {
+                        // Show the selected ALTERNATIVE name if one is picked in
+                        // scale settings; otherwise the custom scale's base name
+                        // (never the synthesized "Scale <id>" default).
+                        const d = scaleNames[scale.id]
+                        const entry = d?.entries.find((e) => e.id === d.selectedId)
+                        return entry && entry.id !== d.defaultId
+                          ? entry.name
+                          : scale.name
+                      })()}
+                    </span>
                     <span className="hero-caption">
                       {scale.notes.length} notes · rooted in {NOTE_DISPLAY[root]}
                     </span>
                   </div>
                   <div className="hero-controls">
+                    <button
+                      type="button"
+                      className="hero-settings"
+                      onClick={() => setScaleSettingsOpen(true)}
+                      aria-label="scale settings"
+                      title="Scale settings — manage alternative names"
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                      <span className="hero-settings-label">scale settings</span>
+                    </button>
                     <button
                       type="button"
                       className="hero-edit"
@@ -2747,6 +2781,11 @@ function App() {
         const selectedEntryId = data?.selectedId
         const defaultEntryId = data?.defaultId
         const sortedNotes = [...scale.notes].sort((a, b) => a - b)
+        // Label for the default/base name: a custom scale shows its own name
+        // rather than the synthesized "Scale <id>" (which would read "Scale
+        // custom-…" for string ids).
+        const baseName =
+          scale.kind === 'custom' ? scale.name : `Scale ${scale.id}`
         return (
           <div
             className="modal-backdrop"
@@ -2777,11 +2816,11 @@ function App() {
                   disabled={entries.length === 0}
                 >
                   {entries.length === 0 && (
-                    <option value="">{`Scale ${scale.id}`}</option>
+                    <option value="">{baseName}</option>
                   )}
                   {entries.map((e) => (
                     <option key={e.id} value={e.id}>
-                      {e.name}
+                      {e.id === defaultEntryId ? baseName : e.name}
                     </option>
                   ))}
                 </select>
@@ -2795,7 +2834,7 @@ function App() {
                 // No state mutation: only cosmetic.
                 const displayEntries =
                   entries.length === 0
-                    ? [{ id: '__default', name: `Scale ${scale.id}`, modeStep: null }]
+                    ? [{ id: '__default', name: baseName, modeStep: null }]
                     : entries
                 const displayDefaultId =
                   entries.length === 0 ? '__default' : defaultEntryId
@@ -2815,7 +2854,7 @@ function App() {
                     // back to the scale's canonical intrinsic root
                     // (rootSteps[id-1]) so the default line still shows
                     // *its* root visually rather than an unmarked strip.
-                    const rsDefault = rootSteps[scale.id - 1]
+                    const rsDefault = scale.rootStep ?? rootSteps[scale.id - 1]
                     const defaultRootPc =
                       rsDefault && scale.notes[rsDefault - 1] != null
                         ? scale.notes[rsDefault - 1]
@@ -2828,7 +2867,7 @@ function App() {
                       <li key={e.id} className="scale-settings-entry">
                         <div className="scale-settings-entry-head">
                           <span className="scale-settings-entry-name">
-                            {e.name}
+                            {isDefault ? baseName : e.name}
                             {tags.length > 0 && ` (${tags.join(', ')})`}
                           </span>
                           {!isDefault && (

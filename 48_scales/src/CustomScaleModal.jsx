@@ -16,17 +16,20 @@ export default function CustomScaleModal({ initial, NOTE_DISPLAY, onSave, onClos
     rootPc != null && selected.has(rootPc) ? rootPc : notesSorted[0] ?? null
   const canSave = notesSorted.length >= 2 && name.trim().length > 0
 
-  const toggle = (pc) =>
+  const toggle = (pc) => {
+    const wasSelected = selected.has(pc)
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(pc)) {
-        next.delete(pc)
-        if (rootPc === pc) setRootPc(null)
-      } else {
-        next.add(pc)
-      }
+      wasSelected ? next.delete(pc) : next.add(pc)
       return next
     })
+    // The FIRST note added becomes the root; removing the root clears it (the
+    // root then falls back to the lowest note until re-picked).
+    setRootPc((cur) => {
+      if (wasSelected) return cur === pc ? null : cur
+      return cur == null ? pc : cur
+    })
+  }
 
   const save = () => {
     if (!canSave) return

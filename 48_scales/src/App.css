@@ -6839,7 +6839,7 @@
 }
 
 /* ---------- Custom scale builder modal ---------- */
-.custom-modal { width: 440px; max-width: 92vw; gap: 10px; }
+.custom-modal { width: 540px; max-width: 96vw; gap: 10px; }
 .custom-modal-title {
   margin: 0;
   font-family: var(--sans);
@@ -6870,7 +6870,8 @@
 }
 .custom-name::placeholder { color: var(--mute); }
 .custom-name:focus { border-color: var(--accent); }
-.custom-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+/* All 12 notes on a single row (the modal is sized to fit them). */
+.custom-cells { display: flex; gap: 4px; flex-wrap: nowrap; }
 .custom-cell {
   display: inline-flex;
   align-items: center;
