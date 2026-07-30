@@ -6,6 +6,13 @@ import { templates as defaultTemplates } from './templates'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
+import CustomScalesTab from './CustomScalesTab'
+import CustomScaleModal from './CustomScaleModal'
+import {
+  loadCustomScales,
+  saveCustomScales,
+  newCustomScaleId,
+} from './customScales'
 import { useSaveAs } from './useSaveAs'
 import { isHotkey } from './hotkeys'
 import HotkeyEditor from './HotkeyEditor'
@@ -331,6 +338,44 @@ function App() {
     loadColor('eightFold.electron', '#6b6b70')
   )
   const [view, setView] = useState('matrix')
+  // Matrix tabs: the 43 built-in 8-note scales vs. the custom library.
+  const [matrixTab, setMatrixTab] = useState('scales') // 'scales' | 'custom'
+  // User-defined scales of any size (see customScales.js). Persisted separately
+  // from the 43 built-ins; carry kind:'custom' + string ids so they never index
+  // the glyph / rootSteps tables.
+  const [customScales, setCustomScales] = useState(loadCustomScales)
+  // Builder modal: null when closed, else { initial: scale|null } (null = new).
+  const [customModal, setCustomModal] = useState(null)
+  useEffect(() => {
+    saveCustomScales(customScales)
+  }, [customScales])
+  const saveCustomScale = ({ id, name, notes, rootStep }) => {
+    setCustomScales((prev) =>
+      id
+        ? prev.map((s) => (s.id === id ? { ...s, name, notes, rootStep } : s))
+        : [
+            ...prev,
+            { id: newCustomScaleId(), name, notes, rootStep, kind: 'custom' },
+          ]
+    )
+  }
+  const deleteCustomScale = (id) => {
+    setCustomScales((prev) => prev.filter((s) => s.id !== id))
+    if (selectedId === id) setSelectedId(null)
+  }
+  // Switching matrix tabs drops any cross-tab selection so the aside / roll
+  // never point at a scale from the other tab.
+  const switchMatrixTab = (tab) => {
+    setMatrixTab(tab)
+    setSelectedId(null)
+  }
+  // Look up a scale by id across both the built-ins and the custom library.
+  const findScale = (id) =>
+    id == null
+      ? null
+      : scales.find((s) => s.id === id) ??
+        customScales.find((s) => s.id === id) ??
+        null
 
   // Songs: top-level Chrome-style tabs. Each song owns its own track list,
   // so switching tabs preserves the per-song tracks. `tracks: null` is the
@@ -1060,11 +1105,9 @@ function App() {
   // step 1; the root travels off step 1 but its top-dot highlight follows.
   // modeStep is a 1-indexed position in the SORTED rooted scale.
   const leadPc = (() => {
-    const s = selectedId !== null
-      ? scales.find((sc) => sc.id === selectedId)
-      : null
+    const s = findScale(selectedId)
     if (!s) return root
-    const rsDef = rootSteps[s.id - 1]
+    const rsDef = s.rootStep ?? rootSteps[s.id - 1]
     const cOff = rsDef && s.notes[rsDef - 1] != null ? s.notes[rsDef - 1] : 0
     const localRooted = s.notes.map((n) => ((n - cOff) % 12 + 12) % 12)
     const localSorted = [...localRooted].sort((a, b) => a - b)
@@ -1137,7 +1180,7 @@ function App() {
     return out
   })()
 
-  const scale = selectedId !== null ? scales.find((s) => s.id === selectedId) : null
+  const scale = findScale(selectedId)
   // Each scale has a canonical "circle-degree" (rootSteps[id-1]) — the degree
   // of scale.notes that acts as the scale's intrinsic root. When the user
   // picks a root, we want THAT degree to land on the chosen note, not the
@@ -1145,9 +1188,11 @@ function App() {
   // making PC 0 = circle-degree; adding `root` then puts the circle on the
   // user's root. Everywhere the app combines scale.notes with `root`, it
   // should go through rootedNotes.
-  const scaleCircleOff = scale && rootSteps[scale.id - 1] != null
-    ? scale.notes[rootSteps[scale.id - 1] - 1] ?? 0
-    : 0
+  // Circle-degree = the scale's intrinsic root. Custom scales carry their own
+  // `rootStep`; built-ins look it up in the rootSteps table by id.
+  const scaleRootStep = scale ? scale.rootStep ?? rootSteps[scale.id - 1] : null
+  const scaleCircleOff =
+    scale && scaleRootStep != null ? scale.notes[scaleRootStep - 1] ?? 0 : 0
   const rootedNotes = scale
     ? scale.notes.map((n) => ((n - scaleCircleOff) % 12 + 12) % 12)
     : []
@@ -1452,7 +1497,31 @@ function App() {
         ) : (
         <>
         <div className={`matrix ${selectedId !== null ? 'has-selection' : ''}`}>
-          {visibleScales.map((s) => {
+          <div className="matrix-tabs">
+            <button
+              type="button"
+              className={`matrix-tab ${matrixTab === 'scales' ? 'active' : ''}`}
+              onClick={() => switchMatrixTab('scales')}
+            >
+              8-note scales
+            </button>
+            <button
+              type="button"
+              className={`matrix-tab ${matrixTab === 'custom' ? 'active' : ''}`}
+              onClick={() => switchMatrixTab('custom')}
+            >
+              Custom
+            </button>
+          </div>
+          {matrixTab === 'custom' ? (
+            <CustomScalesTab
+              scales={customScales}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onNew={() => setCustomModal({ initial: null })}
+            />
+          ) : (
+            visibleScales.map((s) => {
             const set = new Set(s.notes)
             const isSel = s.id === selectedId
             const rsDefault = rootSteps[s.id - 1]
@@ -1540,7 +1609,8 @@ function App() {
                 </div>
               </div>
             )
-          })}
+          })
+        )}
         </div>
 
         <div className="matrix-toolbar">
@@ -1809,6 +1879,87 @@ function App() {
           })()}
 
           {scale ? (
+            scale.kind === 'custom' ? (
+            <>
+              <div className="section">
+                <div className="hero custom-hero">
+                  <div className="hero-name-row">
+                    <span className="hero-number">{scale.name}</span>
+                    <span className="hero-caption">
+                      {scale.notes.length} notes · rooted in {NOTE_DISPLAY[root]}
+                    </span>
+                  </div>
+                  <div className="hero-controls">
+                    <button
+                      type="button"
+                      className="hero-edit"
+                      onClick={() => setCustomModal({ initial: scale })}
+                      title="Edit this custom scale"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="hero-edit danger"
+                      onClick={() => deleteCustomScale(scale.id)}
+                      title="Delete this custom scale"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      className="hero-clear"
+                      onClick={() => setSelectedId(null)}
+                      aria-label="clear scale selection"
+                      title="Clear selection (Esc)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="hero-actions">
+                    <button
+                      className="open-roll"
+                      onClick={() => setView('roll')}
+                      disabled={concrete.length === 0}
+                    >
+                      open roll
+                    </button>
+                    <button
+                      className={`play${isPlaying ? ' is-playing' : ''}`}
+                      onClick={playScale}
+                      disabled={concrete.length === 0}
+                      aria-label={isPlaying ? 'stop scale' : 'play scale'}
+                    >
+                      {isPlaying ? <StopIcon /> : <PlayIcon />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="section">
+                <div className="label">Spelling</div>
+                <div className="electrons">
+                  {sortedRooted.map((n) => (
+                    <span key={n} className="electron-note in-scale">
+                      {NOTE_DISPLAY[(root + n) % 12]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="section">
+                <div className="label">Electrons</div>
+                <div className="electrons">
+                  {Array.from({ length: 12 }, (_, c) => {
+                    if (rootedNotes.includes(c)) return null
+                    return (
+                      <span key={c} className="electron-note">
+                        {NOTE_DISPLAY[(root + c) % 12]}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+            ) : (
             <>
               <div className="section">
                 <div className="hero">
@@ -2160,6 +2311,7 @@ function App() {
                 )
               })()}
             </>
+            )
           ) : (
             <div className="section">
               <div className="hint">Choose a scale.</div>
@@ -2178,6 +2330,18 @@ function App() {
           <GlyphRow rowIndex={hoverRow} accent={electronColor} />
           <div className="glyph-popup-caption">Scale {padId(hoverRow + 1)}</div>
         </div>
+      )}
+
+      {customModal && (
+        <CustomScaleModal
+          initial={customModal.initial}
+          NOTE_DISPLAY={NOTE_DISPLAY}
+          onSave={(sc) => {
+            saveCustomScale(sc)
+            setCustomModal(null)
+          }}
+          onClose={() => setCustomModal(null)}
+        />
       )}
 
       {finderOpen && (

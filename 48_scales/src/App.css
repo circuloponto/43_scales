@@ -190,6 +190,9 @@
   overflow-x: visible;
   scrollbar-width: thin;
   scrollbar-color: var(--hairline) transparent;
+  /* Always reserve the scrollbar gutter so the column width is identical
+     whether the list overflows (8-note tab) or not (custom tab) — no shift. */
+  scrollbar-gutter: stable;
   padding-right: 8px;
   padding-top: calc(var(--cell) * 0.85);
   padding-bottom: calc(var(--cell) * 0.85);
@@ -1062,6 +1065,27 @@
 .hero-clear:hover {
   color: var(--fg);
   border-color: var(--accent);
+}
+/* Custom-scale panel controls (Edit / Delete), next to the × clear. */
+.hero-edit {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--mute);
+  cursor: pointer;
+  align-self: start;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.hero-edit:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+.hero-edit.danger:hover {
+  color: #ff6b6b;
+  border-color: color-mix(in srgb, #ff6b6b 55%, transparent);
 }
 
 .hero-name-input:hover {
@@ -6727,3 +6751,199 @@
 }
 
 
+
+/* ---------- Matrix tabs (8-note scales / custom) ---------- */
+/* Pinned at the top of the scrolling matrix column. */
+.matrix-tabs {
+  display: flex;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+  padding: 2px 0 10px;
+  margin-top: calc(var(--cell) * -0.85);
+  background: var(--frame);
+}
+.matrix-tab {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.matrix-tab:hover { color: var(--fg); }
+.matrix-tab.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* ---------- Custom scales: thin matrix rows (same look as the 48) ---------- */
+.custom-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--cell) + 8px);
+  flex-shrink: 0;
+  /* Clear separation from the pinned tabs above and the first scale below. */
+  margin: 10px 0 14px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.custom-add-row:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent);
+}
+.custom-scale-row {
+  align-items: center;
+  border-radius: 8px;
+}
+.custom-scale-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.custom-scale-name {
+  /* Match the built-in left block exactly: glyph-zone (3×cell) + gap(8) +
+     row-number(28) → 3×cell + 36, so the pattern strip starts at the same x
+     and the matrix column (and the right panel) are the same width in both
+     tabs — no layout shift. */
+  width: calc(var(--cell) * 3 + 36px);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding-left: 2px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-empty {
+  padding: 16px 4px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+/* ---------- Custom scale builder modal ---------- */
+.custom-modal { width: 440px; max-width: 92vw; gap: 10px; }
+.custom-modal-title {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.custom-modal .settings-modal-header { align-items: center; }
+.custom-modal .finder-modal-close { margin-left: auto; }
+.custom-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-top: 4px;
+}
+.custom-hint { font-size: 12px; color: var(--mute); }
+.custom-name {
+  background: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.custom-name::placeholder { color: var(--mute); }
+.custom-name:focus { border-color: var(--accent); }
+.custom-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+.custom-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--off);
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease),
+    border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.custom-cell.on {
+  background: color-mix(in srgb, var(--accent) 40%, var(--off));
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.custom-cell.root { box-shadow: inset 0 0 0 2px var(--fg); color: var(--fg); }
+.custom-roots {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 26px;
+}
+.custom-root-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.custom-root-chip.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.custom-builder-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.custom-save {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.custom-save:disabled { opacity: 0.4; cursor: default; }
+.custom-cancel {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+.custom-cancel:hover { color: var(--fg); }

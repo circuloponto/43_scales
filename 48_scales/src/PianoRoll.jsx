@@ -385,7 +385,10 @@ function midiToOctave(midi) {
 // Returns a stable string; equal strings ⇒ duplicate.
 function templateSignature(notes) {
   if (!notes || !notes.length) return ''
-  const N = 8 // notes per scale (all scales here are 8-note)
+  // Encode (octave, degree) as a single monotone step index. N just has to
+  // exceed any scale's note count so per-octave indices never overlap — 12
+  // (the chromatic max) covers scales of any size, including custom ones.
+  const N = 12
   const steps = notes.map((n) => (n.octave || 0) * N + n.degree)
   const minStep = Math.min(...steps)
   const minBeat = Math.min(...notes.map((n) => n.beat))
@@ -779,7 +782,11 @@ export default function PianoRoll({
   // buildInitialPattern, the chord catalog generator, template apply, the
   // scale-bar pattern — uses `scale` (this rotated version), so chord-pair
   // colors align cleanly with the on-cells.
-  const _rsRoll = rawScale ? modeStep ?? rootSteps[rawScale.id - 1] : null
+  // Intrinsic root degree: an explicit mode pick wins; else the scale's own
+  // rootStep (custom scales carry it) or the built-in rootSteps table.
+  const _rsRoll = rawScale
+    ? modeStep ?? rawScale.rootStep ?? rootSteps[rawScale.id - 1]
+    : null
   const _intrinsicPcRoll =
     rawScale && _rsRoll ? rawScale.notes[_rsRoll - 1] : 0
   // Sort the rotated notes ascending so scale.notes[i] is the i-th scale
@@ -5515,7 +5522,9 @@ export default function PianoRoll({
           <span>back</span>
         </button>
         <div className="roll-title">
-          <span className="roll-number">{padId(scale.id)}</span>
+          <span className="roll-number">
+            {scale.kind === 'custom' ? scale.name : padId(scale.id)}
+          </span>
           <span className="roll-divider">·</span>
           <span className="roll-name">rooted in {NOTE_DISPLAY[root]}</span>
           {tHeld && (
@@ -7596,7 +7605,8 @@ export default function PianoRoll({
         <div className="chord-palette-modal">
           <div className="chord-palette-header">
             <span className="label">
-              Chords — {padId(scale.id)} · {NOTE_DISPLAY[root]}
+              Chords — {scale.kind === 'custom' ? scale.name : padId(scale.id)} ·{' '}
+              {NOTE_DISPLAY[root]}
             </span>
             <button
               type="button"
@@ -7654,7 +7664,9 @@ export default function PianoRoll({
           >
             <div className="settings-modal-header">
               <h3>
-                Chord voicings — {padId(scale.id)} · {NOTE_DISPLAY[root]}
+                Chord voicings —{' '}
+                {scale.kind === 'custom' ? scale.name : padId(scale.id)} ·{' '}
+                {NOTE_DISPLAY[root]}
               </h3>
               <button
                 type="button"
