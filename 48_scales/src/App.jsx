@@ -1205,6 +1205,26 @@ function App() {
   const concrete = scale
     ? rootedNotes.map((n) => (n + root) % 12)
     : []
+  // For a custom scale the info panel is a pure CHROMATIC view of the scale's
+  // actual pitch classes (no transpose). The tonic is the ACTUAL note picked as
+  // the alias root (modeStep into the sorted notes), or the intrinsic root by
+  // default — exactly what the user clicked in scale settings.
+  const customTonicPc = (() => {
+    if (!scale || scale.kind !== 'custom') return null
+    const sorted = [...scale.notes].sort((a, b) => a - b)
+    return modeStep && sorted[modeStep - 1] != null
+      ? sorted[modeStep - 1]
+      : scale.notes[(scale.rootStep ?? 1) - 1] ?? sorted[0]
+  })()
+  // Custom scales: keep the transpose `root` ON the current tonic pitch class.
+  // The roll roots by (modeStep-rotation + root); with root == the tonic pc the
+  // two cancel to the scale's ACTUAL notes played from that tonic (e.g. F G A B
+  // C D E), not a transposed key and not a different mode. modeStep alone (root
+  // 0) would play the rotation at C — the wrong pitches.
+  useEffect(() => {
+    if (customTonicPc != null) setRoot(customTonicPc)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customTonicPc])
   const [scalePickerOpen, setScalePickerOpen] = useState(false)
   useEffect(() => {
     if (!scalePickerOpen) return
@@ -1517,6 +1537,7 @@ function App() {
             <CustomScalesTab
               scales={customScales}
               selectedId={selectedId}
+              currentTonicPc={customTonicPc}
               onSelect={setSelectedId}
               onNew={() => setCustomModal({ initial: null })}
             />
@@ -1749,7 +1770,81 @@ function App() {
             </button>
           </div>
 
-          {(() => {
+          {scale && scale.kind === 'custom' ? (() => {
+            // INDEPENDENT alias-root strip for custom scales. This does NOT go
+            // through the built-in transpose / leadPc / slide machinery below
+            // (that model would render e.g. D major for a D root of C major,
+            // and its carousel puts the picked root in the wrong cell). Here
+            // the operation is a pure MODE rotation of the scale's ACTUAL
+            // pitch classes: cell 0 is the current tonic, and the strip walks
+            // chromatically up from it. Clicking any in-scale note makes it
+            // the tonic (setModeStep to its degree in the sorted notes), so it
+            // re-rotates to lead. Out-of-scale notes are inert.
+            const sorted = [...scale.notes].sort((a, b) => a - b)
+            const tonic = customTonicPc ?? sorted[0]
+            return (
+              <div className="section">
+                <div className="roots-hint top">pick root</div>
+                <div className="roots-frame">
+                  <div className="roots">
+                    {Array.from({ length: 12 }, (_, i) => {
+                      const pc = (tonic + i) % 12
+                      const inScale = scale.notes.includes(pc)
+                      const isRoot = i === 0
+                      const degree = inScale ? sorted.indexOf(pc) + 1 : 0
+                      return (
+                        <div
+                          key={i}
+                          className={`root-cell ${inScale ? 'in' : 'out'} ${
+                            inScale ? '' : 'dim'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            className={`root-dot top ${isRoot ? 'on' : ''}`}
+                            onClick={
+                              inScale ? () => setModeStep(degree) : undefined
+                            }
+                            disabled={!inScale}
+                            aria-label={`Set root to ${NOTE_DISPLAY[pc]}`}
+                            title={
+                              inScale ? `Set root to ${NOTE_DISPLAY[pc]}` : ''
+                            }
+                          />
+                          <button
+                            type="button"
+                            className={`root-label ${isRoot ? 'active' : ''}`}
+                            onClick={
+                              inScale ? () => setModeStep(degree) : undefined
+                            }
+                            disabled={!inScale}
+                          >
+                            {NOTE_DISPLAY[pc]}
+                          </button>
+                          <button
+                            type="button"
+                            className={`root-dot bottom ${isRoot ? 'on' : ''}`}
+                            onClick={
+                              inScale ? () => setModeStep(degree) : undefined
+                            }
+                            disabled={!inScale}
+                            aria-label={inScale ? `Mode #${degree}` : ''}
+                            title={inScale ? `Mode #${degree}` : ''}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="roots-hint bottom">
+                  pick mode{' '}
+                  <span className="roots-hint-root">
+                    · starts on {NOTE_DISPLAY[tonic]}
+                  </span>
+                </div>
+              </div>
+            )
+          })() : (() => {
             // Mode is a 1-indexed position in the sorted rooted scale, with
             // Mode #1 = the user's root and Mode #N ascending by pitch. When
             // no mode is picked, we default to Mode #1 (canonical root view).
@@ -1897,7 +1992,8 @@ function App() {
                       })()}
                     </span>
                     <span className="hero-caption">
-                      {scale.notes.length} notes · rooted in {NOTE_DISPLAY[root]}
+                      {scale.notes.length} notes · rooted in{' '}
+                      {NOTE_DISPLAY[customTonicPc ?? root]}
                     </span>
                   </div>
                   <div className="hero-controls">
@@ -1972,21 +2068,36 @@ function App() {
               <div className="section">
                 <div className="label">Spelling</div>
                 <div className="electrons">
-                  {sortedRooted.map((n) => (
-                    <span key={n} className="electron-note in-scale">
-                      {NOTE_DISPLAY[(root + n) % 12]}
-                    </span>
-                  ))}
+                  {(() => {
+                    // Actual pitch classes, ordered from the tonic so the root
+                    // reads first (e.g. F G A B C D E). No transpose.
+                    const sorted = [...scale.notes].sort((a, b) => a - b)
+                    const ti = sorted.indexOf(customTonicPc)
+                    const ordered =
+                      ti >= 0
+                        ? [...sorted.slice(ti), ...sorted.slice(0, ti)]
+                        : sorted
+                    return ordered.map((pc) => (
+                      <span
+                        key={pc}
+                        className={`electron-note in-scale ${
+                          pc === customTonicPc ? 'is-root' : ''
+                        }`}
+                      >
+                        {NOTE_DISPLAY[pc]}
+                      </span>
+                    ))
+                  })()}
                 </div>
               </div>
               <div className="section">
                 <div className="label">Electrons</div>
                 <div className="electrons">
-                  {Array.from({ length: 12 }, (_, c) => {
-                    if (rootedNotes.includes(c)) return null
+                  {Array.from({ length: 12 }, (_, pc) => {
+                    if (scale.notes.includes(pc)) return null
                     return (
-                      <span key={c} className="electron-note">
-                        {NOTE_DISPLAY[(root + c) % 12]}
+                      <span key={pc} className="electron-note">
+                        {NOTE_DISPLAY[pc]}
                       </span>
                     )
                   })}

@@ -1006,6 +1006,16 @@
   min-width: 1.4em;
   text-align: center;
 }
+/* Custom-scale "Spelling" chips: in-scale notes read normally; the current
+   tonic (root) is accent-highlighted. */
+.electron-note.in-scale {
+  color: var(--fg);
+  font-weight: 500;
+}
+.electron-note.in-scale.is-root {
+  color: var(--accent);
+  font-weight: 700;
+}
 
 /* ---------- Scale info hero ---------- */
 

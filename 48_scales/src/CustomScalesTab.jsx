@@ -6,7 +6,13 @@
 // New / Edit / Delete live off the row (New = the "+" row here; Edit / Delete in
 // the panel), so nothing adds trailing width. Returns a fragment so the rows sit
 // directly inside the matrix column.
-export default function CustomScalesTab({ scales, selectedId, onSelect, onNew }) {
+export default function CustomScalesTab({
+  scales,
+  selectedId,
+  currentTonicPc,
+  onSelect,
+  onNew,
+}) {
   return (
     <>
       <button type="button" className="custom-add-row" onClick={onNew}>
@@ -19,36 +25,45 @@ export default function CustomScalesTab({ scales, selectedId, onSelect, onNew })
         </div>
       )}
 
-      {scales.map((s) => (
-        <div
-          key={s.id}
-          className={`row custom-scale-row ${
-            s.id === selectedId ? 'selected' : ''
-          }`}
-          data-scale-id={s.id}
-          onClick={() => onSelect(s.id === selectedId ? null : s.id)}
-          title="Select scale"
-        >
-          <div className="custom-scale-name">{s.name}</div>
+      {scales.map((s) => {
+        // Rotate the chromatic strip so the scale's ROOT is the first cell: the
+        // selected scale uses the current tonic (which follows an alias root);
+        // others use their own designated root. Cell i shows pc (rootPc + i).
+        const rootPc =
+          s.id === selectedId && currentTonicPc != null
+            ? currentTonicPc
+            : s.notes[s.rootStep - 1] ?? s.notes[0]
+        return (
           <div
-            className="row-cells"
-            style={{ gridTemplateColumns: `repeat(12, var(--cell))` }}
+            key={s.id}
+            className={`row custom-scale-row ${
+              s.id === selectedId ? 'selected' : ''
+            }`}
+            data-scale-id={s.id}
+            onClick={() => onSelect(s.id === selectedId ? null : s.id)}
+            title="Select scale"
           >
-            {Array.from({ length: 12 }, (_, pc) => {
-              const on = s.notes.includes(pc)
-              const isRoot = s.notes[s.rootStep - 1] === pc
-              return (
-                <div
-                  key={pc}
-                  className={`cell ${on ? 'on' : 'off'} ${
-                    on && isRoot ? 'is-scale-root' : ''
-                  }`}
-                />
-              )
-            })}
+            <div className="custom-scale-name">{s.name}</div>
+            <div
+              className="row-cells"
+              style={{ gridTemplateColumns: `repeat(12, var(--cell))` }}
+            >
+              {Array.from({ length: 12 }, (_, i) => {
+                const pc = (rootPc + i) % 12
+                const on = s.notes.includes(pc)
+                return (
+                  <div
+                    key={i}
+                    className={`cell ${on ? 'on' : 'off'} ${
+                      i === 0 ? 'is-scale-root' : ''
+                    }`}
+                  />
+                )
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </>
   )
 }
