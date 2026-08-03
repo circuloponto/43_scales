@@ -3602,25 +3602,44 @@ export default function PianoRoll({
     const lengths = sorted.map((s) => s.length)
     let newMidis, newLengths
     if (direction === 1) {
-      // Forward rotation: the earliest-beat pitch wraps to the latest
-      // beat. Bump it up by whole octaves until it sits above the new
-      // last pitch (which was the original second-to-last). With a flat
-      // +12 the wrap could fall inside the existing range — e.g.,
-      // [60, 70, 80] would land 60+12=72 below 80 and break the contour.
+      // Forward rotation: the earliest-beat pitch wraps to the latest beat,
+      // landing just above the note it now follows (the original last pitch).
       const first = midis[0]
       const newLast = midis[n - 1]
-      let bumped = first
-      while (bumped <= newLast) bumped += 12
+      const neighbourStep = midiToScaleStep(newLast)
+      let bumped
+      if (first % 12 === newLast % 12 && neighbourStep != null) {
+        // The wrapped pitch shares its neighbour's pitch class — a scale run
+        // that spans a full octave (e.g. Scale Up: G#…G# an octave up). A
+        // flat +12 would stack ANOTHER G# an octave higher; instead continue
+        // the scale by one DEGREE (→ the A# above) so it stays a clean
+        // staircase.
+        bumped = scaleStepToMidi(neighbourStep + 1)
+      } else {
+        // Otherwise keep the wrapped note's pitch class, lifted by whole
+        // octaves until it clears the new last pitch. With a flat +12 the
+        // wrap could fall inside the range — e.g. [60,70,80] → 60+12=72 sits
+        // below 80 — so this is the right behaviour for arpeggios/leaps.
+        bumped = first
+        while (bumped <= newLast) bumped += 12
+      }
       newMidis = [...midis.slice(1), bumped]
       newLengths = [...lengths.slice(1), lengths[0]]
     } else {
-      // Backward rotation: the latest-beat pitch wraps to the earliest
-      // beat. Drop it by whole octaves until it sits below the new
-      // first pitch (which was the original second).
+      // Backward rotation: the latest-beat pitch wraps to the earliest beat,
+      // landing just below the note it now precedes (the original first).
       const last = midis[n - 1]
       const newFirst = midis[0]
-      let bumped = last
-      while (bumped >= newFirst) bumped -= 12
+      const neighbourStep = midiToScaleStep(newFirst)
+      let bumped
+      if (last % 12 === newFirst % 12 && neighbourStep != null) {
+        // Octave-spanning scale run (e.g. G#…G#): drop by one DEGREE to the
+        // G below, not by a flat 12 to another G# an octave lower.
+        bumped = scaleStepToMidi(neighbourStep - 1)
+      } else {
+        bumped = last
+        while (bumped >= newFirst) bumped -= 12
+      }
       newMidis = [bumped, ...midis.slice(0, n - 1)]
       newLengths = [lengths[n - 1], ...lengths.slice(0, n - 1)]
     }
