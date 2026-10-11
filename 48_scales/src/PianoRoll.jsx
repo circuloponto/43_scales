@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
-  ChartSpline,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -6576,16 +6575,15 @@ export default function PianoRoll({
               </button>
               <button
                 type="button"
-                className={`icon-only ${lineGenOpen ? 'on' : ''}`}
+                className={lineGenOpen ? 'on' : ''}
                 onClick={() => {
                   setLineGenOpen(true)
                   // The vertical fretboard occupies this sidebar; step aside.
                   setFretboardView((v) => (v === 'vertical' ? 'off' : v))
                 }}
-                title="Line generator"
-                aria-label="Line generator"
+                title="Generate variations of the selected notes"
               >
-                <ChartSpline size={13} strokeWidth={1.8} />
+                Line generator
               </button>
             </div>
             {fretboardView !== 'off' && (

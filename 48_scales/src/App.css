@@ -2937,11 +2937,17 @@
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.panel-view-toggle button.icon-only {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 7px;
+/* The tab row scrolls sideways so more tabs can be added later. */
+.templates-header .panel-view-toggle {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--off-lift) transparent;
+}
+.templates-header .panel-view-toggle button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* Line generator sidebar */
