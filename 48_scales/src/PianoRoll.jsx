@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
+  ChartSpline,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -29,6 +30,8 @@ import TemplateEditorModal from './TemplateEditorModal'
 import TagsModal from './TagsModal'
 import ImportConflictsModal from './ImportConflictsModal'
 import TemplateTree from './TemplateTree'
+import LineGeneratorPanel from './LineGeneratorPanel'
+import { generateLine, sortLine } from './lineGenerator'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -1276,6 +1279,12 @@ export default function PianoRoll({
   // Fretboard preview: 'off' (templates + roll), 'vertical' (fretboard replaces
   // the templates sidebar), or 'horizontal' (fretboard replaces the roll).
   const [fretboardView, setFretboardView] = useState('off')
+  // Line generator: a third sidebar view next to Templates / Fretboard.
+  const [lineGenOpen, setLineGenOpen] = useState(false)
+  // Notes locked against line-generator transforms, as `${trackId}|${noteKey}`.
+  const [anchoredKeys, setAnchoredKeys] = useState(() => new Set())
+  // Last generation: the original line + what it produced (see handler).
+  const lineGenBaseRef = useRef(null)
   // Fretboard "position": the lower fret of the 5-fret span notes are placed in.
   // Set with the P key + a number; auto-shifts when an entered note is outside.
   const [fretPosition, setFretPosition] = useState(0)
@@ -3677,6 +3686,103 @@ export default function PianoRoll({
     return Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
   }
 
+  // Line generator: replace the selected notes with an alternative line built
+  // by `modeKey` (see lineGenerator.js). Rhythm is kept; only pitches change.
+  // Pressing Generate again keeps working from the ORIGINAL selection (not from
+  // the previous result) for as long as the result is still what's selected.
+  // Anchored notes are locked: other modes skip them, and the Anchor mode
+  // itself just toggles the lock on the selection. Returns an error message
+  // for the panel, or '' on success.
+  const anchorId = (key) => `${activeTrackId}|${key}`
+  const sigOf = (keys) => [...keys].sort().join(',')
+  const generateLineFromSelection = (modeKey, opts) => {
+    if (!scale) return ''
+    const cur = notesRef.current
+    const items = []
+    for (const k of selectedKeys) {
+      const [bStr, midiStr] = k.split('-')
+      items.push({
+        key: k,
+        beat: Number(bStr),
+        midi: Number(midiStr),
+        len: cur.get(k) ?? 1,
+      })
+    }
+    if (items.length === 0) return 'Select some notes on the piano roll first.'
+
+    if (modeKey === 'anchor') {
+      // Lock everything selected, unless it's all locked already: then unlock.
+      const allLocked = items.every((it) => anchoredKeys.has(anchorId(it.key)))
+      setAnchoredKeys((prev) => {
+        const next = new Set(prev)
+        for (const it of items) {
+          allLocked ? next.delete(anchorId(it.key)) : next.add(anchorId(it.key))
+        }
+        return next
+      })
+      lineGenBaseRef.current = null // locks changed: re-read the selection
+      return ''
+    }
+
+    // Original line: the stored one if the selection is still its last result.
+    const base = lineGenBaseRef.current
+    const continuing =
+      base && base.trackId === activeTrackId && base.sig === sigOf(selectedKeys)
+    const original = sortLine(
+      continuing
+        ? base.original
+        : items.filter((it) => !anchoredKeys.has(anchorId(it.key)))
+    )
+    const currentKeys = continuing
+      ? base.resultKeys
+      : original.map((it) => it.key)
+    if (original.length === 0) return 'All the selected notes are anchored.'
+
+    const result = generateLine(
+      modeKey,
+      original,
+      {
+        scaleSize: scale.notes.length,
+        low: MIDI_LOW,
+        high: MIDI_HIGH,
+        toStep: midiToScaleStep,
+        toMidi: scaleStepToMidi,
+        snap: nearestScaleMidi,
+        chordOf: (pc) => {
+          const c = chordClassFor(pc)
+          return c === 'chord-left'
+            ? 'left'
+            : c === 'chord-right'
+              ? 'right'
+              : c === 'chord-both'
+                ? 'both'
+                : null
+        },
+      },
+      opts
+    )
+    if (result.error) return result.error
+    pushHistory()
+    const newKeys = original.map((it, i) => `${it.beat}-${result.midis[i]}`)
+    const newSel = new Set(selectedKeys)
+    for (const k of currentKeys) newSel.delete(k)
+    for (const k of newKeys) newSel.add(k)
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const k of currentKeys) next.delete(k)
+      original.forEach((it, i) => next.set(newKeys[i], it.len))
+      return next
+    })
+    setSelectedKeys(newSel)
+    lineGenBaseRef.current = {
+      trackId: activeTrackId,
+      sig: sigOf(newSel),
+      original,
+      resultKeys: newKeys,
+    }
+    return ''
+  }
+
   // Keyboard nudge for the selection. `beatDelta` shifts horizontally on the
   // grid; `stepDelta` shifts vertically by scale steps. The selection moves
   // as a rigid group. Notes pushed left of beat 0 go to the off-screen store
@@ -3828,6 +3934,13 @@ export default function PianoRoll({
     const N = r.pattern.length
     const m = r.pitchShift + k
     const li = ((m % N) + N) % N
+    if (r.chromatic) {
+      // Raw-semitone tiling: note m at its exact offset within the pattern,
+      // plus one pattern-span (periodSemis) per repetition up the diagonal.
+      return r.baseMidi + r.pattern[li].dmidi + Math.floor(m / N) * r.periodSemis
+    }
+    // Scale-step staircase: climb by scale degrees (out-of-scale notes were
+    // snapped onto the scale when the rune was created).
     return scaleStepToMidi(
       r.baseStep + r.pattern[li].dstep + Math.floor(m / N) * r.periodSteps
     )
@@ -3895,17 +4008,40 @@ export default function PianoRoll({
     }
     const patternLen = maxEnd - minBeat
     if (patternLen <= 0) return
-    const stepped = raw.map((n) => {
-      let st = midiToScaleStep(n.midi)
-      if (st == null) st = midiToScaleStep(nearestScaleMidi(n.midi)) ?? 0
-      return { dt: n.beat - minBeat, step: st, len: n.len }
-    })
-    const baseStep = Math.min(...stepped.map((s) => s.step))
-    const maxStep = Math.max(...stepped.map((s) => s.step))
-    const periodSteps = Math.max(1, maxStep - baseStep + 1)
-    const pattern = stepped
-      .map((s) => ({ dt: s.dt, dstep: s.step - baseStep, len: s.len }))
-      .sort((a, b) => a.dt - b.dt || a.dstep - b.dstep)
+    // Two rune flavours, chosen by the "allow out-of-scale" toggle at creation:
+    //  • ON  → CHROMATIC: a literal infinite tiling of exactly what was
+    //    selected. Notes keep their exact pitches (raw MIDI offsets from the
+    //    lowest note) and each repetition climbs by the pattern's own pitch
+    //    span (periodSemis) — the diagonal is built from whatever it was thrown.
+    //  • OFF → SCALE-STEP: the original staircase. Out-of-scale notes snap to
+    //    the nearest scale note and the diagonal climbs by scale degrees.
+    const chromatic = allowOutOfScale
+    let baseMidi, periodSemis, baseStep, periodSteps, pattern
+    if (chromatic) {
+      baseMidi = Math.min(...raw.map((n) => n.midi))
+      // Each repetition transposes the whole pattern up by ONE SEMITONE, so it
+      // rolls: C C# D → C# D D# → D D# E …
+      periodSemis = 1
+      pattern = raw
+        .map((n) => ({
+          dt: n.beat - minBeat,
+          dmidi: n.midi - baseMidi,
+          len: n.len,
+        }))
+        .sort((a, b) => a.dt - b.dt || a.dmidi - b.dmidi)
+    } else {
+      const stepped = raw.map((n) => {
+        let st = midiToScaleStep(n.midi)
+        if (st == null) st = midiToScaleStep(nearestScaleMidi(n.midi)) ?? 0
+        return { dt: n.beat - minBeat, step: st, len: n.len }
+      })
+      baseStep = Math.min(...stepped.map((s) => s.step))
+      const maxStep = Math.max(...stepped.map((s) => s.step))
+      periodSteps = Math.max(1, maxStep - baseStep + 1)
+      pattern = stepped
+        .map((s) => ({ dt: s.dt, dstep: s.step - baseStep, len: s.len }))
+        .sort((a, b) => a.dt - b.dt || a.dstep - b.dstep)
+    }
     pushHistory()
     // Detach: lift the selected notes out of the real note map.
     setNotes((prev) => {
@@ -3923,6 +4059,9 @@ export default function PianoRoll({
       patternLen,
       startK: 0,
       endK: pattern.length, // one pattern's worth of notes to start
+      chromatic,
+      baseMidi,
+      periodSemis,
       baseStep,
       periodSteps,
       pattern,
@@ -6381,7 +6520,11 @@ export default function PianoRoll({
           >
             <ChevronLeft size={15} />
             <span className="panel-collapsed-name">
-              {fretboardView === 'vertical' ? 'Fretboard' : 'Templates'}
+              {lineGenOpen
+                ? 'Line generator'
+                : fretboardView === 'vertical'
+                  ? 'Fretboard'
+                  : 'Templates'}
             </span>
           </button>
           <button
@@ -6412,18 +6555,37 @@ export default function PianoRoll({
             <div className="panel-view-toggle">
               <button
                 type="button"
-                className={fretboardView !== 'vertical' ? 'on' : ''}
-                onClick={() => setFretboardView('off')}
+                className={!lineGenOpen && fretboardView !== 'vertical' ? 'on' : ''}
+                onClick={() => {
+                  setLineGenOpen(false)
+                  setFretboardView('off')
+                }}
               >
                 Templates
               </button>
               <button
                 type="button"
-                className={fretboardView === 'vertical' ? 'on' : ''}
-                onClick={() => setFretboardView('vertical')}
+                className={!lineGenOpen && fretboardView === 'vertical' ? 'on' : ''}
+                onClick={() => {
+                  setLineGenOpen(false)
+                  setFretboardView('vertical')
+                }}
                 title="Show the fretboard here"
               >
                 Fretboard
+              </button>
+              <button
+                type="button"
+                className={`icon-only ${lineGenOpen ? 'on' : ''}`}
+                onClick={() => {
+                  setLineGenOpen(true)
+                  // The vertical fretboard occupies this sidebar; step aside.
+                  setFretboardView((v) => (v === 'vertical' ? 'off' : v))
+                }}
+                title="Line generator"
+                aria-label="Line generator"
+              >
+                <ChartSpline size={13} strokeWidth={1.8} />
               </button>
             </div>
             {fretboardView !== 'off' && (
@@ -6446,7 +6608,7 @@ export default function PianoRoll({
               </button>
             )}
           </div>
-          {fretboardView !== 'vertical' && (
+          {fretboardView !== 'vertical' && !lineGenOpen && (
             // Action icons live on their own scrollable row so more can be
             // added over time without crowding the Templates/Fretboard toggle.
             <div className="templates-toolbar">
@@ -6520,7 +6682,7 @@ export default function PianoRoll({
               />
             </div>
           )}
-          {fretboardView !== 'vertical' && searchOpen && (
+          {fretboardView !== 'vertical' && !lineGenOpen && searchOpen && (
             <div className="templates-search" ref={searchWrapRef}>
               <Search size={13} className="templates-search-icon" />
               <input
@@ -6546,7 +6708,7 @@ export default function PianoRoll({
               )}
             </div>
           )}
-          {tagFilterActive && (
+          {tagFilterActive && !lineGenOpen && (
             <div className="templates-filter-banner">
               <span className="templates-filter-tags">
                 {appliedTagFilter.include.length > 0 && (
@@ -6570,7 +6732,12 @@ export default function PianoRoll({
               </button>
             </div>
           )}
-          {fretboardView === 'vertical' ? (
+          {lineGenOpen ? (
+            <LineGeneratorPanel
+              selectedCount={selectedKeys.size}
+              onGenerate={generateLineFromSelection}
+            />
+          ) : fretboardView === 'vertical' ? (
             <Fretboard
               orientation="vertical"
               notePitches={fretboardPitches}
@@ -7008,6 +7175,10 @@ export default function PianoRoll({
                             key={key}
                             className={`row-note ${
                               selectedKeys.has(key) ? 'selected' : ''
+                            } ${
+                              anchoredKeys.has(`${activeTrackId}|${key}`)
+                                ? 'anchored'
+                                : ''
                             } ${chordClassFor(midi % 12)}`}
                             style={{
                               left: `${beatToX(beat)}px`,
