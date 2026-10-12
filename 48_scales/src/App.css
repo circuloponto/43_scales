@@ -7118,64 +7118,72 @@
   accent-color: var(--accent);
 }
 
-/* Box around the generated line, with arrows to step through the variations */
-.variation-box {
-  position: absolute;
-  border: 1.5px dashed var(--accent);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  z-index: 6;
-  pointer-events: none;
-  box-sizing: border-box;
+/* Line generator: variations preview modal */
+.variation-modal {
+  width: min(860px, 94vw);
+  outline: none;
 }
-.variation-box-controls {
-  position: absolute;
-  left: -1px;
-  bottom: calc(100% + 4px);
+.variation-modal-nav {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  background: var(--frame);
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  pointer-events: auto;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg);
-  white-space: nowrap;
+  justify-content: center;
+  gap: 14px;
 }
-.variation-box-controls.below {
-  bottom: auto;
-  top: calc(100% + 4px);
-}
-.variation-box-controls span {
-  min-width: 30px;
-  text-align: center;
-}
-.variation-box-controls button {
+.variation-modal-arrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  width: 48px;
+  height: 38px;
   background: transparent;
-  border: none;
-  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
   color: var(--fg);
   cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
 }
-.variation-box-controls button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
+.variation-modal-arrow:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.variation-box-controls button:disabled {
+.variation-modal-arrow:disabled {
   opacity: 0.3;
   cursor: default;
 }
-.variation-box-controls button.accept {
-  margin-left: 2px;
-  border-left: 1px solid var(--hairline);
-  border-radius: 0 3px 3px 0;
-  color: var(--accent);
+.variation-modal-count {
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--fg);
+}
+.variation-modal-count small {
+  font-size: 14px;
+  color: var(--mute);
+}
+.variation-modal-tag {
+  margin-top: 2px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+/* Preview only: notes are not editable here. */
+.variation-modal .row-note {
+  pointer-events: none;
+  cursor: default;
+}
+.variation-modal .row-note.ghost {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 1px dashed color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.variation-modal .row-note.fixed {
+  opacity: 0.45;
+  outline: 1px dashed var(--fg);
+  outline-offset: -1px;
 }
