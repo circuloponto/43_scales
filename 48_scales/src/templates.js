@@ -23,101 +23,296 @@
 
 export const templates = [
   {
-    "id": "1782163712933-6b3m3i",
-    "name": "Chord up",
+    "id": "1784175548070-te37q0",
+    "type": "folder",
+    "name": "Lines",
+    "parentId": null,
+    "collapsed": false
+  },
+  {
+    "id": "1784307979877-xhdh1d",
+    "type": "folder",
+    "name": "Other Lines",
+    "parentId": "1784175548070-te37q0",
+    "collapsed": true
+  },
+  {
+    "id": "1784563758725-1el3qi",
+    "type": "template",
+    "name": "Clasped Tabbys",
+    "parentId": "1784307979877-xhdh1d",
     "capturedFrom": {
-      "scaleId": 4,
-      "root": 2
+      "scaleId": 7,
+      "root": 0
     },
     "notes": [
       {
         "beat": 0,
-        "degree": 0,
-        "octave": 1,
+        "degree": 4,
+        "octave": -1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 1,
-        "degree": 2,
-        "octave": 1,
+        "degree": 6,
+        "octave": -1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 2,
-        "degree": 4,
-        "octave": 1,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 3,
-        "degree": 6,
-        "octave": 1,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 7,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 3,
+        "octave": -1,
+        "semis": 0,
         "length": 1
       }
+    ],
+    "tags": [
+      "arpeggio",
+      "line",
+      "tabby"
     ]
   },
   {
     "id": "1782163779958-pafp9t",
     "name": "Scale Up",
     "capturedFrom": {
-      "scaleId": 4,
-      "root": 2
+      "scaleId": 7,
+      "root": 0
     },
     "notes": [
       {
         "beat": 0,
         "degree": 0,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 1,
         "degree": 1,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 2,
         "degree": 2,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 3,
         "degree": 3,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 4,
         "degree": 4,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 5,
         "degree": 5,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 6,
         "degree": 6,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 7,
         "degree": 7,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 8,
         "degree": 0,
         "octave": 2,
+        "semis": 0,
         "length": 1
       }
+    ],
+    "parentId": "1784307979877-xhdh1d",
+    "tags": [
+      "scalar"
+    ]
+  },
+  {
+    "id": "1784157384125-7j7ssw",
+    "type": "template",
+    "name": "approach arpeggio",
+    "parentId": "1784307979877-xhdh1d",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 2,
+        "degree": 3,
+        "octave": -1,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 4,
+        "degree": 3,
+        "octave": -1,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": -1,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 8,
+        "degree": 7,
+        "octave": -1,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 10,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      }
+    ],
+    "tags": [
+      "arpeggio",
+      "tabby"
+    ]
+  },
+  {
+    "id": "1782163917945-t61qn6",
+    "name": "Chord up, Scale Down",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 2,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 4,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 6,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 5,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 4,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 3,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 2,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 8,
+        "degree": 1,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784307979877-xhdh1d",
+    "tags": [
+      "arpeggio",
+      "line"
     ]
   },
   {
@@ -182,75 +377,821 @@ export const templates = [
         "octave": 1,
         "length": 1
       }
-    ]
+    ],
+    "parentId": "1784307979877-xhdh1d"
   },
   {
-    "id": "1782163917945-t61qn6",
-    "name": "Chord up, Scale Down",
+    "id": "1782163712933-6b3m3i",
+    "name": "Chord up",
     "capturedFrom": {
-      "scaleId": 4,
-      "root": 2
+      "scaleId": 7,
+      "root": 0
     },
     "notes": [
       {
         "beat": 0,
         "degree": 0,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 1,
         "degree": 2,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 2,
         "degree": 4,
         "octave": 1,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 3,
         "degree": 6,
         "octave": 1,
+        "semis": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784307979877-xhdh1d",
+    "tags": [
+      "arpeggio",
+      "line",
+      "tabby"
+    ]
+  },
+  {
+    "id": "1784176085946-shdk4w",
+    "type": "folder",
+    "name": "Runes",
+    "parentId": "1784175548070-te37q0",
+    "collapsed": true
+  },
+  {
+    "id": "1784175956724-ttxrug",
+    "type": "template",
+    "name": "Rune ●◌●◌●◌●◌",
+    "parentId": "1784176085946-shdk4w",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 4,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 6,
+        "degree": 3,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 8,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 10,
+        "degree": 5,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 12,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 14,
+        "degree": 7,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      }
+    ],
+    "tags": []
+  },
+  {
+    "id": "1783866917418-myygul",
+    "name": "Rune ●●◌●◌●◌◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": -1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 2,
+        "octave": 0,
         "length": 1
       },
       {
         "beat": 4,
-        "degree": 5,
-        "octave": 1,
+        "degree": 3,
+        "octave": 0,
         "length": 1
       },
       {
         "beat": 5,
         "degree": 4,
-        "octave": 1,
+        "octave": 0,
         "length": 1
       },
       {
         "beat": 6,
-        "degree": 3,
-        "octave": 1,
+        "degree": 5,
+        "octave": 0,
         "length": 1
       },
       {
         "beat": 7,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1783867028177-ni00uo",
+    "name": "Rune ●●◌●◌◌●◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 2,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 4,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 3,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 5,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 7,
+        "octave": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1783866741998-305psi",
+    "name": "Rune ●●◌◌●●◌◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": -1,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 2,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 4,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 3,
+        "octave": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1783866669893-9bifyn",
+    "name": "Rune ●●●◌◌●◌◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 5,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 3,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1783819519208-9o1rmg",
+    "name": "Rune ●●●◌●◌◌◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": 0,
+        "length": 1.03125
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 3,
+        "degree": 3,
+        "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 4,
         "degree": 2,
         "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 5,
+        "degree": 5,
+        "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 6,
+        "degree": 4,
+        "octave": 1,
+        "length": 1.03125
+      },
+      {
+        "beat": 7,
+        "degree": 6,
+        "octave": 1,
+        "length": 1.03125
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1783819002704-vg6kyu",
+    "name": "Rune ●●●●◌◌◌◌",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 16,
+        "degree": 0,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 17,
+        "degree": 4,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 18,
+        "degree": 1,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 19,
+        "degree": 5,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 20,
+        "degree": 2,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 21,
+        "degree": 6,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 22,
+        "degree": 3,
+        "octave": 0,
+        "length": 1
+      },
+      {
+        "beat": 23,
+        "degree": 7,
+        "octave": 0,
+        "length": 1
+      }
+    ],
+    "parentId": "1784176085946-shdk4w"
+  },
+  {
+    "id": "1784175768478-lf4zie",
+    "type": "folder",
+    "name": "Chords",
+    "parentId": null,
+    "collapsed": true
+  },
+  {
+    "id": "1784183140285-pyxhd5",
+    "type": "template",
+    "name": "Close Position",
+    "parentId": "1784175768478-lf4zie",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 9
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 0,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 0,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      },
+      {
+        "beat": 0,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 2
+      }
+    ],
+    "tags": [
+      "chord",
+      "tetrad"
+    ]
+  },
+  {
+    "id": "1784222507292-tmcqhp",
+    "type": "template",
+    "name": "Drop 2",
+    "parentId": "1784175768478-lf4zie",
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
+        "length": 4
+      },
+      {
+        "beat": 0,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
+        "length": 4
+      },
+      {
+        "beat": 0,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 4
+      },
+      {
+        "beat": 0,
+        "degree": 2,
+        "octave": 1,
+        "semis": 0,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "id": "1784594771896-bzukwo",
+    "type": "template",
+    "name": "Random template",
+    "parentId": null,
+    "capturedFrom": {
+      "scaleId": 7,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 0,
+        "degree": 5,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 1,
+        "degree": 7,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 3,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 5,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 3,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 8,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 9,
+        "degree": 0,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 10,
+        "degree": 1,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 11,
+        "degree": 2,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 12,
+        "degree": 7,
+        "octave": -1,
+        "semis": 0,
+        "length": 1
+      }
+    ],
+    "tags": [
+      "tabby"
+    ]
+  },
+  {
+    "id": "1784652152903-puo4l9",
+    "type": "template",
+    "name": "random template vary",
+    "parentId": null,
+    "capturedFrom": {
+      "scaleId": 8,
+      "root": 0
+    },
+    "notes": [
+      {
+        "beat": 1,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 2,
+        "degree": 0,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 3,
+        "degree": 2,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 0,
+        "degree": 4,
+        "octave": 0,
+        "semis": 0,
         "length": 1
       },
       {
         "beat": 8,
         "degree": 1,
         "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 9,
+        "degree": 4,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 10,
+        "degree": 3,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 11,
+        "degree": 2,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 12,
+        "degree": 1,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 13,
+        "degree": 7,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 14,
+        "degree": 0,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 15,
+        "degree": 1,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 16,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 7,
+        "degree": 0,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 4,
+        "degree": 0,
+        "octave": 1,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 5,
+        "degree": 7,
+        "octave": 0,
+        "semis": 0,
+        "length": 1
+      },
+      {
+        "beat": 6,
+        "degree": 6,
+        "octave": 0,
+        "semis": 0,
         "length": 1
       }
-    ]
+    ],
+    "tags": []
   }
-   
-      
-  ]
+]
   
    /* {"id": "1779528744038-wyrt3d",
     "name": "start-end alternation",

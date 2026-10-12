@@ -139,6 +139,13 @@ function tabby(line, ctx, rng, amount) {
     amount,
     rng
   )
+  // Pitches that stay as they are (amount < 100%) are already "taken".
+  const kept = line.filter((_, i) => !affected.has(i)).map((n) => n.midi)
+  // Last earlier note with the same original pitch, or -1.
+  const echoOf = (i) => {
+    for (let j = i - 1; j >= 0; j--) if (line[j].midi === line[i].midi) return j
+    return -1
+  }
   const out = []
   let prev = line[0].midi
   line.forEach((n, i) => {
@@ -146,12 +153,26 @@ function tabby(line, ctx, rng, amount) {
     if (affected.has(i)) {
       const c = ctx.chordOf(((n.midi % 12) + 12) % 12)
       const candidates = pools[c === 'left' || c === 'right' ? c : 'any']
-      // Stay near the previous note, but never reuse the original pitch.
-      const nearest = [...candidates]
-        .filter((m) => m !== n.midi)
-        .sort((a, b) => Math.abs(a - prev) - Math.abs(b - prev))
-        .slice(0, 3)
-      if (nearest.length) next = pick(nearest, rng)
+      const echo = echoOf(i)
+      if (echo >= 0 && affected.has(echo)) {
+        // The original repeats this pitch on purpose: repeat the new one too.
+        next = out[echo]
+      } else {
+        // Otherwise every note gets a pitch not used yet in the line, near the
+        // previous note, and never the original pitch.
+        const used = new Set([...out, ...kept])
+        const byDistance = (a, b) => Math.abs(a - prev) - Math.abs(b - prev)
+        const free = (m) => m !== n.midi && (i === 0 || m !== out[i - 1])
+        let nearest = candidates
+          .filter((m) => free(m) && !used.has(m))
+          .sort(byDistance)
+          .slice(0, 5)
+        // Nothing unused left in this chord: settle for just no immediate repeat.
+        if (!nearest.length) {
+          nearest = candidates.filter(free).sort(byDistance).slice(0, 5)
+        }
+        if (nearest.length) next = pick(nearest, rng)
+      }
     }
     out.push(next)
     prev = next
@@ -232,6 +253,127 @@ export function generateLine(modeKey, line, ctx, opts = {}, rng = Math.random) {
     return contour(steps, ctx, rng, opts.option ?? 'maintain', amount)
   }
   return { error: 'This mode is not available yet.' }
+}
+
+// ---- Quality: profile, hard rules, scoring -------------------------------
+// One random draw above can come out stuck (repeated notes), oscillating
+// (a-b-a-b) or squashed into a narrow range. generateVariations draws many
+// candidates, throws out the bad ones and keeps the best few.
+
+// Shape numbers for a line of scale steps.
+function profileOf(steps) {
+  const d = intervalsOf(steps)
+  let repeats = 0
+  let leaps = 0
+  for (const v of d) {
+    if (v === 0) repeats++
+    if (Math.abs(v) >= 3) leaps++
+  }
+  let osc = 0 // a-b-a-b
+  for (let i = 0; i + 3 < steps.length; i++) {
+    if (steps[i] === steps[i + 2] && steps[i + 1] === steps[i + 3]) osc++
+  }
+  return {
+    span: Math.max(...steps) - Math.min(...steps),
+    repeats,
+    leaps,
+    osc,
+    distinct: new Set(steps).size,
+    first: steps[0],
+    intervals: d.length,
+  }
+}
+
+// Hard rules: a candidate may not be worse than the original on these.
+function passesRules(c, o, strictDistinct) {
+  if (c.repeats > o.repeats) return false
+  if (c.osc > o.osc) return false
+  // Same pitch coming back later in the line (not just back to back).
+  if (strictDistinct && c.distinct < o.distinct) return false
+  if (c.span < Math.ceil(o.span * 0.7)) return false // don't condense the range
+  if (c.span > Math.ceil(o.span * 1.6) + 2) return false // nor explode it
+  return true
+}
+
+// Lower is better. `style` (from lineStyle.js) adds "does it sound like the
+// user's own lines", faded in by its weight as more templates exist.
+function scoreCandidate(c, o, steps, style) {
+  const n = Math.max(1, o.intervals)
+  let s =
+    Math.abs(c.span - o.span) / Math.max(1, o.span) +
+    (0.8 * Math.max(0, o.distinct - c.distinct)) / Math.max(1, o.distinct) +
+    (0.5 * Math.abs(c.leaps - o.leaps)) / n +
+    (c.first !== o.first ? 0.15 : 0)
+  if (style) s += style.weight * STYLE_WEIGHT * style.cost(steps)
+  return s
+}
+const STYLE_WEIGHT = 0.4
+
+// Candidates differ in at least this share of their notes, so the six
+// variations feel like six options and not one idea with a tweak.
+const MIN_DIFF = 0.3
+
+const noteDiff = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0)
+
+// Many draws -> filter by the rules -> rank by score -> pick `count` that are
+// different enough from each other. Returns { variants: midis[][] } or { error }.
+export function generateVariations(
+  modeKey,
+  line,
+  ctx,
+  opts = {},
+  { count = VARIATION_COUNT, pool = 80, rng = Math.random, style = null } = {}
+) {
+  if (!line.length) return { error: 'Select some notes on the piano roll first.' }
+  const stepOf = (m) => ctx.toStep(m) ?? ctx.toStep(ctx.snap(m))
+  const origSteps = line.map((n) => stepOf(n.midi))
+  const orig = profileOf(origSteps)
+
+  const seen = new Set([line.map((n) => n.midi).join(',')])
+  const cands = []
+  let stale = 0
+  for (let t = 0; t < pool && stale < 25; t++) {
+    const r = generateLine(modeKey, line, ctx, opts, rng)
+    if (r.error) {
+      if (cands.length === 0 && t === 0) return { error: r.error }
+      break
+    }
+    const id = r.midis.join(',')
+    if (seen.has(id)) {
+      stale++
+      continue
+    }
+    seen.add(id)
+    stale = 0
+    const steps = r.midis.map(stepOf)
+    const prof = profileOf(steps)
+    cands.push({
+      midis: r.midis,
+      ok: passesRules(prof, orig, modeKey === 'tabby'),
+      score: scoreCandidate(prof, orig, steps, style) + rng() * 0.01,
+    })
+  }
+  if (!cands.length) return { error: 'No different variation found.' }
+
+  // Only candidates that pass the rules; if none do, fall back to the best of
+  // what exists so Generate never comes back empty-handed.
+  const good = cands.filter((c) => c.ok)
+  const ranked = (good.length ? good : cands).sort((a, b) => a.score - b.score)
+
+  const need = Math.max(1, Math.ceil(line.length * MIN_DIFF))
+  const picked = []
+  const skipped = []
+  for (const c of ranked) {
+    if (picked.length >= count) break
+    if (picked.every((p) => noteDiff(p.midis, c.midis) >= need)) picked.push(c)
+    else skipped.push(c)
+  }
+  // Too few distinct enough? Top up with the best of the near-duplicates.
+  for (const c of skipped) {
+    if (picked.length >= count) break
+    picked.push(c)
+  }
+  return { variants: picked.map((c) => c.midis) }
 }
 
 // Order a selection into a playable line: by time, then low to high.

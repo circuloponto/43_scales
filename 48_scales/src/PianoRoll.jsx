@@ -31,7 +31,9 @@ import TagsModal from './TagsModal'
 import ImportConflictsModal from './ImportConflictsModal'
 import TemplateTree from './TemplateTree'
 import LineGeneratorPanel from './LineGeneratorPanel'
-import { generateLine, sortLine, VARIATION_COUNT } from './lineGenerator'
+import { generateVariations, sortLine } from './lineGenerator'
+import { buildStyleModel } from './lineStyle'
+import { templates as defaultTemplates } from './templates'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -2029,6 +2031,15 @@ export default function PianoRoll({
     })
   }, [variationSet])
 
+  // Line generator style model: learned from the user's melodic templates plus
+  // the shipped defaults, so variations lean towards the user's own phrasing.
+  // Null (rules only) until there is something to learn from.
+  const lineStyle = useMemo(
+    () =>
+      buildStyleModel([templates, defaultTemplates], rawScale?.notes.length ?? 8),
+    [templates, rawScale?.notes.length]
+  )
+
   // Persist tracks back to the active song in App.jsx whenever they change,
   // so switching songs (which re-mounts PianoRoll) restores the saved tracks.
   useEffect(() => {
@@ -3825,22 +3836,13 @@ export default function PianoRoll({
               : null
       },
     }
-    // Collect distinct variations (never the original line, never repeats).
-    const variants = []
-    const seen = new Set([original.map((it) => it.midi).join(',')])
-    let error = ''
-    for (let t = 0; t < 40 && variants.length < VARIATION_COUNT; t++) {
-      const r = generateLine(modeKey, original, ctx, opts)
-      if (r.error) {
-        error = r.error
-        break
-      }
-      const id = r.midis.join(',')
-      if (seen.has(id)) continue
-      seen.add(id)
-      variants.push(r.midis)
-    }
-    if (variants.length === 0) return error || 'No different variation found.'
+    // Draw many candidates, drop the ones that sound stuck / squashed, keep the
+    // best distinct ones (rules, scoring and style model: see lineGenerator.js).
+    const generated = generateVariations(modeKey, original, ctx, opts, {
+      style: lineStyle,
+    })
+    if (generated.error) return generated.error
+    const variants = generated.variants
     pushHistory(snapshotState(true))
     showVariation(
       { trackId: activeTrackId, original, variants, resultKeys: currentKeys },
