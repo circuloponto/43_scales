@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
+  Check,
 } from 'lucide-react'
 import { rootSteps } from './scales'
 import { chordPairs } from './chordPairs'
@@ -30,7 +31,7 @@ import TagsModal from './TagsModal'
 import ImportConflictsModal from './ImportConflictsModal'
 import TemplateTree from './TemplateTree'
 import LineGeneratorPanel from './LineGeneratorPanel'
-import { generateLine, sortLine } from './lineGenerator'
+import { generateLine, sortLine, VARIATION_COUNT } from './lineGenerator'
 
 // Module-scope clipboard so copy/paste survives PianoRoll remounts (which
 // happen every time the user switches songs via key={activeSongId}). Every
@@ -1282,8 +1283,9 @@ export default function PianoRoll({
   const [lineGenOpen, setLineGenOpen] = useState(false)
   // Notes locked against line-generator transforms, as `${trackId}|${noteKey}`.
   const [anchoredKeys, setAnchoredKeys] = useState(() => new Set())
-  // Last generation: the original line + what it produced (see handler).
-  const lineGenBaseRef = useRef(null)
+  // Last generation: the original line, its variations and which one is on the
+  // roll (see generateLineFromSelection). Null until the first Generate.
+  const [variationSet, setVariationSet] = useState(null)
   // Fretboard "position": the lower fret of the 5-fret span notes are placed in.
   // Set with the P key + a number; auto-shifts when an entered note is outside.
   const [fretPosition, setFretPosition] = useState(0)
@@ -2006,6 +2008,27 @@ export default function PianoRoll({
     })
   }, [scale?.id, root])
 
+  // Line generator: variations land at different pitches, so after every
+  // arrow press (or undo / redo through them) centre the roll on the box.
+  useEffect(() => {
+    if (!variationSet) return
+    const sc = scrollRef.current
+    if (!sc) return
+    let lo = Infinity
+    let hi = -Infinity
+    for (const k of variationSet.resultKeys) {
+      const m = Number(k.split('-')[1])
+      if (m < lo) lo = m
+      if (m > hi) hi = m
+    }
+    if (!Number.isFinite(lo)) return
+    const top = (MIDI_HIGH - (lo + hi) / 2) * ROW_HEIGHT
+    sc.scrollTo({
+      top: Math.max(0, top - sc.clientHeight / 2 + ROW_HEIGHT / 2),
+      behavior: 'smooth',
+    })
+  }, [variationSet])
+
   // Persist tracks back to the active song in App.jsx whenever they change,
   // so switching songs (which re-mounts PianoRoll) restores the saved tracks.
   useEffect(() => {
@@ -2688,15 +2711,27 @@ export default function PianoRoll({
     return clamped
   }
 
-  const snapshotState = () => ({
+  // `withSelection` also records the selection and the line-generator variation
+  // on screen, so undo/redo can put the variation box back exactly as it was.
+  // Ordinary edits leave it off and keep clearing the selection on undo.
+  const snapshotState = (withSelection = false) => ({
     tracks: tracks.map((t) => ({ ...t, notes: new Map(t.notes) })),
     activeTrackId,
+    ...(withSelection && {
+      selection: [...selectedKeys],
+      variation: shownSet,
+    }),
   })
 
   const restoreSnapshot = (snap) => {
     setTracks(snap.tracks.map((t) => ({ ...t, notes: new Map(t.notes) })))
     if (snap.activeTrackId) setActiveTrackId(snap.activeTrackId)
-    setSelectedKeys(new Set())
+    if (snap.selection) {
+      setSelectedKeys(new Set(snap.selection))
+      setVariationSet(snap.variation ?? null)
+    } else {
+      setSelectedKeys(new Set())
+    }
   }
 
   const pushHistory = (snapshot) => {
@@ -2713,7 +2748,7 @@ export default function PianoRoll({
       return
     }
     const prev = historyRef.current.pop()
-    futureRef.current.push(snapshotState())
+    futureRef.current.push(snapshotState(!!prev.selection))
     if (futureRef.current.length > 200) futureRef.current.shift()
     restoreSnapshot(prev)
   }
@@ -2724,7 +2759,7 @@ export default function PianoRoll({
       return
     }
     const next = futureRef.current.pop()
-    historyRef.current.push(snapshotState())
+    historyRef.current.push(snapshotState(!!next.selection))
     if (historyRef.current.length > 200) historyRef.current.shift()
     restoreSnapshot(next)
   }
@@ -3685,15 +3720,53 @@ export default function PianoRoll({
     return Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
   }
 
-  // Line generator: replace the selected notes with an alternative line built
-  // by `modeKey` (see lineGenerator.js). Rhythm is kept; only pitches change.
-  // Pressing Generate again keeps working from the ORIGINAL selection (not from
-  // the previous result) for as long as the result is still what's selected.
+  // Line generator: Generate builds up to VARIATION_COUNT alternative versions
+  // of the selected line (see lineGenerator.js), puts the first on the roll and
+  // shows a box with arrows to step through the rest. Rhythm is kept; only
+  // pitches change. Generating again works from the ORIGINAL line (not from the
+  // variation on screen) for as long as that variation is still what's selected.
   // Anchored notes are locked: other modes skip them, and the Anchor mode
   // itself just toggles the lock on the selection. Returns an error message
   // for the panel, or '' on success.
   const anchorId = (key) => `${activeTrackId}|${key}`
   const sigOf = (keys) => [...keys].sort().join(',')
+  // The variation set only counts while its result is what's selected.
+  const shownSet =
+    variationSet &&
+    variationSet.trackId === activeTrackId &&
+    variationSet.sig === sigOf(selectedKeys)
+      ? variationSet
+      : null
+
+  // Swap the line currently on the roll (set.resultKeys) for variants[index].
+  // index 0 is the original line; 1..variants.length are the variations.
+  const showVariation = (set, index) => {
+    const newKeys = set.original.map(
+      (it, i) =>
+        `${it.beat}-${index === 0 ? it.midi : set.variants[index - 1][i]}`
+    )
+    const newSel = new Set(selectedKeys)
+    for (const k of set.resultKeys) newSel.delete(k)
+    for (const k of newKeys) newSel.add(k)
+    setNotes((prev) => {
+      const next = new Map(prev)
+      for (const k of set.resultKeys) next.delete(k)
+      set.original.forEach((it, i) => next.set(newKeys[i], it.len))
+      return next
+    })
+    setSelectedKeys(newSel)
+    setVariationSet({ ...set, index, resultKeys: newKeys, sig: sigOf(newSel) })
+  }
+  const stepVariation = (dir) => {
+    if (!shownSet) return
+    const n = shownSet.variants.length + 1 // + the original at 0
+    // Each step is an undo step, so Ctrl+Z walks back through the variations.
+    pushHistory(snapshotState(true))
+    showVariation(shownSet, (shownSet.index + dir + n) % n)
+  }
+  // Accept: keep the variation on screen and close the box.
+  const acceptVariation = () => setVariationSet(null)
+
   const generateLineFromSelection = (modeKey, opts) => {
     if (!scale) return ''
     const cur = notesRef.current
@@ -3719,66 +3792,60 @@ export default function PianoRoll({
         }
         return next
       })
-      lineGenBaseRef.current = null // locks changed: re-read the selection
+      setVariationSet(null) // locks changed: re-read the selection
       return ''
     }
 
     // Original line: the stored one if the selection is still its last result.
-    const base = lineGenBaseRef.current
-    const continuing =
-      base && base.trackId === activeTrackId && base.sig === sigOf(selectedKeys)
     const original = sortLine(
-      continuing
-        ? base.original
+      shownSet
+        ? shownSet.original
         : items.filter((it) => !anchoredKeys.has(anchorId(it.key)))
     )
-    const currentKeys = continuing
-      ? base.resultKeys
+    const currentKeys = shownSet
+      ? shownSet.resultKeys
       : original.map((it) => it.key)
     if (original.length === 0) return 'All the selected notes are anchored.'
 
-    const result = generateLine(
-      modeKey,
-      original,
-      {
-        scaleSize: scale.notes.length,
-        low: MIDI_LOW,
-        high: MIDI_HIGH,
-        toStep: midiToScaleStep,
-        toMidi: scaleStepToMidi,
-        snap: nearestScaleMidi,
-        chordOf: (pc) => {
-          const c = chordClassFor(pc)
-          return c === 'chord-left'
-            ? 'left'
-            : c === 'chord-right'
-              ? 'right'
-              : c === 'chord-both'
-                ? 'both'
-                : null
-        },
+    const ctx = {
+      scaleSize: scale.notes.length,
+      low: MIDI_LOW,
+      high: MIDI_HIGH,
+      toStep: midiToScaleStep,
+      toMidi: scaleStepToMidi,
+      snap: nearestScaleMidi,
+      chordOf: (pc) => {
+        const c = chordClassFor(pc)
+        return c === 'chord-left'
+          ? 'left'
+          : c === 'chord-right'
+            ? 'right'
+            : c === 'chord-both'
+              ? 'both'
+              : null
       },
-      opts
-    )
-    if (result.error) return result.error
-    pushHistory()
-    const newKeys = original.map((it, i) => `${it.beat}-${result.midis[i]}`)
-    const newSel = new Set(selectedKeys)
-    for (const k of currentKeys) newSel.delete(k)
-    for (const k of newKeys) newSel.add(k)
-    setNotes((prev) => {
-      const next = new Map(prev)
-      for (const k of currentKeys) next.delete(k)
-      original.forEach((it, i) => next.set(newKeys[i], it.len))
-      return next
-    })
-    setSelectedKeys(newSel)
-    lineGenBaseRef.current = {
-      trackId: activeTrackId,
-      sig: sigOf(newSel),
-      original,
-      resultKeys: newKeys,
     }
+    // Collect distinct variations (never the original line, never repeats).
+    const variants = []
+    const seen = new Set([original.map((it) => it.midi).join(',')])
+    let error = ''
+    for (let t = 0; t < 40 && variants.length < VARIATION_COUNT; t++) {
+      const r = generateLine(modeKey, original, ctx, opts)
+      if (r.error) {
+        error = r.error
+        break
+      }
+      const id = r.midis.join(',')
+      if (seen.has(id)) continue
+      seen.add(id)
+      variants.push(r.midis)
+    }
+    if (variants.length === 0) return error || 'No different variation found.'
+    pushHistory(snapshotState(true))
+    showVariation(
+      { trackId: activeTrackId, original, variants, resultKeys: currentKeys },
+      1
+    )
     return ''
   }
 
@@ -7007,6 +7074,77 @@ export default function PianoRoll({
                     }}
                   />
                 )}
+                {shownSet &&
+                  (() => {
+                    // Bounding box of everything selected, in grid pixels.
+                    let loM = Infinity
+                    let hiM = -Infinity
+                    let b0 = Infinity
+                    let b1 = -Infinity
+                    for (const k of selectedKeys) {
+                      const [bs, ms] = k.split('-')
+                      const b = Number(bs)
+                      const m = Number(ms)
+                      const len = notes.get(k) ?? 1
+                      if (m < loM) loM = m
+                      if (m > hiM) hiM = m
+                      if (b < b0) b0 = b
+                      if (b + len > b1) b1 = b + len
+                    }
+                    if (!Number.isFinite(loM)) return null
+                    const top = (MIDI_HIGH - hiM) * ROW_HEIGHT - 4
+                    const count = shownSet.variants.length
+                    const stop = (e) => e.stopPropagation()
+                    return (
+                      <div
+                        className="variation-box"
+                        style={{
+                          left: `${beatToX(b0) - 4}px`,
+                          top: `${top}px`,
+                          width: `${beatToX(b1) - beatToX(b0) + 8}px`,
+                          height: `${(hiM - loM + 1) * ROW_HEIGHT + 8}px`,
+                        }}
+                      >
+                        <div
+                          className={`variation-box-controls ${top < 30 ? 'below' : ''}`}
+                          onPointerDown={stop}
+                          onMouseDown={stop}
+                          onClick={stop}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => stepVariation(-1)}
+                            disabled={count < 1}
+                            title="Previous variation"
+                            aria-label="Previous variation"
+                          >
+                            <ChevronLeft size={13} />
+                          </button>
+                          <span>
+                            {shownSet.index}/{count}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => stepVariation(1)}
+                            disabled={count < 1}
+                            title="Next variation"
+                            aria-label="Next variation"
+                          >
+                            <ChevronRight size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="accept"
+                            onClick={acceptVariation}
+                            title="Accept this variation"
+                            aria-label="Accept this variation"
+                          >
+                            <Check size={13} strokeWidth={2.2} />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 {playheadBeat !== null && (
                   <div
                     className="playhead"

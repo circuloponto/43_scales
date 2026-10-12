@@ -7117,3 +7117,65 @@
   width: 100%;
   accent-color: var(--accent);
 }
+
+/* Box around the generated line, with arrows to step through the variations */
+.variation-box {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  z-index: 6;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.variation-box-controls {
+  position: absolute;
+  left: -1px;
+  bottom: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--frame);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.variation-box-controls.below {
+  bottom: auto;
+  top: calc(100% + 4px);
+}
+.variation-box-controls span {
+  min-width: 30px;
+  text-align: center;
+}
+.variation-box-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.variation-box-controls button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.variation-box-controls button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.variation-box-controls button.accept {
+  margin-left: 2px;
+  border-left: 1px solid var(--hairline);
+  border-radius: 0 3px 3px 0;
+  color: var(--accent);
+}

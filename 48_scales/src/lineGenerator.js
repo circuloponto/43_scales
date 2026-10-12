@@ -18,6 +18,9 @@
 //   option   the mode's own choice (see `options` below)
 //   amount   0..1, how much of the line the generation may touch
 
+// How many alternative lines one Generate press produces.
+export const VARIATION_COUNT = 6
+
 export const LINE_MODES = [
   {
     key: 'tabby',
