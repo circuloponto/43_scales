@@ -26,6 +26,7 @@ export default function VariationModal({
   NOTE_DISPLAY,
   inScale,
   chordClassFor,
+  noteClassFor = null,
   getAudioContext,
   playNote,
   stopAudio,
@@ -285,7 +286,9 @@ export default function VariationModal({
                       {(rows.get(midi) || []).map((n, i) => (
                         <div
                           key={`${n.kind}-${n.beat}-${i}`}
-                          className={`row-note ${n.kind} ${cc}`}
+                          className={`row-note ${n.kind} ${
+                            noteClassFor ? noteClassFor(n.beat, midi) : cc
+                          }`}
                           style={{
                             left: (n.beat - minBeat) * beatW,
                             width: n.len * beatW,

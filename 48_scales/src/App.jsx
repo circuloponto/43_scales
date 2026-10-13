@@ -1480,6 +1480,10 @@ function App() {
             onPersistTracks={(tracks, activeTrackId) =>
               updateActiveSong({ tracks, activeTrackId })
             }
+            customScales={customScales}
+            scaleNameOf={scaleNameOf}
+            initialZones={activeSong?.scaleZones}
+            onPersistZones={(scaleZones) => updateActiveSong({ scaleZones })}
             initialBpm={
               settings.universalPlayback
                 ? universalPlayback.bpm ?? activeSong?.bpm

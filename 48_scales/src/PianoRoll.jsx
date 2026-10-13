@@ -16,11 +16,9 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
-  Check,
 } from 'lucide-react'
-import { rootSteps } from './scales'
-import { chordPairs } from './chordPairs'
-import { resolveChordPair, pcName } from './chordVocab'
+import { scales as BUILTIN_SCALES } from './scales'
+import { pcName } from './chordVocab'
 import Fretboard from './Fretboard'
 import { useSaveAs } from './useSaveAs'
 import { isHotkey } from './hotkeys'
@@ -32,6 +30,10 @@ import ImportConflictsModal from './ImportConflictsModal'
 import TemplateTree from './TemplateTree'
 import LineGeneratorPanel from './LineGeneratorPanel'
 import VariationModal from './VariationModal'
+import ScaleLane, { LANE_H } from './ScaleLane'
+import ScalePicker from './ScalePicker'
+import { makeScaleContext } from './scaleContext'
+import { zoneAt, sanitizeZones, findScaleById, makeZoneId, freeLimits } from './scaleZones'
 import { generateVariations, sortLine, LINE_MODES } from './lineGenerator'
 import { buildStyleModel } from './lineStyle'
 import { templates as defaultTemplates } from './templates'
@@ -736,7 +738,7 @@ const SYNTH_TYPES = [
 
 export default function PianoRoll({
   scale: rawScale,
-  root,
+  root: homeRoot,
   onBack,
   templates = [],
   setTemplates,
@@ -770,6 +772,10 @@ export default function PianoRoll({
   initialTimeSig = null,
   onPersistPlayback,
   tabSwitchPlayback = 'stop',
+  customScales = [],
+  scaleNameOf = null,
+  initialZones = null,
+  onPersistZones,
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
   const useFlats = !!settings.useFlats
@@ -782,31 +788,39 @@ export default function PianoRoll({
   const NOTE_DISPLAY = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP
   const midiPitchLabel = makeMidiPitchLabel(useFlats)
   const noteName = (pc) => pcName(pc, useFlats)
-  // Rotate the scale by its rootStep so the displayed scale here matches the
-  // right-panel view in the matrix screen: the intrinsic-root degree sits at
-  // pc 0 of `scale.notes`. Every downstream piece — inScale, nearestScaleMidi,
-  // buildInitialPattern, the chord catalog generator, template apply, the
-  // scale-bar pattern — uses `scale` (this rotated version), so chord-pair
-  // colors align cleanly with the on-cells.
-  // Intrinsic root degree: an explicit mode pick wins; else the scale's own
-  // rootStep (custom scales carry it) or the built-in rootSteps table.
-  const _rsRoll = rawScale
-    ? modeStep ?? rawScale.rootStep ?? rootSteps[rawScale.id - 1]
-    : null
-  const _intrinsicPcRoll =
-    rawScale && _rsRoll ? rawScale.notes[_rsRoll - 1] : 0
-  // Sort the rotated notes ascending so scale.notes[i] is the i-th scale
-  // degree in pitch order. midiToScaleStep relies on this ordering to give
-  // monotone step indices (otherwise stepping across the rotation seam
-  // jumps a full octave).
-  const scale = rawScale
-    ? {
-        ...rawScale,
-        notes: rawScale.notes
-          .map((n) => (n - _intrinsicPcRoll + 12) % 12)
-          .sort((a, b) => a - b),
-      }
-    : null
+  // Scale zones: stretches of the timeline with their own scale + root (a
+  // progression of scales). Cells outside every zone use the HOME scale, the one
+  // picked in the matrix. Each scale is wrapped in a context (scaleContext.js:
+  // rotation by root degree, in-scale test, chord colours, MIDI <-> scale step),
+  // so the roll can hold several and look one up by beat with ctxAt().
+  const [zones, setZones] = useState(() => sanitizeZones(initialZones))
+  // The zone whose scale the one-scale-at-a-time UI shows (keyboard colours,
+  // chord palette, fretboard, scale bar). null = the home scale.
+  const [activeZoneId, setActiveZoneId] = useState(null)
+  const [zonePicker, setZonePicker] = useState(null) // { id, x, y }
+  const [zoneMenu, setZoneMenu] = useState(null) // { id, x, y }
+  const zoneCtxs = useMemo(
+    () =>
+      new Map(
+        zones.map((z) => {
+          const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
+          return [z.id, raw ? makeScaleContext(raw, z.root, z.modeStep) : null]
+        })
+      ),
+    [zones, customScales]
+  )
+  const homeCtx = makeScaleContext(rawScale, homeRoot, modeStep)
+  // The context in force at a timeline cell (a zone's, else the home scale).
+  const ctxAt = (cell) => {
+    const z = zoneAt(zones, cell)
+    return (z && zoneCtxs.get(z.id)) || homeCtx
+  }
+  const activeCtx = (activeZoneId && zoneCtxs.get(activeZoneId)) || homeCtx
+  // From here on `scale` / `root` mean the ACTIVE zone's scale (home when no
+  // zone is active). Code that depends on WHERE in the timeline something
+  // happens uses ctxAt(beat) instead.
+  const scale = activeCtx ? activeCtx.scale : null
+  const root = activeCtx ? activeCtx.root : homeRoot
   // Tracks: each carries its own notes Map + name + volume/mute/solo.
   // The existing single-track API (`notes` / `setNotes`) below routes
   // through the active track so every existing handler keeps working.
@@ -931,7 +945,7 @@ export default function PianoRoll({
     // pivot must subtract them — otherwise the content drifts out from
     // under the timeline as you zoom.
     const LEFT_COL = 52
-    const TOP_ROW = 26
+    const TOP_ROW = 26 + LANE_H
     const onWheel = (e) => {
       const meta = e.ctrlKey || e.metaKey
       // Modifier map:
@@ -2009,7 +2023,7 @@ export default function PianoRoll({
       const targetTop = (MIDI_HIGH - avgMidi) * ROW_HEIGHT
       sc.scrollTop = Math.max(0, targetTop - sc.clientHeight / 2 + ROW_HEIGHT / 2)
     })
-  }, [scale?.id, root])
+  }, [rawScale?.id, homeRoot])
 
   // Line generator style model: learned from the user's melodic templates plus
   // the shipped defaults, so variations lean towards the user's own phrasing.
@@ -2019,6 +2033,29 @@ export default function PianoRoll({
       buildStyleModel([templates, defaultTemplates], rawScale?.notes.length ?? 8),
     [templates, rawScale?.notes.length]
   )
+
+  // Persist scale zones with the song, like tracks.
+  const persistZonesRef = useRef(onPersistZones)
+  persistZonesRef.current = onPersistZones
+  const zonesMountedRef = useRef(false)
+  useEffect(() => {
+    if (!zonesMountedRef.current) {
+      zonesMountedRef.current = true
+      return
+    }
+    persistZonesRef.current?.(zones)
+  }, [zones])
+  // Dismiss the zone context menu on any outside press.
+  useEffect(() => {
+    if (!zoneMenu) return
+    const close = () => setZoneMenu(null)
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [zoneMenu])
 
   // Persist tracks back to the active song in App.jsx whenever they change,
   // so switching songs (which re-mounts PianoRoll) restores the saved tracks.
@@ -2523,30 +2560,9 @@ export default function PianoRoll({
 
   if (!scale) return null
 
-  const inScale = (pc) =>
-    scale.notes.some((n) => (n + root) % 12 === pc)
-
-  // Chord-pair membership for coloring. Resolved chord notes are absolute pcs
-  // (transposed by `root`); we just need them as Sets so the render code can
-  // tag each piano key, grid row, and note block by which chord it belongs to.
-  // We pass rawScale.notes (unrotated) here because resolveChordPair rotates
-  // internally by rootStep — feeding it the already-rotated set would
-  // double-rotate.
-  const _pair = chordPairs.find((p) => p.scaleId === rawScale.id)
-  const _resolved = _pair
-    ? resolveChordPair(_pair, rawScale.notes, root, _rsRoll)
-    : null
-  const leftChordPcs = new Set(_resolved ? _resolved.leftNotes : [])
-  const rightChordPcs = new Set(_resolved ? _resolved.rightNotes : [])
-  const chordClassFor = (pc) => {
-    const inL = leftChordPcs.has(pc)
-    const inR = rightChordPcs.has(pc)
-    if (inL && inR) return 'chord-both'
-    if (inL) return 'chord-left'
-    if (inR) return 'chord-right'
-    if (!inScale(pc)) return 'chord-electron'
-    return ''
-  }
+  // The active scale's helpers (see the contexts above). Beat-dependent code
+  // calls ctxAt(beat).<helper> instead.
+  const { inScale, chordClassFor, pair: _pair, resolved: _resolved } = activeCtx
 
   // Chord-pair palette: 4 inversions of each of the scale's two chord
   // shapes, anchored at C3 (MIDI 48) so chords sit one octave below the
@@ -2658,58 +2674,18 @@ export default function PianoRoll({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chordVoicingOpen, voicingSide, voicingIndex])
 
-  // Map a MIDI value (assumed to be on-scale) to a global scale-step index
-  // = octave * scale.notes.length + degree. Step indices are monotone in
-  // MIDI within a single root/scale, so subtracting two of them gives the
-  // number of scale steps between the two pitches.
-  const midiToScaleStep = (midi) => {
-    const pc = ((midi % 12) + 12) % 12
-    const n = scale.notes.length
-    for (let s = 0; s < n; s++) {
-      if (((scale.notes[s] + root) % 12 + 12) % 12 === pc) {
-        const total = scale.notes[s] + root
-        const wrap = Math.floor(total / 12)
-        const baseMidi = ((total % 12) + 12) % 12
-        const oct = (midi - baseMidi) / 12 - wrap
-        return oct * n + s
-      }
-    }
-    return null
-  }
-
-  // Inverse of midiToScaleStep. Accepts any integer index (negative or
-  // overflowing) and resolves it to the corresponding MIDI value.
-  const scaleStepToMidi = (idx) => {
-    const n = scale.notes.length
-    const s = ((idx % n) + n) % n
-    const oct = Math.floor((idx - s) / n)
-    const total = scale.notes[s] + root
-    const wrap = Math.floor(total / 12)
-    const baseMidi = ((total % 12) + 12) % 12
-    return baseMidi + (oct + wrap) * 12
-  }
-
-  // Snap a MIDI value to the nearest pitch that belongs to the current scale.
-  const nearestScaleMidi = (midi) => {
-    const clamped = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, midi))
-    if (inScale(clamped % 12)) return clamped
-    for (let d = 1; d < 12; d++) {
-      if (clamped + d <= MIDI_HIGH && inScale((clamped + d) % 12))
-        return clamped + d
-      if (clamped - d >= MIDI_LOW && inScale(((clamped - d) % 12 + 12) % 12))
-        return clamped - d
-    }
-    return clamped
-  }
+  const { midiToScaleStep, scaleStepToMidi, nearestScaleMidi } = activeCtx
 
   const snapshotState = () => ({
     tracks: tracks.map((t) => ({ ...t, notes: new Map(t.notes) })),
     activeTrackId,
+    zones: zones.map((z) => ({ ...z })),
   })
 
   const restoreSnapshot = (snap) => {
     setTracks(snap.tracks.map((t) => ({ ...t, notes: new Map(t.notes) })))
     if (snap.activeTrackId) setActiveTrackId(snap.activeTrackId)
+    if (snap.zones) setZones(snap.zones.map((z) => ({ ...z })))
     setSelectedKeys(new Set())
   }
 
@@ -2717,6 +2693,90 @@ export default function PianoRoll({
     historyRef.current.push(snapshot ?? snapshotState())
     if (historyRef.current.length > 200) historyRef.current.shift()
     futureRef.current = []
+  }
+
+  // ---- Scale zones ---------------------------------------------------------
+  const zoneLabel = (z) => {
+    const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
+    if (!raw) return '?'
+    const id = raw.kind === 'custom' ? '★' : padId(raw.id)
+    return `${id} · ${NOTE_DISPLAY[z.root]}`
+  }
+  const zoneTitle = (z) => {
+    const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
+    if (!raw) return 'This zone\'s scale no longer exists: the home scale is used'
+    const name = raw.kind === 'custom' ? raw.name : scaleNameOf ? scaleNameOf(raw.id) : `Scale ${raw.id}`
+    return `${name}, root ${NOTE_DISPLAY[z.root]} · click to change, right-click for more`
+  }
+  const missingZoneIds = new Set(
+    zones.filter((z) => !findScaleById(BUILTIN_SCALES, customScales, z.scaleId)).map((z) => z.id)
+  )
+  const createZone = (start, end, ev) => {
+    if (zoneAt(zones, start)) return // never start inside an existing zone
+    const { right } = freeLimits(zones, start, start)
+    const to = Math.min(end, right)
+    if (to <= start) return
+    const id = makeZoneId()
+    pushHistory()
+    setZones((prev) =>
+      [
+        ...prev,
+        {
+          id,
+          start,
+          end: to,
+          scaleId: rawScale.id,
+          root: homeRoot,
+          modeStep: modeStep ?? null,
+        },
+      ].sort((a, b) => a.start - b.start)
+    )
+    setActiveZoneId(id)
+    setZonePicker({ id, x: ev.clientX, y: ev.clientY + 12 })
+  }
+  const resizeZone = (id, start, end) => {
+    const z = zones.find((q) => q.id === id)
+    if (!z) return
+    const { left, right } = freeLimits(zones, z.start, z.end, id)
+    const ns = Math.max(start, left)
+    const ne = Math.min(end, right)
+    if (ne <= ns || (ns === z.start && ne === z.end)) return
+    pushHistory()
+    setZones((prev) => prev.map((q) => (q.id === id ? { ...q, start: ns, end: ne } : q)))
+  }
+  const changeZone = (id, patch) => {
+    pushHistory()
+    setZones((prev) => prev.map((q) => (q.id === id ? { ...q, ...patch } : q)))
+  }
+  const deleteZone = (id) => {
+    pushHistory()
+    setZones((prev) => prev.filter((q) => q.id !== id))
+  }
+  // Move out-of-scale notes inside a zone onto the zone's scale (all tracks).
+  // This is only ever done on request, never when a scale is assigned.
+  const snapZoneNotes = (id) => {
+    const z = zones.find((q) => q.id === id)
+    const c = zoneCtxs.get(id)
+    if (!z || !c) return
+    pushHistory()
+    setTracks((prev) =>
+      prev.map((t) => {
+        const next = new Map()
+        for (const [k, len] of t.notes) {
+          const sep = k.indexOf('-')
+          const b = Number(k.slice(0, sep))
+          const m = Number(k.slice(sep + 1))
+          if (b >= z.start && b < z.end && !c.inScale(((m % 12) + 12) % 12)) {
+            const nk = `${b}-${c.nearestScaleMidi(m)}`
+            next.set(nk, Math.max(len, next.get(nk) ?? 0))
+          } else {
+            next.set(k, Math.max(len, next.get(k) ?? 0))
+          }
+        }
+        return { ...t, notes: next }
+      })
+    )
+    setSelectedKeys(new Set())
   }
 
   const undo = () => {
@@ -2775,6 +2835,9 @@ export default function PianoRoll({
   // the current scale + root. Adds the template's notes on top of existing
   // ones; doesn't clear the grid first.
   const commitTemplateAt = (tpl, anchorBeat, anchorMidi) => {
+    // Degrees are resolved against the scale in force at the anchor beat.
+    const { scale, root, midiToScaleStep, scaleStepToMidi, nearestScaleMidi } =
+      ctxAt(anchorBeat)
     if (!scale || !tpl || tpl.notes.length === 0) return
     const baseRoot = 60 + root
     let minBeat = Infinity
@@ -2835,6 +2898,8 @@ export default function PianoRoll({
   // commitTemplateAt but pure. Used to render the ghost preview while the
   // user is hovering the grid with a pending template.
   const computeTemplatePlacement = (tpl, anchorBeat, anchorMidi) => {
+    const { scale, root, midiToScaleStep, scaleStepToMidi, nearestScaleMidi } =
+      ctxAt(anchorBeat)
     if (!scale || !tpl || tpl.notes.length === 0) return []
     const baseRoot = 60 + root
     let minBeat = Infinity
@@ -3684,8 +3749,11 @@ export default function PianoRoll({
 
   // Shift a midi by `stepDelta` scale steps (or semitones out-of-scale),
   // clamped to the MIDI range. Shared by on-screen and off-screen nudges.
-  const nudgeMidi = (oldMidi, stepDelta) => {
+  const nudgeMidi = (oldMidi, stepDelta, beat = null) => {
     if (stepDelta === 0) return oldMidi
+    // The scale of the zone the note lands in (the active scale if unknown).
+    const { midiToScaleStep, scaleStepToMidi, nearestScaleMidi } =
+      beat == null ? activeCtx : ctxAt(beat)
     let nm
     if (allowOutOfScale) {
       nm = oldMidi + stepDelta
@@ -3706,31 +3774,37 @@ export default function PianoRoll({
   // shows them dimmed), and the Anchor mode itself just toggles the lock on the
   // selection. Returns an error message for the panel, or '' on success.
   const anchorId = (key) => `${activeTrackId}|${key}`
-  const buildVariations = (modeKey, opts, original) =>
-    generateVariations(
-      modeKey,
-      original,
-      {
-        scaleSize: scale.notes.length,
-        low: MIDI_LOW,
-        high: MIDI_HIGH,
-        toStep: midiToScaleStep,
-        toMidi: scaleStepToMidi,
-        snap: nearestScaleMidi,
-        chordOf: (pc) => {
-          const c = chordClassFor(pc)
-          return c === 'chord-left'
-            ? 'left'
-            : c === 'chord-right'
-              ? 'right'
-              : c === 'chord-both'
-                ? 'both'
-                : null
-        },
-      },
-      opts,
-      { style: lineStyle }
-    )
+  // The generator's view of one scale (see lineGenerator.js).
+  const generatorCtxOf = (c) => ({
+    scaleSize: c.scale.notes.length,
+    low: MIDI_LOW,
+    high: MIDI_HIGH,
+    toStep: c.midiToScaleStep,
+    toMidi: c.scaleStepToMidi,
+    snap: c.nearestScaleMidi,
+    chordOf: (pc) => {
+      const cls = c.chordClassFor(pc)
+      return cls === 'chord-left'
+        ? 'left'
+        : cls === 'chord-right'
+          ? 'right'
+          : cls === 'chord-both'
+            ? 'both'
+            : null
+    },
+  })
+  const buildVariations = (modeKey, opts, original) => {
+    // One scale per note: each note is generated in the zone it sits in, so a
+    // selection that crosses zones stays inside every zone's scale. Notes in the
+    // same zone share one context object (the generator relies on that).
+    const byScale = new Map()
+    const perNote = original.map((n) => {
+      const c = ctxAt(n.beat)
+      if (!byScale.has(c)) byScale.set(c, generatorCtxOf(c))
+      return byScale.get(c)
+    })
+    return generateVariations(modeKey, original, perNote, opts, { style: lineStyle })
+  }
 
   const generateLineFromSelection = (modeKey, opts) => {
     if (!scale) return ''
@@ -3836,7 +3910,7 @@ export default function PianoRoll({
     for (const it of items) {
       toDelete.push(it.key)
       const nb = it.beat + beatDeltaEff
-      const nm = nudgeMidi(it.midi, stepDelta)
+      const nm = nudgeMidi(it.midi, stepDelta, nb)
       if (nb < 0) {
         newOffscreen.push({ beat: nb, midi: nm, len: it.len })
       } else {
@@ -3848,7 +3922,7 @@ export default function PianoRoll({
     // Off-screen notes: those reaching >= 0 come back on-screen.
     for (const off of offscreenNotesRef.current) {
       const nb = off.beat + beatDeltaEff
-      const nm = nudgeMidi(off.midi, stepDelta)
+      const nm = nudgeMidi(off.midi, stepDelta, nb)
       if (nb >= 0) {
         const nk = `${nb}-${nm}`
         toSet.push([nk, off.len])
@@ -4352,7 +4426,9 @@ export default function PianoRoll({
 
     // Block placing notes on rows that aren't in the scale. Marquee selection
     // still works because it relies on mousemove past the threshold.
-    const isInScale = inScale(midi % 12)
+    const isInScale = ctxAt(
+      Math.floor(xToBeat(e.clientX - e.currentTarget.getBoundingClientRect().left))
+    ).inScale(midi % 12)
 
     // Alt+click+drag: insert a note at the click beat and drag in either
     // direction to set its length in one gesture. Drag past the click sets
@@ -4575,9 +4651,10 @@ export default function PianoRoll({
         // the nearest in-scale row so the click always produces something
         // — matches where the hover indicator was sitting.
         const effectiveAllowOOS = allowOutOfScale ? !ctrlHeld : ctrlHeld
+        const placeCtx = ctxAt(beat)
         const placeMidi =
-          !effectiveAllowOOS && !inScale(midi % 12)
-            ? nearestScaleMidi(midi)
+          !effectiveAllowOOS && !placeCtx.inScale(midi % 12)
+            ? placeCtx.nearestScaleMidi(midi)
             : midi
         // Start on empty space, never inside a note on this row (matches the
         // hover box). No overlaps allowed.
@@ -4844,12 +4921,15 @@ export default function PianoRoll({
       const effectiveAllowOOS = allowOutOfScale ? !mv.ctrlKey : mv.ctrlKey
       const groupHasOutOfScale =
         !effectiveAllowOOS &&
-        drag.group.some((g) => midiToScaleStep(g.originalMidi) == null)
+        drag.group.some(
+          (g) => ctxAt(g.originalBeat).midiToScaleStep(g.originalMidi) == null
+        )
       const chromatic = effectiveAllowOOS || groupHasOutOfScale
+      const dragScaleSize = ctxAt(drag.originalBeat).scale.notes.length
       const rowsPerStep = chromatic
         ? 1
-        : scale.notes.length > 0
-        ? 12 / scale.notes.length
+        : dragScaleSize > 0
+        ? 12 / dragScaleSize
         : 1
       const stepDelta = -Math.round(dy / (ROW_HEIGHT * rowsPerStep))
 
@@ -4867,11 +4947,13 @@ export default function PianoRoll({
         if (chromatic) {
           nm = g.originalMidi + stepDelta
         } else {
-          const gStep = midiToScaleStep(g.originalMidi)
+          // Steps are counted in the scale of the zone the note lands in.
+          const dc = ctxAt(nb)
+          const gStep = dc.midiToScaleStep(g.originalMidi)
           nm =
             gStep != null
-              ? scaleStepToMidi(gStep + stepDelta)
-              : nearestScaleMidi(g.originalMidi + stepDelta)
+              ? dc.scaleStepToMidi(gStep + stepDelta)
+              : dc.nearestScaleMidi(g.originalMidi + stepDelta)
         }
         nm = Math.max(MIDI_LOW, Math.min(MIDI_HIGH, nm))
         return {
@@ -6883,6 +6965,34 @@ export default function PianoRoll({
               updateHBar()
             }}
           >
+            <ScaleLane
+              zones={zones}
+              activeZoneId={activeZoneId}
+              totalCells={totalBeats}
+              cellsPerMeasure={cellsPerMeasure}
+              barWidth={totalBeats * BEAT_WIDTH}
+              beatToX={beatToX}
+              xToBeat={xToBeat}
+              labelFor={zoneLabel}
+              titleFor={zoneTitle}
+              missingIds={missingZoneIds}
+              onCreate={createZone}
+              onResize={resizeZone}
+              onSelect={(id, rect) => {
+                setActiveZoneId(id)
+                setZoneMenu(null)
+                setZonePicker({ id, x: rect.left, y: rect.bottom + 6 })
+              }}
+              onHome={() => {
+                setActiveZoneId(null)
+                setZonePicker(null)
+              }}
+              onContextMenu={(e, id) => {
+                setActiveZoneId(id)
+                setZonePicker(null)
+                setZoneMenu({ id, x: e.clientX, y: e.clientY })
+              }}
+            />
             <div className="timeline">
               <div className="timeline-corner" />
               <div
@@ -7083,12 +7193,47 @@ export default function PianoRoll({
                     </div>
                   )
                 })}
+                {zones.map((z) => {
+                  // A zone repaints the grid rows with ITS scale (tints, root,
+                  // chord colours) using the same row classes as the home rows.
+                  // It sits behind the notes and gridlines (those are positioned
+                  // later in the DOM) and never takes pointer events.
+                  const zc = zoneCtxs.get(z.id)
+                  if (!zc) return null
+                  const zx = beatToX(z.start)
+                  return (
+                    <div
+                      key={z.id}
+                      className="zone-layer"
+                      style={{
+                        left: zx,
+                        width: beatToX(z.end) - zx,
+                        height: pitches.length * ROW_HEIGHT,
+                      }}
+                    >
+                      {pitches.map((midi) => {
+                        const pc = midi % 12
+                        return (
+                          <div
+                            key={midi}
+                            className={`grid-row ${WHITE_PCS.has(pc) ? 'white' : 'black'} ${
+                              pc === 0 ? 'octave' : ''
+                            } ${zc.inScale(pc) ? 'in' : ''} ${
+                              pc === z.root ? 'is-root' : ''
+                            } ${zc.chordClassFor(pc)}`}
+                            style={{ height: ROW_HEIGHT }}
+                          />
+                        )
+                      })}
+                    </div>
+                  )
+                })}
                 {pitches.map((midi) => {
                   const pc = midi % 12
                   const isWhite = WHITE_PCS.has(pc)
                   const isOctave = pc === 0
-                  const isIn = inScale(pc)
-                  const isRoot = pc === root
+                  const isIn = homeCtx.inScale(pc)
+                  const isRoot = pc === homeRoot
                   const rowNotes = notesByMidi.get(midi) ?? []
                   const rowPreview = templatePreview
                     ? templatePreview.get(midi) ?? []
@@ -7098,7 +7243,7 @@ export default function PianoRoll({
                       key={midi}
                       className={`grid-row ${isWhite ? 'white' : 'black'} ${
                         isOctave ? 'octave' : ''
-                      } ${isIn ? 'in' : ''} ${isRoot ? 'is-root' : ''} ${chordClassFor(pc)}`}
+                      } ${isIn ? 'in' : ''} ${isRoot ? 'is-root' : ''} ${homeCtx.chordClassFor(pc)}`}
                       style={{ height: ROW_HEIGHT }}
                     >
                       <div
@@ -7138,7 +7283,7 @@ export default function PianoRoll({
                           // won't place a note here — so show no hover border
                           // at all (instead of snapping the box to a different
                           // in-scale row, which looked broken).
-                          if (!effectiveAllowOOS && !inScale(midi % 12)) {
+                          if (!effectiveAllowOOS && !ctxAt(beat).inScale(midi % 12)) {
                             setHoveredCell(null)
                             if (pendingTemplate) setTemplateHover({ beat, midi })
                             return
@@ -7180,7 +7325,7 @@ export default function PianoRoll({
                         {rowPreview.map((p, idx) => (
                           <div
                             key={`preview-${idx}`}
-                            className={`row-note preview ${chordClassFor(midi % 12)}`}
+                            className={`row-note preview ${ctxAt(p.beat).chordClassFor(midi % 12)}`}
                             style={{
                               left: `${beatToX(p.beat)}px`,
                               width: `${spanToX(p.beat, p.length)}px`,
@@ -7196,7 +7341,7 @@ export default function PianoRoll({
                               anchoredKeys.has(`${activeTrackId}|${key}`)
                                 ? 'anchored'
                                 : ''
-                            } ${chordClassFor(midi % 12)}`}
+                            } ${ctxAt(beat).chordClassFor(midi % 12)}`}
                             style={{
                               left: `${beatToX(beat)}px`,
                               width: `${spanToX(beat, length)}px`,
@@ -7784,13 +7929,72 @@ export default function PianoRoll({
             />
           )
         })()}
+      {zonePicker &&
+        (() => {
+          const z = zones.find((q) => q.id === zonePicker.id)
+          return z ? (
+            <ScalePicker
+              x={zonePicker.x}
+              y={zonePicker.y}
+              zone={z}
+              builtIn={BUILTIN_SCALES}
+              custom={customScales}
+              nameOf={(id) => (scaleNameOf ? scaleNameOf(id) : `Scale ${id}`)}
+              noteNames={NOTE_DISPLAY}
+              onChange={(patch) => changeZone(z.id, patch)}
+              onClose={() => setZonePicker(null)}
+            />
+          ) : null
+        })()}
+      {zoneMenu && zones.some((q) => q.id === zoneMenu.id) && (
+        <ContextMenu
+          x={zoneMenu.x}
+          y={zoneMenu.y}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="tab-context-menu-item"
+            onClick={() => {
+              const id = zoneMenu.id
+              setZoneMenu(null)
+              const z = zones.find((q) => q.id === id)
+              if (z) setZonePicker({ id, x: zoneMenu.x, y: zoneMenu.y })
+            }}
+          >
+            Change scale…
+          </button>
+          <button
+            type="button"
+            className="tab-context-menu-item"
+            disabled={!zoneCtxs.get(zoneMenu.id)}
+            onClick={() => {
+              snapZoneNotes(zoneMenu.id)
+              setZoneMenu(null)
+            }}
+          >
+            Snap notes to this scale
+          </button>
+          <button
+            type="button"
+            className="tab-context-menu-item"
+            onClick={() => {
+              deleteZone(zoneMenu.id)
+              setZoneMenu(null)
+            }}
+          >
+            Delete zone
+          </button>
+        </ContextMenu>
+      )}
       {variationModal && (
         <VariationModal
-          root={root}
+          root={ctxAt(variationModal.original[0].beat).root}
           bpm={bpm}
           NOTE_DISPLAY={NOTE_DISPLAY}
-          inScale={inScale}
-          chordClassFor={chordClassFor}
+          inScale={ctxAt(variationModal.original[0].beat).inScale}
+          chordClassFor={ctxAt(variationModal.original[0].beat).chordClassFor}
+          noteClassFor={(beat, midi) => ctxAt(beat).chordClassFor(midi % 12)}
           getAudioContext={getAudioContext}
           playNote={(midi, startAt, durSec) => {
             const t =

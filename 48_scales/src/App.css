@@ -4563,6 +4563,7 @@
 }
 
 .roll-scroll {
+  --scale-lane-h: 24px; /* keep in sync with LANE_H in ScaleLane.jsx */
   flex: 1;
   min-height: 0;
   /* Horizontal scrolling is driven by the custom grip scrollbar below and
@@ -4645,7 +4646,7 @@
 .timeline {
   display: flex;
   position: sticky;
-  top: 0;
+  top: var(--scale-lane-h, 0px);
   z-index: 4;
   background: var(--frame);
   border-bottom: 1px solid var(--hairline);
@@ -5100,7 +5101,7 @@
 .chord-lane-row {
   display: flex;
   position: sticky;
-  top: 26px;
+  top: calc(var(--scale-lane-h, 0px) + 26px);
   z-index: 3;
   background: var(--frame);
   border-bottom: 1px solid var(--hairline);
@@ -7186,4 +7187,268 @@
   opacity: 0.45;
   outline: 1px dashed var(--fg);
   outline-offset: -1px;
+}
+
+/* ---- Scale lane: zones that give measures their own scale -------------- */
+.scale-lane {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--frame);
+  border-bottom: 1px solid var(--hairline);
+  min-width: max-content;
+}
+.scale-lane-corner {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  width: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--frame);
+  border-right: 1px solid #0a0a0b;
+}
+.scale-lane-home {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--mute);
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.scale-lane-home:hover {
+  color: var(--fg);
+}
+.scale-lane-home.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.scale-lane-bar {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+.scale-lane-hint {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--mute);
+  opacity: 0.7;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.scale-zone {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--frame));
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+.scale-zone:hover {
+  background: color-mix(in srgb, var(--accent) 26%, var(--frame));
+}
+.scale-zone.active {
+  border-color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 34%, var(--frame));
+}
+.scale-zone.missing {
+  border-style: dashed;
+  opacity: 0.6;
+}
+.scale-zone.preview {
+  pointer-events: none;
+  border-style: dashed;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.scale-zone-label {
+  flex: 1;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.scale-zone-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  cursor: ew-resize;
+  z-index: 1;
+}
+.scale-zone-edge.left {
+  left: 0;
+}
+.scale-zone-edge.right {
+  right: 0;
+}
+.scale-zone-edge:hover {
+  background: color-mix(in srgb, var(--fg) 25%, transparent);
+}
+
+/* A zone repaints the grid rows with its own scale. It sits behind the notes
+   and gridlines (positioned later in the DOM) and takes no pointer events. */
+.zone-layer {
+  position: absolute;
+  top: 0;
+  background: var(--frame);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Scale picker popover */
+.scale-picker {
+  position: fixed;
+  z-index: 2100;
+  width: 300px;
+  max-height: 430px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--frame);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  font-family: var(--sans);
+  color: var(--fg);
+}
+.scale-picker-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.scale-picker-roots {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.scale-picker-roots button {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.scale-picker-roots button:hover {
+  color: var(--fg);
+}
+.scale-picker-roots button.on {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.scale-picker-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--mute);
+}
+.scale-picker-mode select,
+.scale-picker-search {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+.scale-picker-search:focus,
+.scale-picker-mode select:focus {
+  border-color: var(--accent);
+}
+.scale-picker-list {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+}
+.scale-picker-group {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.scale-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.scale-picker-row:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.scale-picker-row.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.scale-picker-id {
+  width: 22px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.scale-picker-name {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scale-picker-mini {
+  display: inline-flex;
+  gap: 1px;
+}
+.scale-picker-mini i {
+  width: 5px;
+  height: 10px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.scale-picker-mini i.on {
+  background: var(--accent);
+}
+.scale-picker-empty {
+  padding: 10px 4px;
+  font-size: 12px;
+  color: var(--mute);
 }

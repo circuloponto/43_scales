@@ -2,12 +2,18 @@
 // roll (a "line") and returns an alternative set of pitches for them. Rhythm
 // (beats + lengths) is never touched; only pitches change.
 //
-// A line is an array of { beat, len, midi }. Every mode works on SCALE STEPS
-// (global index = octave * scaleSize + degree) so "one step up" always means
-// the next note of the active scale, whatever the root or scale is.
+// A line is an array of { beat, len, midi }. Pitches move in SCALE STEPS
+// (global index = octave * scaleSize + degree), so "one step up" always means
+// the next note of the scale in force, whatever the root or scale is.
 //
-// ctx (supplied by PianoRoll, which owns the scale/root):
-//   scaleSize          number of notes in the active scale
+// Scale zones: every note can sit in a different scale. `ctx` is either one
+// context (the whole line is in one scale) or an array with one context per
+// note. A note's interval is measured in, and applied through, the scale of the
+// note it leads to, so every generated note lands inside its own zone's scale.
+// When all notes share one context the behaviour is exactly the single-scale one.
+//
+// A context (built by PianoRoll from a scaleContext):
+//   scaleSize          number of notes in the scale
 //   low, high          playable MIDI range
 //   toStep(midi)       midi -> global scale step, or null if off-scale
 //   toMidi(step)       global scale step -> midi
@@ -76,44 +82,54 @@ function chooseAffected(candidates, amount, rng) {
   return new Set(shuffled(candidates, rng).slice(0, k))
 }
 
-// Build a line of steps from a start step + a list of intervals (in steps).
-function stepsFromIntervals(start, intervals) {
+// ---- Per-note scale contexts ----------------------------------------------
+
+// One context per note: a single ctx is shared by every note.
+const ctxList = (line, ctx) => (Array.isArray(ctx) ? ctx : line.map(() => ctx))
+
+// A midi value as a scale step of context `c` (snapped in if it is off-scale).
+const stepIn = (c, midi) => c.toStep(midi) ?? c.toStep(c.snap(midi))
+
+// The line's intervals, each measured in the scale of the note it leads to.
+const intervalsIn = (line, ctxs) =>
+  line.slice(1).map((n, i) => {
+    const c = ctxs[i + 1]
+    return stepIn(c, n.midi) - stepIn(c, line[i].midi)
+  })
+
+// Lay a line out from its first pitch and a list of intervals: each new note is
+// the previous pitch, as a step of the next note's scale, plus its interval.
+function layOut(ctxs, start, diffs) {
   const out = [start]
-  for (const d of intervals) out.push(out[out.length - 1] + d)
+  for (let i = 0; i < diffs.length; i++) {
+    const c = ctxs[i + 1]
+    out.push(c.toMidi(stepIn(c, out[i]) + diffs[i]))
+  }
   return out
 }
 
-const intervalsOf = (steps) => steps.slice(1).map((s, i) => s - steps[i])
+const inRange = (midis, c) => midis.every((m) => m >= c.low && m <= c.high)
 
-function stepsToMidis(steps, ctx) {
-  return steps.map((s) => ctx.toMidi(s))
-}
-
-const fits = (steps, ctx) =>
-  steps.every((s) => {
-    const m = ctx.toMidi(s)
-    return m >= ctx.low && m <= ctx.high
-  })
-
-// Slide a whole step-line by whole octaves until it fits the playable range.
-function fitByOctaves(steps, ctx) {
-  if (fits(steps, ctx)) return steps
+// Slide the whole line by whole octaves until it fits the playable range.
+function fitByOctaves(ctxs, start, diffs) {
+  const first = layOut(ctxs, start, diffs)
+  if (inRange(first, ctxs[0])) return first
   for (let k = 1; k <= 4; k++) {
     for (const sign of [1, -1]) {
-      const moved = steps.map((s) => s + sign * k * ctx.scaleSize)
-      if (fits(moved, ctx)) return moved
+      const moved = layOut(ctxs, start + sign * 12 * k, diffs)
+      if (inRange(moved, ctxs[0])) return moved
     }
   }
   return null
 }
 
-// Rebuild the line from its original first note and a new interval list,
-// retrying until it fits the playable range. `makeDiffs()` returns a fresh
-// interval list each call (it is random).
-function rebuild(steps, ctx, makeDiffs) {
+// Rebuild the line from its first note and a new interval list, retrying until
+// it fits the playable range. `makeDiffs()` returns a fresh interval list each
+// call (it is random).
+function rebuild(ctxs, start, makeDiffs) {
   for (let t = 0; t < 12; t++) {
-    const fitted = fitByOctaves(stepsFromIntervals(steps[0], makeDiffs()), ctx)
-    if (fitted) return { midis: stepsToMidis(fitted, ctx) }
+    const fitted = fitByOctaves(ctxs, start, makeDiffs())
+    if (fitted) return { midis: fitted }
   }
   return { error: 'No room to reshape this line.' }
 }
@@ -122,18 +138,25 @@ const NOTHING = { error: 'Amount is 0%, nothing to change.' }
 
 // ---- Modes ---------------------------------------------------------------
 
-// Tabby order: notes keep their left/right chord membership order.
-function tabby(line, ctx, rng, amount) {
-  const pool = (label) => {
-    const out = []
-    for (let m = ctx.low; m <= ctx.high; m++) {
-      if (ctx.snap(m) !== m) continue // off-scale
-      const c = ctx.chordOf(((m % 12) + 12) % 12)
-      if (label === 'any' || c === label || c === 'both') out.push(m)
+// Tabby order: notes keep their left/right chord membership order, each in the
+// chord pair of its own zone's scale.
+function tabby(line, ctxs, rng, amount) {
+  const poolCache = new Map()
+  const poolsOf = (ctx) => {
+    if (!poolCache.has(ctx)) {
+      const pool = (label) => {
+        const out = []
+        for (let m = ctx.low; m <= ctx.high; m++) {
+          if (ctx.snap(m) !== m) continue // off-scale
+          const c = ctx.chordOf(((m % 12) + 12) % 12)
+          if (label === 'any' || c === label || c === 'both') out.push(m)
+        }
+        return out
+      }
+      poolCache.set(ctx, { left: pool('left'), right: pool('right'), any: pool('any') })
     }
-    return out
+    return poolCache.get(ctx)
   }
-  const pools = { left: pool('left'), right: pool('right'), any: pool('any') }
   const affected = chooseAffected(
     line.map((_, i) => i),
     amount,
@@ -141,9 +164,12 @@ function tabby(line, ctx, rng, amount) {
   )
   // Pitches that stay as they are (amount < 100%) are already "taken".
   const kept = line.filter((_, i) => !affected.has(i)).map((n) => n.midi)
-  // Last earlier note with the same original pitch, or -1.
+  // Last earlier note with the same original pitch, or -1. Only notes in the
+  // same scale count: a pitch reused from another zone might not belong here.
   const echoOf = (i) => {
-    for (let j = i - 1; j >= 0; j--) if (line[j].midi === line[i].midi) return j
+    for (let j = i - 1; j >= 0; j--) {
+      if (line[j].midi === line[i].midi && ctxs[j] === ctxs[i]) return j
+    }
     return -1
   }
   const out = []
@@ -151,8 +177,8 @@ function tabby(line, ctx, rng, amount) {
   line.forEach((n, i) => {
     let next = n.midi
     if (affected.has(i)) {
-      const c = ctx.chordOf(((n.midi % 12) + 12) % 12)
-      const candidates = pools[c === 'left' || c === 'right' ? c : 'any']
+      const c = ctxs[i].chordOf(((n.midi % 12) + 12) % 12)
+      const candidates = poolsOf(ctxs[i])[c === 'left' || c === 'right' ? c : 'any']
       const echo = echoOf(i)
       if (echo >= 0 && affected.has(echo)) {
         // The original repeats this pitch on purpose: repeat the new one too.
@@ -181,46 +207,48 @@ function tabby(line, ctx, rng, amount) {
 }
 
 // Sequence: identical shape, different starting note.
-function sequence(steps, ctx, rng) {
-  const n = ctx.scaleSize
+function sequence(line, ctxs, start, rng) {
+  const diffs = intervalsIn(line, ctxs)
+  const n = ctxs[0].scaleSize
+  const base = stepIn(ctxs[0], line[0].midi)
   const shifts = []
   for (let d = -n; d <= n; d++) {
-    if (d !== 0 && fits(steps.map((s) => s + d), ctx)) shifts.push(d)
+    if (d === 0) continue
+    const moved = layOut(ctxs, ctxs[0].toMidi(base + d), diffs)
+    if (inRange(moved, ctxs[0])) shifts.push(d)
   }
   if (!shifts.length) return { error: 'No room to move this line.' }
   const d = pick(shifts, rng)
-  return { midis: stepsToMidis(steps.map((s) => s + d), ctx) }
+  return { midis: layOut(ctxs, ctxs[0].toMidi(base + d), diffs) }
 }
 
 // Direction: flip the direction of the intervals (up <-> down), sizes kept.
 // The amount slider sets how many of the intervals flip.
-function direction(steps, ctx, rng, amount) {
-  if (steps.length < 2) return { error: 'Select at least 2 notes.' }
-  const diffs = intervalsOf(steps)
+function direction(line, ctxs, start, rng, amount) {
+  if (line.length < 2) return { error: 'Select at least 2 notes.' }
+  const diffs = intervalsIn(line, ctxs)
   const movable = diffs.map((d, i) => (d !== 0 ? i : -1)).filter((i) => i >= 0)
   if (!movable.length) return { error: 'These notes have no up or down moves.' }
   if (amount <= 0) return NOTHING
-  return rebuild(steps, ctx, () => {
+  return rebuild(ctxs, start, () => {
     const hit = chooseAffected(movable, amount, rng)
-    return diffs.map((d, i) => {
-      return hit.has(i) ? -d : d
-    })
+    return diffs.map((d, i) => (hit.has(i) ? -d : d))
   })
 }
 
 // Contour: works on the overall shape of the line.
 //   maintain -> every up and down stays; steps may widen or narrow (any size)
 //   change   -> affected intervals become brand-new moves (new direction/size)
-function contour(steps, ctx, rng, option, amount) {
-  if (steps.length < 2) return { error: 'Select at least 2 notes.' }
-  const diffs = intervalsOf(steps)
+function contour(line, ctxs, start, rng, option, amount) {
+  if (line.length < 2) return { error: 'Select at least 2 notes.' }
+  const diffs = intervalsIn(line, ctxs)
   if (amount <= 0) return NOTHING
   const maintain = option === 'maintain'
   const pickable = diffs
     .map((d, i) => (maintain && d === 0 ? -1 : i))
     .filter((i) => i >= 0)
   if (!pickable.length) return { error: 'These notes have no steps to reshape.' }
-  return rebuild(steps, ctx, () => {
+  return rebuild(ctxs, start, () => {
     const hit = chooseAffected(pickable, amount, rng)
     return diffs.map((d, i) => {
       if (!hit.has(i)) return d
@@ -235,22 +263,24 @@ function contour(steps, ctx, rng, option, amount) {
   })
 }
 
-// Entry point. Returns { midis } (same order/length as `line`) or { error }.
+// Entry point. `ctx` is one context or one per note. Returns { midis } (same
+// order/length as `line`) or { error }.
 export function generateLine(modeKey, line, ctx, opts = {}, rng = Math.random) {
   if (!line.length) return { error: 'Select some notes on the piano roll first.' }
+  const ctxs = ctxList(line, ctx)
   const amount = opts.amount ?? 1
   if (modeKey === 'tabby') {
-    return amount > 0 ? tabby(line, ctx, rng, amount) : NOTHING
+    return amount > 0 ? tabby(line, ctxs, rng, amount) : NOTHING
   }
 
-  const steps = line.map((n) => ctx.toStep(n.midi) ?? ctx.toStep(ctx.snap(n.midi)))
+  const steps = line.map((n, i) => stepIn(ctxs[i], n.midi))
   if (steps.some((s) => s == null)) return { error: 'Could not map a note to the scale.' }
-  if (modeKey === 'sequence') return sequence(steps, ctx, rng)
-  if (modeKey === 'direction') {
-    return direction(steps, ctx, rng, amount)
-  }
+  // The line's first pitch (snapped into its scale) anchors every rebuild.
+  const start = ctxs[0].toMidi(steps[0])
+  if (modeKey === 'sequence') return sequence(line, ctxs, start, rng)
+  if (modeKey === 'direction') return direction(line, ctxs, start, rng, amount)
   if (modeKey === 'contour') {
-    return contour(steps, ctx, rng, opts.option ?? 'maintain', amount)
+    return contour(line, ctxs, start, rng, opts.option ?? 'maintain', amount)
   }
   return { error: 'This mode is not available yet.' }
 }
@@ -260,25 +290,26 @@ export function generateLine(modeKey, line, ctx, opts = {}, rng = Math.random) {
 // (a-b-a-b) or squashed into a narrow range. generateVariations draws many
 // candidates, throws out the bad ones and keeps the best few.
 
-// Shape numbers for a line of scale steps.
-function profileOf(steps) {
-  const d = intervalsOf(steps)
+// Shape numbers for a line. `steps` measure size (span, leaps, first note);
+// `keys` identify pitches (repeats, a-b-a-b, distinct). With one scale both are
+// the scale steps. Across zones step numbers of different scales are not
+// comparable, so `keys` are the MIDI pitches and `steps` are scaled semitones.
+function profileOf(steps, keys = steps) {
+  const d = steps.slice(1).map((s, i) => s - steps[i])
   let repeats = 0
   let leaps = 0
-  for (const v of d) {
-    if (v === 0) repeats++
-    if (Math.abs(v) >= 3) leaps++
-  }
+  for (let i = 1; i < keys.length; i++) if (keys[i] === keys[i - 1]) repeats++
+  for (const v of d) if (Math.abs(v) >= 3) leaps++
   let osc = 0 // a-b-a-b
-  for (let i = 0; i + 3 < steps.length; i++) {
-    if (steps[i] === steps[i + 2] && steps[i + 1] === steps[i + 3]) osc++
+  for (let i = 0; i + 3 < keys.length; i++) {
+    if (keys[i] === keys[i + 2] && keys[i + 1] === keys[i + 3]) osc++
   }
   return {
     span: Math.max(...steps) - Math.min(...steps),
     repeats,
     leaps,
     osc,
-    distinct: new Set(steps).size,
+    distinct: new Set(keys).size,
     first: steps[0],
     intervals: d.length,
   }
@@ -316,7 +347,8 @@ const MIN_DIFF = 0.3
 const noteDiff = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0)
 
 // Many draws -> filter by the rules -> rank by score -> pick `count` that are
-// different enough from each other. Returns { variants: midis[][] } or { error }.
+// different enough from each other. `ctx` is one context or one per note.
+// Returns { variants: midis[][] } or { error }.
 export function generateVariations(
   modeKey,
   line,
@@ -325,15 +357,28 @@ export function generateVariations(
   { count = VARIATION_COUNT, pool = 80, rng = Math.random, style = null } = {}
 ) {
   if (!line.length) return { error: 'Select some notes on the piano roll first.' }
-  const stepOf = (m) => ctx.toStep(m) ?? ctx.toStep(ctx.snap(m))
-  const origSteps = line.map((n) => stepOf(n.midi))
-  const orig = profileOf(origSteps)
+  const ctxs = ctxList(line, ctx)
+  const oneScale = ctxs.every((c) => c === ctxs[0])
+  // How a line of midi pitches is measured (see profileOf).
+  const avgSize = ctxs.reduce((n, c) => n + c.scaleSize, 0) / ctxs.length
+  const measure = (midis) =>
+    oneScale
+      ? (() => {
+          const steps = midis.map((m) => stepIn(ctxs[0], m))
+          return { steps, keys: steps }
+        })()
+      : { steps: midis.map((m) => (m * avgSize) / 12), keys: midis }
+  // The style model counts whole steps of one scale: it only applies there.
+  const styleModel = oneScale ? style : null
+
+  const first = measure(line.map((n) => n.midi))
+  const orig = profileOf(first.steps, first.keys)
 
   const seen = new Set([line.map((n) => n.midi).join(',')])
   const cands = []
   let stale = 0
   for (let t = 0; t < pool && stale < 25; t++) {
-    const r = generateLine(modeKey, line, ctx, opts, rng)
+    const r = generateLine(modeKey, line, ctxs, opts, rng)
     if (r.error) {
       if (cands.length === 0 && t === 0) return { error: r.error }
       break
@@ -345,12 +390,12 @@ export function generateVariations(
     }
     seen.add(id)
     stale = 0
-    const steps = r.midis.map(stepOf)
-    const prof = profileOf(steps)
+    const m = measure(r.midis)
+    const prof = profileOf(m.steps, m.keys)
     cands.push({
       midis: r.midis,
       ok: passesRules(prof, orig, modeKey === 'tabby'),
-      score: scoreCandidate(prof, orig, steps, style) + rng() * 0.01,
+      score: scoreCandidate(prof, orig, m.steps, styleModel) + rng() * 0.01,
     })
   }
   if (!cands.length) return { error: 'No different variation found.' }
