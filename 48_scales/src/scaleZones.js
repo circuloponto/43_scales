@@ -15,7 +15,7 @@ export const makeZoneId = () =>
 // Accept only well-formed zones (corrupt persisted data must not crash the roll).
 export function sanitizeZones(raw) {
   if (!Array.isArray(raw)) return []
-  const out = []
+  let out = []
   for (const z of raw) {
     if (!z || typeof z !== 'object') continue
     const start = Number(z.start)
@@ -25,6 +25,9 @@ export function sanitizeZones(raw) {
     }
     if (z.scaleId == null) continue
     const root = Number.isInteger(z.root) && z.root >= 0 && z.root <= 11 ? z.root : 0
+    // Zones never overlap: if saved data has two on the same cells (an old bug
+    // stacked duplicates), the later one wins, as it is the one last edited.
+    out = out.filter((o) => o.end <= start || o.start >= end)
     out.push({
       id: typeof z.id === 'string' && z.id ? z.id : makeZoneId(),
       start,

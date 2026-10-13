@@ -37,12 +37,21 @@ export default function ScaleLane({
   const measureOf = (cell) => Math.max(0, Math.floor(cell / cellsPerMeasure))
 
   // Pointer capture on the bar so a drag keeps tracking outside the lane.
+  // The live drag is kept in a ref (and mirrored to state only for drawing) so
+  // onEnd runs exactly once, outside any state updater: React's dev mode runs
+  // updaters twice, which would otherwise create / resize a zone twice.
+  const dragRef = useRef(null)
   const beginDrag = (e, init, onMove, onEnd) => {
     const bar = barRef.current
     const pointerId = e.pointerId
     bar.setPointerCapture?.(pointerId)
+    dragRef.current = init
     setDrag(init)
-    const move = (ev) => setDrag((d) => (d ? onMove(d, ev) : d))
+    const move = (ev) => {
+      if (!dragRef.current) return
+      dragRef.current = onMove(dragRef.current, ev)
+      setDrag(dragRef.current)
+    }
     const up = (ev) => {
       bar.removeEventListener('pointermove', move)
       bar.removeEventListener('pointerup', up)
@@ -52,10 +61,10 @@ export default function ScaleLane({
       } catch {
         /* capture already gone */
       }
-      setDrag((d) => {
-        if (d) onEnd(d, ev)
-        return null
-      })
+      const finished = dragRef.current
+      dragRef.current = null
+      setDrag(null)
+      if (finished) onEnd(finished, ev)
     }
     bar.addEventListener('pointermove', move)
     bar.addEventListener('pointerup', up)
