@@ -7452,3 +7452,16 @@
   font-size: 12px;
   color: var(--mute);
 }
+
+/* Zone label: "04 · C" then the scale's notes, dimmer, clipped when narrow */
+.scale-zone-label b {
+  font-weight: 600;
+  margin-right: 7px;
+}
+.scale-zone-notes {
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+  color: color-mix(in srgb, var(--fg) 62%, transparent);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}

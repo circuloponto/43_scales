@@ -2696,17 +2696,22 @@ export default function PianoRoll({
   }
 
   // ---- Scale zones ---------------------------------------------------------
+  // The scale's notes in order from its root, e.g. "C D E F G♭ A♭ B♭ B".
+  const zoneNotes = (z) => {
+    const c = zoneCtxs.get(z.id)
+    return c ? c.scale.notes.map((n) => NOTE_DISPLAY[(n + c.root) % 12]).join(' ') : ''
+  }
   const zoneLabel = (z) => {
     const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
-    if (!raw) return '?'
+    if (!raw) return { head: '?', notes: '' }
     const id = raw.kind === 'custom' ? '★' : padId(raw.id)
-    return `${id} · ${NOTE_DISPLAY[z.root]}`
+    return { head: `${id} · ${NOTE_DISPLAY[z.root]}`, notes: zoneNotes(z) }
   }
   const zoneTitle = (z) => {
     const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
     if (!raw) return 'This zone\'s scale no longer exists: the home scale is used'
     const name = raw.kind === 'custom' ? raw.name : scaleNameOf ? scaleNameOf(raw.id) : `Scale ${raw.id}`
-    return `${name}, root ${NOTE_DISPLAY[z.root]} · click to change, right-click for more`
+    return `${name}, root ${NOTE_DISPLAY[z.root]}: ${zoneNotes(z)} · click to change, right-click for more`
   }
   const missingZoneIds = new Set(
     zones.filter((z) => !findScaleById(BUILTIN_SCALES, customScales, z.scaleId)).map((z) => z.id)
@@ -6970,6 +6975,7 @@ export default function PianoRoll({
               activeZoneId={activeZoneId}
               totalCells={totalBeats}
               cellsPerMeasure={cellsPerMeasure}
+              cellsPerBeat={cellsPerBeat}
               barWidth={totalBeats * BEAT_WIDTH}
               beatToX={beatToX}
               xToBeat={xToBeat}

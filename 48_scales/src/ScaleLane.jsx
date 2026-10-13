@@ -1,8 +1,12 @@
 import { useRef, useState } from 'react'
 
-// The lane above the measure ruler where scale zones live. Drag across empty
-// space to create a zone over those measures; click a zone to select it (and
-// pick its scale); drag its edges to resize; right-click for the menu.
+// The lane above the measure ruler where scale zones live.
+//   click empty space   -> a zone over that whole measure
+//   drag empty space    -> a zone over the dragged BEATS (so a measure can hold
+//                          two or more scales); hold Shift to snap to measures
+//   click a zone        -> select it and pick its scale
+//   drag a zone's edge  -> resize, snapped to beats (Shift = measures)
+//   right-click a zone  -> menu
 //
 // All positions are in 16th-cells. Pointer x <-> cell goes through the roll's
 // own beatToX / xToBeat so zooming and swing view line up with the grid.
@@ -14,6 +18,7 @@ export default function ScaleLane({
   activeZoneId,
   totalCells,
   cellsPerMeasure,
+  cellsPerBeat,
   barWidth,
   beatToX,
   xToBeat,
@@ -35,6 +40,9 @@ export default function ScaleLane({
     return xToBeat(e.clientX - rect.left)
   }
   const measureOf = (cell) => Math.max(0, Math.floor(cell / cellsPerMeasure))
+  // Snap size while dragging: a beat, or a whole measure with Shift held.
+  const unitOf = (ev) => (ev.shiftKey ? cellsPerMeasure : cellsPerBeat)
+  const DRAG_PX = 4 // moving less than this is a click, not a drag
 
   // Pointer capture on the bar so a drag keeps tracking outside the lane.
   // The live drag is kept in a ref (and mirrored to state only for drawing) so
@@ -74,15 +82,32 @@ export default function ScaleLane({
   const startCreate = (e) => {
     if (e.button !== 0) return
     e.preventDefault()
-    const m0 = measureOf(cellAt(e))
+    const c0 = cellAt(e)
+    const m0 = measureOf(c0)
     beginDrag(
       e,
-      { kind: 'create', m0, start: m0 * cellsPerMeasure, end: (m0 + 1) * cellsPerMeasure },
+      {
+        kind: 'create',
+        c0,
+        x0: e.clientX,
+        moved: false,
+        // a plain click makes the whole measure under the pointer
+        start: m0 * cellsPerMeasure,
+        end: (m0 + 1) * cellsPerMeasure,
+      },
       (d, ev) => {
-        const m = measureOf(cellAt(ev))
-        const lo = Math.min(d.m0, m)
-        const hi = Math.max(d.m0, m)
-        return { ...d, start: lo * cellsPerMeasure, end: (hi + 1) * cellsPerMeasure }
+        const moved = d.moved || Math.abs(ev.clientX - d.x0) >= DRAG_PX
+        if (!moved) return d
+        // dragged: cover every beat (or measure, with Shift) from press to pointer
+        const unit = unitOf(ev)
+        const u0 = Math.max(0, Math.floor(d.c0 / unit))
+        const u1 = Math.max(0, Math.floor(cellAt(ev) / unit))
+        return {
+          ...d,
+          moved,
+          start: Math.min(u0, u1) * unit,
+          end: (Math.max(u0, u1) + 1) * unit,
+        }
       },
       (d, ev) => onCreate(d.start, d.end, ev)
     )
@@ -96,11 +121,13 @@ export default function ScaleLane({
       e,
       { kind: 'resize', id: zone.id, edge, start: zone.start, end: zone.end },
       (d, ev) => {
-        const snapped = Math.round(cellAt(ev) / cellsPerMeasure) * cellsPerMeasure
+        const unit = unitOf(ev)
+        const snapped = Math.round(cellAt(ev) / unit) * unit
+        // a zone is never narrower than one beat
         if (edge === 'left') {
-          return { ...d, start: Math.max(0, Math.min(snapped, d.end - cellsPerMeasure)) }
+          return { ...d, start: Math.max(0, Math.min(snapped, d.end - cellsPerBeat)) }
         }
-        return { ...d, end: Math.max(snapped, d.start + cellsPerMeasure) }
+        return { ...d, end: Math.max(snapped, d.start + cellsPerBeat) }
       },
       (d) => onResize(d.id, d.start, d.end)
     )
@@ -129,7 +156,7 @@ export default function ScaleLane({
         ref={barRef}
         style={{ width: barWidth }}
         onPointerDown={startCreate}
-        title="Drag across measures to give them their own scale"
+        title="Click for a whole measure, or drag across beats to give them their own scale. Hold Shift while dragging to snap to whole measures."
       >
         {shown.map((z) => {
           const left = beatToX(z.start)
@@ -157,7 +184,16 @@ export default function ScaleLane({
                 style={{ width: EDGE_PX }}
                 onPointerDown={(e) => startResize(e, z, 'left')}
               />
-              <span className="scale-zone-label">{labelFor(z)}</span>
+              {(() => {
+                // head = "04 · C", notes = the scale's notes from the root
+                const { head, notes } = labelFor(z)
+                return (
+                  <span className="scale-zone-label">
+                    <b>{head}</b>
+                    {notes && <span className="scale-zone-notes">{notes}</span>}
+                  </span>
+                )
+              })()}
               <span
                 className="scale-zone-edge right"
                 style={{ width: EDGE_PX }}
@@ -177,7 +213,7 @@ export default function ScaleLane({
         )}
         {zones.length === 0 && !drag && (
           <span className="scale-lane-hint" style={{ maxWidth: totalCells }}>
-            drag across measures to assign a scale
+            click a measure, or drag across beats, to assign a scale
           </span>
         )}
       </div>
