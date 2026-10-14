@@ -33,7 +33,7 @@ import VariationModal from './VariationModal'
 import ScaleLane, { LANE_H } from './ScaleLane'
 import ScalePicker from './ScalePicker'
 import { makeScaleContext } from './scaleContext'
-import { zoneAt, sanitizeZones, findScaleById, makeZoneId, freeLimits } from './scaleZones'
+import { zoneAt, sanitizeZones, findScaleById, makeZoneId, freeLimits, EPS } from './scaleZones'
 import { generateVariations, sortLine, LINE_MODES } from './lineGenerator'
 import { buildStyleModel } from './lineStyle'
 import { templates as defaultTemplates } from './templates'
@@ -2720,7 +2720,7 @@ export default function PianoRoll({
     if (zoneAt(zones, start)) return // never start inside an existing zone
     const { right } = freeLimits(zones, start, start)
     const to = Math.min(end, right)
-    if (to <= start) return
+    if (to <= start + EPS) return
     const id = makeZoneId()
     pushHistory()
     setZones((prev) =>
@@ -2745,7 +2745,7 @@ export default function PianoRoll({
     const { left, right } = freeLimits(zones, z.start, z.end, id)
     const ns = Math.max(start, left)
     const ne = Math.min(end, right)
-    if (ne <= ns || (ns === z.start && ne === z.end)) return
+    if (ne <= ns + EPS || (Math.abs(ns - z.start) < EPS && Math.abs(ne - z.end) < EPS)) return
     pushHistory()
     setZones((prev) => prev.map((q) => (q.id === id ? { ...q, start: ns, end: ne } : q)))
   }
@@ -6975,7 +6975,7 @@ export default function PianoRoll({
               activeZoneId={activeZoneId}
               totalCells={totalBeats}
               cellsPerMeasure={cellsPerMeasure}
-              cellsPerBeat={cellsPerBeat}
+              snapCells={freeMode ? 0 : rhythmBaseCells}
               barWidth={totalBeats * BEAT_WIDTH}
               beatToX={beatToX}
               xToBeat={xToBeat}

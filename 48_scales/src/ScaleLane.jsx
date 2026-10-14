@@ -2,11 +2,14 @@ import { useRef, useState } from 'react'
 
 // The lane above the measure ruler where scale zones live.
 //   click empty space   -> a zone over that whole measure
-//   drag empty space    -> a zone over the dragged BEATS (so a measure can hold
-//                          two or more scales); hold Shift to snap to measures
+//   drag empty space    -> a zone over the dragged cells, snapped to the chosen
+//                          rhythm SUBDIVISION (so a measure can hold several
+//                          scales); hold Shift to snap to whole measures
 //   click a zone        -> select it and pick its scale
-//   drag a zone's edge  -> resize, snapped to beats (Shift = measures)
+//   drag a zone's edge  -> resize, snapped the same way (Shift = measures)
 //   right-click a zone  -> menu
+// snapCells is the subdivision in cells (it can be fractional: a triplet is 4/3);
+// 0 means free mode, where nothing snaps.
 //
 // All positions are in 16th-cells. Pointer x <-> cell goes through the roll's
 // own beatToX / xToBeat so zooming and swing view line up with the grid.
@@ -18,7 +21,7 @@ export default function ScaleLane({
   activeZoneId,
   totalCells,
   cellsPerMeasure,
-  cellsPerBeat,
+  snapCells,
   barWidth,
   beatToX,
   xToBeat,
@@ -40,8 +43,13 @@ export default function ScaleLane({
     return xToBeat(e.clientX - rect.left)
   }
   const measureOf = (cell) => Math.max(0, Math.floor(cell / cellsPerMeasure))
-  // Snap size while dragging: a beat, or a whole measure with Shift held.
-  const unitOf = (ev) => (ev.shiftKey ? cellsPerMeasure : cellsPerBeat)
+  // Snap size while dragging: the chosen subdivision, or a whole measure with
+  // Shift held. 0 = no snapping (free mode).
+  const unitOf = (ev) => (ev.shiftKey ? cellsPerMeasure : snapCells)
+  // Float noise from fractional subdivisions (triplets) must not leak into zones.
+  const clean = (v) => Math.round(v * 1e6) / 1e6
+  // The narrowest a zone can be: one subdivision (a quarter cell when free).
+  const minWidth = snapCells > 0 ? snapCells : 0.25
   const DRAG_PX = 4 // moving less than this is a click, not a drag
 
   // Pointer capture on the bar so a drag keeps tracking outside the lane.
@@ -98,16 +106,22 @@ export default function ScaleLane({
       (d, ev) => {
         const moved = d.moved || Math.abs(ev.clientX - d.x0) >= DRAG_PX
         if (!moved) return d
-        // dragged: cover every beat (or measure, with Shift) from press to pointer
+        // dragged: cover every subdivision (or measure, with Shift) from the
+        // press to the pointer
         const unit = unitOf(ev)
-        const u0 = Math.max(0, Math.floor(d.c0 / unit))
-        const u1 = Math.max(0, Math.floor(cellAt(ev) / unit))
-        return {
-          ...d,
-          moved,
-          start: Math.min(u0, u1) * unit,
-          end: (Math.max(u0, u1) + 1) * unit,
+        const here = cellAt(ev)
+        if (unit > 0) {
+          const u0 = Math.max(0, Math.floor(d.c0 / unit + 1e-9))
+          const u1 = Math.max(0, Math.floor(here / unit + 1e-9))
+          return {
+            ...d,
+            moved,
+            start: clean(Math.min(u0, u1) * unit),
+            end: clean((Math.max(u0, u1) + 1) * unit),
+          }
         }
+        const lo = Math.max(0, Math.min(d.c0, here))
+        return { ...d, moved, start: clean(lo), end: clean(Math.max(d.c0, here, lo + minWidth)) }
       },
       (d, ev) => onCreate(d.start, d.end, ev)
     )
@@ -122,12 +136,13 @@ export default function ScaleLane({
       { kind: 'resize', id: zone.id, edge, start: zone.start, end: zone.end },
       (d, ev) => {
         const unit = unitOf(ev)
-        const snapped = Math.round(cellAt(ev) / unit) * unit
-        // a zone is never narrower than one beat
+        const raw = cellAt(ev)
+        const snapped = clean(unit > 0 ? Math.round(raw / unit) * unit : raw)
+        // a zone is never narrower than one subdivision
         if (edge === 'left') {
-          return { ...d, start: Math.max(0, Math.min(snapped, d.end - cellsPerBeat)) }
+          return { ...d, start: clean(Math.max(0, Math.min(snapped, d.end - minWidth))) }
         }
-        return { ...d, end: Math.max(snapped, d.start + cellsPerBeat) }
+        return { ...d, end: clean(Math.max(snapped, d.start + minWidth)) }
       },
       (d) => onResize(d.id, d.start, d.end)
     )
@@ -156,7 +171,7 @@ export default function ScaleLane({
         ref={barRef}
         style={{ width: barWidth }}
         onPointerDown={startCreate}
-        title="Click for a whole measure, or drag across beats to give them their own scale. Hold Shift while dragging to snap to whole measures."
+        title="Click for a whole measure, or drag to give part of a measure its own scale (snaps to the chosen subdivision). Hold Shift while dragging to snap to whole measures."
       >
         {shown.map((z) => {
           const left = beatToX(z.start)
@@ -213,7 +228,7 @@ export default function ScaleLane({
         )}
         {zones.length === 0 && !drag && (
           <span className="scale-lane-hint" style={{ maxWidth: totalCells }}>
-            click a measure, or drag across beats, to assign a scale
+            click a measure, or drag across a part of one, to assign a scale
           </span>
         )}
       </div>

@@ -9,6 +9,10 @@
 // Zones never overlap and are kept sorted by start. Cells outside every zone
 // use the song's home scale (the one picked in the matrix).
 
+// Zone edges sit on the rhythm subdivision grid, which can be fractional
+// (a triplet is 4/3 cells), so comparisons tolerate float noise.
+export const EPS = 1e-6
+
 export const makeZoneId = () =>
   `zn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 
@@ -42,7 +46,7 @@ export function sanitizeZones(raw) {
 
 // The zone covering `cell`, or null.
 export function zoneAt(zones, cell) {
-  for (const z of zones) if (cell >= z.start && cell < z.end) return z
+  for (const z of zones) if (cell >= z.start - EPS && cell < z.end - EPS) return z
   return null
 }
 
@@ -54,8 +58,8 @@ export function freeLimits(zones, start, end, ignoreId = null) {
   let right = Infinity
   for (const z of zones) {
     if (z.id === ignoreId) continue
-    if (z.end <= start) left = Math.max(left, z.end)
-    else if (z.start >= end) right = Math.min(right, z.start)
+    if (z.end <= start + EPS) left = Math.max(left, z.end)
+    else if (z.start >= end - EPS) right = Math.min(right, z.start)
   }
   return { left, right }
 }
