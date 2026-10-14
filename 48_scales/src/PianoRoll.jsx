@@ -33,7 +33,19 @@ import VariationModal from './VariationModal'
 import ScaleLane, { LANE_H } from './ScaleLane'
 import ScalePicker from './ScalePicker'
 import { makeScaleContext } from './scaleContext'
-import { zoneAt, sanitizeZones, findScaleById, makeZoneId, freeLimits, EPS } from './scaleZones'
+import {
+  zoneAt,
+  sanitizeZones,
+  findScaleById,
+  makeZoneId,
+  freeLimits,
+  moveLimits,
+  shiftZones,
+  zonesToClip,
+  placeZones,
+  cleanCell,
+  EPS,
+} from './scaleZones'
 import { generateVariations, sortLine, LINE_MODES } from './lineGenerator'
 import { buildStyleModel } from './lineStyle'
 import { templates as defaultTemplates } from './templates'
@@ -44,6 +56,8 @@ import { templates as defaultTemplates } from './templates'
 // tab — reads and writes the same slot, so notes can be copied from one song
 // or track and pasted into another.
 let sharedClipboard = null
+// Stable empty list for a track with no zones (keeps memo dependencies steady).
+const NO_ZONES = []
 
 // Module-scope tab-switch resume slot. React state can't carry this across
 // the unmount → mount seam reliably because the outgoing tab's cleanup and
@@ -775,7 +789,6 @@ export default function PianoRoll({
   customScales = [],
   scaleNameOf = null,
   initialZones = null,
-  onPersistZones,
 }) {
   const allowOutOfScale = !!settings.allowOutOfScale
   const useFlats = !!settings.useFlats
@@ -788,39 +801,6 @@ export default function PianoRoll({
   const NOTE_DISPLAY = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP
   const midiPitchLabel = makeMidiPitchLabel(useFlats)
   const noteName = (pc) => pcName(pc, useFlats)
-  // Scale zones: stretches of the timeline with their own scale + root (a
-  // progression of scales). Cells outside every zone use the HOME scale, the one
-  // picked in the matrix. Each scale is wrapped in a context (scaleContext.js:
-  // rotation by root degree, in-scale test, chord colours, MIDI <-> scale step),
-  // so the roll can hold several and look one up by beat with ctxAt().
-  const [zones, setZones] = useState(() => sanitizeZones(initialZones))
-  // The zone whose scale the one-scale-at-a-time UI shows (keyboard colours,
-  // chord palette, fretboard, scale bar). null = the home scale.
-  const [activeZoneId, setActiveZoneId] = useState(null)
-  const [zonePicker, setZonePicker] = useState(null) // { id, x, y }
-  const [zoneMenu, setZoneMenu] = useState(null) // { id, x, y }
-  const zoneCtxs = useMemo(
-    () =>
-      new Map(
-        zones.map((z) => {
-          const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
-          return [z.id, raw ? makeScaleContext(raw, z.root, z.modeStep) : null]
-        })
-      ),
-    [zones, customScales]
-  )
-  const homeCtx = makeScaleContext(rawScale, homeRoot, modeStep)
-  // The context in force at a timeline cell (a zone's, else the home scale).
-  const ctxAt = (cell) => {
-    const z = zoneAt(zones, cell)
-    return (z && zoneCtxs.get(z.id)) || homeCtx
-  }
-  const activeCtx = (activeZoneId && zoneCtxs.get(activeZoneId)) || homeCtx
-  // From here on `scale` / `root` mean the ACTIVE zone's scale (home when no
-  // zone is active). Code that depends on WHERE in the timeline something
-  // happens uses ctxAt(beat) instead.
-  const scale = activeCtx ? activeCtx.scale : null
-  const root = activeCtx ? activeCtx.root : homeRoot
   // Tracks: each carries its own notes Map + name + volume/mute/solo.
   // The existing single-track API (`notes` / `setNotes`) below routes
   // through the active track so every existing handler keeps working.
@@ -842,6 +822,7 @@ export default function PianoRoll({
     attackMs: 15,
     releaseMs: 220,
     detuneCents: 0,
+    zones: [], // this track's scale zones (see the zone block below)
     ...overrides,
   })
   const [tracks, setTracks] = useState(() => {
@@ -852,6 +833,11 @@ export default function PianoRoll({
         ...buildDefaultTrack(),
         ...t,
         notes: t.notes instanceof Map ? t.notes : new Map(t.notes ?? []),
+        // Zones live on the track. A song saved before that (zones on the song)
+        // hands its list to every track, each with its own zone ids.
+        zones: Array.isArray(t.zones)
+          ? sanitizeZones(t.zones)
+          : sanitizeZones(initialZones).map((z) => ({ ...z, id: makeZoneId() })),
       }))
     }
     // Fresh song → one empty, generically-named track. The user fills it in
@@ -880,6 +866,59 @@ export default function PianoRoll({
       })
     )
   }
+  // Scale zones: stretches of the timeline with their own scale + root (a
+  // progression of scales). They belong to the TRACK being edited, so each track
+  // has its own progression. Cells outside every zone use the HOME scale, the one
+  // picked in the matrix. Each scale is wrapped in a context (scaleContext.js:
+  // rotation by root degree, in-scale test, chord colours, MIDI <-> scale step),
+  // so the roll can hold several and look one up by beat with ctxAt().
+  const zones = activeTrack?.zones ?? NO_ZONES
+  const setZones = (updater) => {
+    const targetId = activeTrack ? activeTrack.id : null
+    if (!targetId) return
+    setTracks((prev) =>
+      prev.map((t) =>
+        t.id !== targetId
+          ? t
+          : { ...t, zones: typeof updater === 'function' ? updater(t.zones ?? []) : updater }
+      )
+    )
+  }
+  // The zone whose scale the one-scale-at-a-time UI shows (keyboard colours,
+  // chord palette, fretboard, scale bar). null = the home scale. An id that is
+  // not on this track (after switching track) simply falls back to home.
+  const [activeZoneId, setActiveZoneId] = useState(null)
+  const [selectedZoneIds, setSelectedZoneIds] = useState(() => new Set())
+  // Only ids that exist on the track being edited count as selected.
+  const selectedZones = useMemo(
+    () => new Set([...selectedZoneIds].filter((id) => zones.some((z) => z.id === id))),
+    [selectedZoneIds, zones]
+  )
+  const [zonePicker, setZonePicker] = useState(null) // { id, x, y }
+  const [zoneMenu, setZoneMenu] = useState(null) // { id, x, y }
+  const [laneMenu, setLaneMenu] = useState(null) // { x, y, cell } (empty lane space)
+  const zoneCtxs = useMemo(
+    () =>
+      new Map(
+        zones.map((z) => {
+          const raw = findScaleById(BUILTIN_SCALES, customScales, z.scaleId)
+          return [z.id, raw ? makeScaleContext(raw, z.root, z.modeStep) : null]
+        })
+      ),
+    [zones, customScales]
+  )
+  const homeCtx = makeScaleContext(rawScale, homeRoot, modeStep)
+  // The context in force at a timeline cell (a zone's, else the home scale).
+  const ctxAt = (cell) => {
+    const z = zoneAt(zones, cell)
+    return (z && zoneCtxs.get(z.id)) || homeCtx
+  }
+  const activeCtx = (activeZoneId && zoneCtxs.get(activeZoneId)) || homeCtx
+  // From here on `scale` / `root` mean the ACTIVE zone's scale (home when no
+  // zone is active). Code that depends on WHERE in the timeline something
+  // happens uses ctxAt(beat) instead.
+  const scale = activeCtx ? activeCtx.scale : null
+  const root = activeCtx ? activeCtx.root : homeRoot
   const [totalBeats, setTotalBeats] = useState(
     initialTotalBeats ?? DEFAULT_BEATS
   )
@@ -2034,28 +2073,20 @@ export default function PianoRoll({
     [templates, rawScale?.notes.length]
   )
 
-  // Persist scale zones with the song, like tracks.
-  const persistZonesRef = useRef(onPersistZones)
-  persistZonesRef.current = onPersistZones
-  const zonesMountedRef = useRef(false)
+  // Dismiss the zone / lane context menus on any outside press.
   useEffect(() => {
-    if (!zonesMountedRef.current) {
-      zonesMountedRef.current = true
-      return
+    if (!zoneMenu && !laneMenu) return
+    const close = () => {
+      setZoneMenu(null)
+      setLaneMenu(null)
     }
-    persistZonesRef.current?.(zones)
-  }, [zones])
-  // Dismiss the zone context menu on any outside press.
-  useEffect(() => {
-    if (!zoneMenu) return
-    const close = () => setZoneMenu(null)
     window.addEventListener('pointerdown', close)
     window.addEventListener('keydown', close)
     return () => {
       window.removeEventListener('pointerdown', close)
       window.removeEventListener('keydown', close)
     }
-  }, [zoneMenu])
+  }, [zoneMenu, laneMenu])
 
   // Persist tracks back to the active song in App.jsx whenever they change,
   // so switching songs (which re-mounts PianoRoll) restores the saved tracks.
@@ -2209,10 +2240,13 @@ export default function PianoRoll({
         redo()
       } else if (isHotkey('copy', e)) {
         e.preventDefault()
-        copyNotes()
+        // Zones are copied when zones (and no notes) are selected.
+        if (selectedZones.size > 0 && selectedKeys.size === 0) copyZones()
+        else copyNotes()
       } else if (isHotkey('paste', e)) {
         e.preventDefault()
-        pasteNotes()
+        if (clipboardRef.current?.kind === 'zones') pasteZones()
+        else pasteNotes()
       } else if (isHotkey('selectAll', e)) {
         e.preventDefault()
         setSelectedKeys(new Set(notesRef.current.keys()))
@@ -2679,13 +2713,11 @@ export default function PianoRoll({
   const snapshotState = () => ({
     tracks: tracks.map((t) => ({ ...t, notes: new Map(t.notes) })),
     activeTrackId,
-    zones: zones.map((z) => ({ ...z })),
   })
 
   const restoreSnapshot = (snap) => {
     setTracks(snap.tracks.map((t) => ({ ...t, notes: new Map(t.notes) })))
     if (snap.activeTrackId) setActiveTrackId(snap.activeTrackId)
-    if (snap.zones) setZones(snap.zones.map((z) => ({ ...z })))
     setSelectedKeys(new Set())
   }
 
@@ -2737,6 +2769,8 @@ export default function PianoRoll({
       ].sort((a, b) => a.start - b.start)
     )
     setActiveZoneId(id)
+    setSelectedZoneIds(new Set([id]))
+    setSelectedKeys(new Set())
     setZonePicker({ id, x: ev.clientX, y: ev.clientY + 12 })
   }
   const resizeZone = (id, start, end) => {
@@ -2749,38 +2783,72 @@ export default function PianoRoll({
     pushHistory()
     setZones((prev) => prev.map((q) => (q.id === id ? { ...q, start: ns, end: ne } : q)))
   }
-  const changeZone = (id, patch) => {
+  // Edits apply to every id given (the whole selection, or just one zone).
+  const changeZones = (ids, patch) => {
     pushHistory()
-    setZones((prev) => prev.map((q) => (q.id === id ? { ...q, ...patch } : q)))
+    setZones((prev) => prev.map((q) => (ids.includes(q.id) ? { ...q, ...patch } : q)))
   }
-  const deleteZone = (id) => {
+  const deleteZones = (ids) => {
     pushHistory()
-    setZones((prev) => prev.filter((q) => q.id !== id))
+    setZones((prev) => prev.filter((q) => !ids.includes(q.id)))
   }
-  // Move out-of-scale notes inside a zone onto the zone's scale (all tracks).
-  // This is only ever done on request, never when a scale is assigned.
-  const snapZoneNotes = (id) => {
-    const z = zones.find((q) => q.id === id)
-    const c = zoneCtxs.get(id)
-    if (!z || !c) return
+  // The zones an action should act on for a zone that was right-clicked / picked:
+  // the whole selection if that zone is part of it, else just that zone.
+  const zoneTargets = (id) => (selectedZones.has(id) ? [...selectedZones] : [id])
+  // Move out-of-scale notes inside the given zones onto each zone's scale. Only
+  // the track being edited (the zones belong to it), and only on request: never
+  // when a scale is assigned.
+  const snapZoneNotes = (ids) => {
+    const targets = zones.filter((z) => ids.includes(z.id) && zoneCtxs.get(z.id))
+    if (!targets.length) return
     pushHistory()
-    setTracks((prev) =>
-      prev.map((t) => {
-        const next = new Map()
-        for (const [k, len] of t.notes) {
-          const sep = k.indexOf('-')
-          const b = Number(k.slice(0, sep))
-          const m = Number(k.slice(sep + 1))
-          if (b >= z.start && b < z.end && !c.inScale(((m % 12) + 12) % 12)) {
-            const nk = `${b}-${c.nearestScaleMidi(m)}`
-            next.set(nk, Math.max(len, next.get(nk) ?? 0))
-          } else {
-            next.set(k, Math.max(len, next.get(k) ?? 0))
-          }
+    setNotes((prev) => {
+      const next = new Map()
+      for (const [k, len] of prev) {
+        const sep = k.indexOf('-')
+        const b = Number(k.slice(0, sep))
+        const m = Number(k.slice(sep + 1))
+        const z = targets.find((q) => b >= q.start - EPS && b < q.end - EPS)
+        const c = z && zoneCtxs.get(z.id)
+        if (c && !c.inScale(((m % 12) + 12) % 12)) {
+          const nk = `${b}-${c.nearestScaleMidi(m)}`
+          next.set(nk, Math.max(len, next.get(nk) ?? 0))
+        } else {
+          next.set(k, Math.max(len, next.get(k) ?? 0))
         }
-        return { ...t, notes: next }
-      })
-    )
+      }
+      return next
+    })
+    setSelectedKeys(new Set())
+  }
+  // Move the given zones by `delta` cells as one group (one undo step). They
+  // cannot pass a zone that is not part of the move, or cell 0.
+  const moveZones = (ids, delta) => {
+    const { minDelta, maxDelta } = moveLimits(zones, ids)
+    const d = Math.max(minDelta, Math.min(maxDelta, delta))
+    if (Math.abs(d) < EPS) return
+    pushHistory()
+    setZones((prev) => shiftZones(prev, ids, d))
+  }
+  // Copy the selected zones to the shared clipboard (it survives tab changes).
+  const copyZones = (ids = [...selectedZones]) => {
+    const clip = zonesToClip(zones, new Set(ids))
+    if (clip) clipboardRef.current = clip
+  }
+  // Paste the zones on the clipboard, OVERWRITING what is underneath. Lands at
+  // `atCell` if given (lane right-click), else the playhead, else where they
+  // were copied from; snapped to the lane grid.
+  const pasteZones = (atCell = null) => {
+    const clip = clipboardRef.current
+    if (!clip || clip.kind !== 'zones' || !clip.items.length) return
+    const unit = freeMode ? 0 : rhythmBaseCells
+    const snap = (c) => (unit > 0 ? Math.round(c / unit) * unit : c)
+    const raw = atCell ?? (playheadBeat != null ? playheadBeat : clip.sourceMin)
+    const { zones: next, placedIds } = placeZones(zones, clip, Math.max(0, cleanCell(snap(raw))))
+    if (!placedIds.length) return
+    pushHistory()
+    setZones(next)
+    setSelectedZoneIds(new Set(placedIds))
     setSelectedKeys(new Set())
   }
 
@@ -2822,6 +2890,7 @@ export default function PianoRoll({
       if (b + length > maxEndBeat) maxEndBeat = b + length
     }
     clipboardRef.current = {
+      kind: 'notes',
       items: items.map((it) => ({
         relBeat: it.beat - minBeat,
         midi: it.midi,
@@ -4359,7 +4428,7 @@ export default function PianoRoll({
 
   const pasteNotes = () => {
     const clip = clipboardRef.current
-    if (!clip || !clip.items || clip.items.length === 0) return
+    if (!clip || clip.kind === 'zones' || !clip.items || clip.items.length === 0) return
     // Paste at the playhead if it's set — that's the primary "drop here"
     // signal. Otherwise fall back to the source's original start beat so
     // cross-song / cross-track pastes land at the same beat they were
@@ -6973,6 +7042,7 @@ export default function PianoRoll({
             <ScaleLane
               zones={zones}
               activeZoneId={activeZoneId}
+              selectedIds={selectedZones}
               totalCells={totalBeats}
               cellsPerMeasure={cellsPerMeasure}
               snapCells={freeMode ? 0 : rhythmBaseCells}
@@ -6984,10 +7054,24 @@ export default function PianoRoll({
               missingIds={missingZoneIds}
               onCreate={createZone}
               onResize={resizeZone}
-              onSelect={(id, rect) => {
-                setActiveZoneId(id)
+              onMoveZones={moveZones}
+              onSelect={(id, rect, additive) => {
+                setSelectedKeys(new Set())
                 setZoneMenu(null)
-                setZonePicker({ id, x: rect.left, y: rect.bottom + 6 })
+                setLaneMenu(null)
+                if (additive) {
+                  // Ctrl / Cmd / Shift-click: add to / remove from the selection
+                  setSelectedZoneIds((prev) => {
+                    const next = new Set(prev)
+                    next.has(id) ? next.delete(id) : next.add(id)
+                    return next
+                  })
+                  setZonePicker(null)
+                } else {
+                  setSelectedZoneIds(new Set([id]))
+                  setActiveZoneId(id)
+                  setZonePicker({ id, x: rect.left, y: rect.bottom + 6 })
+                }
               }}
               onHome={() => {
                 setActiveZoneId(null)
@@ -6995,8 +7079,16 @@ export default function PianoRoll({
               }}
               onContextMenu={(e, id) => {
                 setActiveZoneId(id)
+                if (!selectedZones.has(id)) setSelectedZoneIds(new Set([id]))
+                setSelectedKeys(new Set())
                 setZonePicker(null)
+                setLaneMenu(null)
                 setZoneMenu({ id, x: e.clientX, y: e.clientY })
+              }}
+              onBarContextMenu={(e, cell) => {
+                setZonePicker(null)
+                setZoneMenu(null)
+                setLaneMenu({ x: e.clientX, y: e.clientY, cell })
               }}
             />
             <div className="timeline">
@@ -7931,7 +8023,9 @@ export default function PianoRoll({
               initialName={editing ? editing.name : ''}
               initialNotes={editing ? editing.notes : null}
               initialTags={editing ? editing.tags || [] : []}
-              getPasteNotes={() => clipboardRef.current}
+              getPasteNotes={() =>
+                clipboardRef.current?.kind === 'zones' ? null : clipboardRef.current
+              }
             />
           )
         })()}
@@ -7947,49 +8041,97 @@ export default function PianoRoll({
               custom={customScales}
               nameOf={(id) => (scaleNameOf ? scaleNameOf(id) : `Scale ${id}`)}
               noteNames={NOTE_DISPLAY}
-              onChange={(patch) => changeZone(z.id, patch)}
+              onChange={(patch) => changeZones(zoneTargets(z.id), patch)}
               onClose={() => setZonePicker(null)}
             />
           ) : null
         })()}
-      {zoneMenu && zones.some((q) => q.id === zoneMenu.id) && (
+      {zoneMenu &&
+        zones.some((q) => q.id === zoneMenu.id) &&
+        (() => {
+          const ids = zoneTargets(zoneMenu.id)
+          const many = ids.length > 1
+          return (
+            <ContextMenu
+              x={zoneMenu.x}
+              y={zoneMenu.y}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  const id = zoneMenu.id
+                  setZoneMenu(null)
+                  if (zones.some((q) => q.id === id)) {
+                    setZonePicker({ id, x: zoneMenu.x, y: zoneMenu.y })
+                  }
+                }}
+              >
+                {many ? `Change scale of ${ids.length} zones…` : 'Change scale…'}
+              </button>
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  copyZones(ids)
+                  setZoneMenu(null)
+                }}
+              >
+                {many ? `Copy ${ids.length} zones` : 'Copy zone'}
+              </button>
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                disabled={!ids.some((id) => zoneCtxs.get(id))}
+                onClick={() => {
+                  snapZoneNotes(ids)
+                  setZoneMenu(null)
+                }}
+              >
+                {many ? 'Snap notes to these scales' : 'Snap notes to this scale'}
+              </button>
+              <button
+                type="button"
+                className="tab-context-menu-item"
+                onClick={() => {
+                  deleteZones(ids)
+                  setZoneMenu(null)
+                }}
+              >
+                {many ? `Delete ${ids.length} zones` : 'Delete zone'}
+              </button>
+            </ContextMenu>
+          )
+        })()}
+      {laneMenu && (
         <ContextMenu
-          x={zoneMenu.x}
-          y={zoneMenu.y}
+          x={laneMenu.x}
+          y={laneMenu.y}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             className="tab-context-menu-item"
+            disabled={clipboardRef.current?.kind !== 'zones'}
             onClick={() => {
-              const id = zoneMenu.id
-              setZoneMenu(null)
-              const z = zones.find((q) => q.id === id)
-              if (z) setZonePicker({ id, x: zoneMenu.x, y: zoneMenu.y })
+              pasteZones(laneMenu.cell)
+              setLaneMenu(null)
             }}
           >
-            Change scale…
+            Paste zones here
           </button>
           <button
             type="button"
             className="tab-context-menu-item"
-            disabled={!zoneCtxs.get(zoneMenu.id)}
+            disabled={zones.length === 0}
             onClick={() => {
-              snapZoneNotes(zoneMenu.id)
-              setZoneMenu(null)
+              setSelectedZoneIds(new Set(zones.map((z) => z.id)))
+              setSelectedKeys(new Set())
+              setLaneMenu(null)
             }}
           >
-            Snap notes to this scale
-          </button>
-          <button
-            type="button"
-            className="tab-context-menu-item"
-            onClick={() => {
-              deleteZone(zoneMenu.id)
-              setZoneMenu(null)
-            }}
-          >
-            Delete zone
+            Select all zones
           </button>
         </ContextMenu>
       )}

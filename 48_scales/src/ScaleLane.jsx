@@ -1,13 +1,17 @@
 import { useRef, useState } from 'react'
+import { moveLimits } from './scaleZones'
 
 // The lane above the measure ruler where scale zones live.
 //   click empty space   -> a zone over that whole measure
 //   drag empty space    -> a zone over the dragged cells, snapped to the chosen
 //                          rhythm SUBDIVISION (so a measure can hold several
 //                          scales); hold Shift to snap to whole measures
-//   click a zone        -> select it and pick its scale
+//   click a zone        -> select it and pick its scale (Ctrl/Cmd/Shift-click
+//                          adds it to the selection instead)
+//   drag a zone's body  -> MOVE it, or the whole selection if it is part of it;
+//                          snapped the same way, and it cannot pass other zones
 //   drag a zone's edge  -> resize, snapped the same way (Shift = measures)
-//   right-click a zone  -> menu
+//   right-click a zone  -> menu; right-click empty space -> paste / select all
 // snapCells is the subdivision in cells (it can be fractional: a triplet is 4/3);
 // 0 means free mode, where nothing snaps.
 //
@@ -19,6 +23,7 @@ const EDGE_PX = 7
 export default function ScaleLane({
   zones,
   activeZoneId,
+  selectedIds,
   totalCells,
   cellsPerMeasure,
   snapCells,
@@ -30,12 +35,14 @@ export default function ScaleLane({
   missingIds,
   onCreate,
   onResize,
+  onMoveZones,
   onSelect,
   onHome,
   onContextMenu,
+  onBarContextMenu,
 }) {
   const barRef = useRef(null)
-  // Live preview while dragging: { kind: 'create' | 'resize', start, end, id? }
+  // Live preview while dragging: { kind: 'create' | 'resize' | 'move', ... }
   const [drag, setDrag] = useState(null)
 
   const cellAt = (e) => {
@@ -148,11 +155,59 @@ export default function ScaleLane({
     )
   }
 
-  const shown = zones.map((z) =>
-    drag && drag.kind === 'resize' && drag.id === z.id
-      ? { ...z, start: drag.start, end: drag.end }
-      : z
-  )
+  // Move: grab a zone's body. A click (barely any movement) selects it; a drag
+  // moves it, or the whole selection when the grabbed zone is part of it.
+  const startMove = (e, zone) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ids = selectedIds.has(zone.id) ? [...selectedIds] : [zone.id]
+    const { minDelta, maxDelta } = moveLimits(zones, ids)
+    beginDrag(
+      e,
+      {
+        kind: 'move',
+        id: zone.id,
+        ids,
+        rect,
+        additive,
+        c0: cellAt(e),
+        x0: e.clientX,
+        moved: false,
+        delta: 0,
+        minDelta,
+        maxDelta,
+        anchorStart: zone.start,
+      },
+      (d, ev) => {
+        const moved = d.moved || Math.abs(ev.clientX - d.x0) >= DRAG_PX
+        if (!moved) return d
+        // snap where the grabbed zone would start, then keep the group inside
+        // the room it has (it cannot pass an unselected zone or cell 0)
+        const unit = unitOf(ev)
+        const raw = d.anchorStart + (cellAt(ev) - d.c0)
+        const start = clean(unit > 0 ? Math.round(raw / unit) * unit : raw)
+        const delta = clean(Math.max(d.minDelta, Math.min(d.maxDelta, start - d.anchorStart)))
+        return { ...d, moved, delta }
+      },
+      (d) => {
+        if (!d.moved) onSelect(d.id, d.rect, d.additive)
+        else if (Math.abs(d.delta) > 1e-6) onMoveZones(d.ids, d.delta)
+      }
+    )
+  }
+
+  const shown = zones.map((z) => {
+    if (drag && drag.kind === 'resize' && drag.id === z.id) {
+      return { ...z, start: drag.start, end: drag.end }
+    }
+    if (drag && drag.kind === 'move' && drag.moved && drag.ids.includes(z.id)) {
+      return { ...z, start: z.start + drag.delta, end: z.end + drag.delta }
+    }
+    return z
+  })
 
   return (
     <div className="scale-lane" style={{ height: LANE_H }}>
@@ -171,6 +226,10 @@ export default function ScaleLane({
         ref={barRef}
         style={{ width: barWidth }}
         onPointerDown={startCreate}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onBarContextMenu(e, cellAt(e))
+        }}
         title="Click for a whole measure, or drag to give part of a measure its own scale (snaps to the chosen subdivision). Hold Shift while dragging to snap to whole measures."
       >
         {shown.map((z) => {
@@ -180,14 +239,15 @@ export default function ScaleLane({
             <div
               key={z.id}
               className={`scale-zone ${z.id === activeZoneId ? 'active' : ''} ${
-                missingIds?.has(z.id) ? 'missing' : ''
+                selectedIds.has(z.id) ? 'selected' : ''
+              } ${missingIds?.has(z.id) ? 'missing' : ''} ${
+                drag && drag.kind === 'move' && drag.moved && drag.ids.includes(z.id)
+                  ? 'moving'
+                  : ''
               }`}
               style={{ left, width }}
               title={titleFor(z)}
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                if (e.button === 0) onSelect(z.id, e.currentTarget.getBoundingClientRect())
-              }}
+              onPointerDown={(e) => startMove(e, z)}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()

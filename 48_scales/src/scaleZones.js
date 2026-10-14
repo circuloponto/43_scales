@@ -64,6 +64,99 @@ export function freeLimits(zones, start, end, ignoreId = null) {
   return { left, right }
 }
 
+// Float noise from fractional subdivisions (triplets) must not leak into zones.
+export const cleanCell = (v) => Math.round(v * 1e6) / 1e6
+
+const byStart = (a, b) => a.start - b.start
+
+// Moving the selected zones as one group: how far they may shift (in cells)
+// before one of them would hit a zone that is NOT selected, or cell 0.
+// Returns { minDelta, maxDelta } (<= 0 and >= 0 respectively when valid).
+export function moveLimits(zones, ids) {
+  const sel = new Set(ids)
+  let minDelta = -Infinity
+  let maxDelta = Infinity
+  for (const z of zones) {
+    if (!sel.has(z.id)) continue
+    let left = 0
+    let right = Infinity
+    for (const o of zones) {
+      if (sel.has(o.id)) continue
+      if (o.end <= z.start + EPS) left = Math.max(left, o.end)
+      else if (o.start >= z.end - EPS) right = Math.min(right, o.start)
+    }
+    minDelta = Math.max(minDelta, left - z.start)
+    maxDelta = Math.min(maxDelta, right - z.end)
+  }
+  if (minDelta === -Infinity && maxDelta === Infinity) return { minDelta: 0, maxDelta: 0 }
+  return { minDelta, maxDelta }
+}
+
+// The same zones with the selected ones shifted by `delta` cells.
+export function shiftZones(zones, ids, delta) {
+  const sel = new Set(ids)
+  return zones
+    .map((z) =>
+      sel.has(z.id)
+        ? { ...z, start: cleanCell(z.start + delta), end: cleanCell(z.end + delta) }
+        : z
+    )
+    .sort(byStart)
+}
+
+// What a copy puts on the shared clipboard: the selected zones, positions
+// relative to the first one, so they can be dropped anywhere.
+export function zonesToClip(zones, ids) {
+  const sel = zones.filter((z) => ids.has(z.id)).sort(byStart)
+  if (!sel.length) return null
+  const first = sel[0].start
+  return {
+    kind: 'zones',
+    sourceMin: first,
+    items: sel.map((z) => ({
+      relStart: cleanCell(z.start - first),
+      len: cleanCell(z.end - z.start),
+      scaleId: z.scaleId,
+      root: z.root,
+      modeStep: z.modeStep ?? null,
+    })),
+  }
+}
+
+// Paste: lay the clip's zones down starting at cell `at`, OVERWRITING what is
+// underneath. Existing zones are trimmed, split or removed where a pasted zone
+// covers them (a split gives the right-hand piece a fresh id). Returns
+// { zones, placedIds } with fresh ids for the pasted zones.
+export function placeZones(existing, clip, at, makeId = makeZoneId) {
+  const pasted = clip.items
+    .map((it) => ({
+      start: cleanCell(at + it.relStart),
+      end: cleanCell(at + it.relStart + it.len),
+      scaleId: it.scaleId,
+      root: it.root,
+      modeStep: it.modeStep ?? null,
+    }))
+    .filter((p) => p.start >= -EPS && p.end > p.start + EPS)
+  const out = []
+  for (const z of existing) {
+    let pieces = [[z.start, z.end]]
+    for (const p of pasted) {
+      pieces = pieces.flatMap(([s, e]) => {
+        if (p.end <= s + EPS || p.start >= e - EPS) return [[s, e]] // untouched
+        const kept = []
+        if (p.start > s + EPS) kept.push([s, p.start])
+        if (p.end < e - EPS) kept.push([p.end, e])
+        return kept
+      })
+    }
+    pieces.forEach(([s, e], i) =>
+      out.push({ ...z, id: i === 0 ? z.id : makeId(), start: cleanCell(s), end: cleanCell(e) })
+    )
+  }
+  const placed = pasted.map((p) => ({ id: makeId(), ...p }))
+  return { zones: [...out, ...placed].sort(byStart), placedIds: placed.map((p) => p.id) }
+}
+
 // Look up a scale by id in the built-in list + custom scales.
 export function findScaleById(builtIn, custom, id) {
   return (

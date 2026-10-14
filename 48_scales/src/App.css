@@ -7271,6 +7271,20 @@
 .scale-zone:hover {
   background: color-mix(in srgb, var(--accent) 26%, var(--frame));
 }
+/* Zones can be dragged: grab cursor, and a bright outline once selected. */
+.scale-zone {
+  cursor: grab;
+}
+.scale-zone.selected {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 1px var(--fg);
+}
+.scale-zone.moving {
+  cursor: grabbing;
+  z-index: 3;
+  opacity: 0.92;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--fg);
+}
 .scale-zone.active {
   border-color: var(--fg);
   background: color-mix(in srgb, var(--accent) 34%, var(--frame));
