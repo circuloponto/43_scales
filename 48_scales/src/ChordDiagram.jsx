@@ -29,7 +29,7 @@ export default function ChordDiagram({
     <div
       className={`chord-neck ${voicing.stretch ? 'stretch' : ''}`}
       onClick={onStrum}
-      title="Click to hear this voicing"
+      title={onStrum ? 'Click to hear this voicing' : undefined}
     >
       <div className="chord-neck-strings">
         {DISPLAY_ROWS.map((si) => (

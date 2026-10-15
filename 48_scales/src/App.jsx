@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { scales, PITCH_CLASSES, rootSteps } from './scales'
 import { glyphs, GLYPH_VIEWBOX } from './glyphs'
 import { glyphsRight } from './glyphsRight'
@@ -6,6 +6,9 @@ import { templates as defaultTemplates } from './templates'
 import { chordPairs } from './chordPairs'
 import { resolveChordPair, pcName } from './chordVocab'
 import PianoRoll from './PianoRoll'
+import NotesView from './NotesView'
+import { useNotes } from './useNotes'
+import { NotebookPen } from 'lucide-react'
 import CustomScalesTab from './CustomScalesTab'
 import CustomScaleModal from './CustomScaleModal'
 import {
@@ -707,6 +710,7 @@ function App() {
       songGroups,
       activeSongId,
       templates,
+      notes: notes.exportState(),
       scaleNames,
       settings,
       accent,
@@ -765,6 +769,7 @@ function App() {
       if (Array.isArray(data.songGroups)) setSongGroups(data.songGroups)
       if (data.activeSongId) setActiveSongId(data.activeSongId)
       if (Array.isArray(data.templates)) setTemplates(data.templates)
+      if (data.notes) notes.importState(data.notes)
       if (data.scaleNames && typeof data.scaleNames === 'object') setScaleNames(data.scaleNames)
       if (data.settings && typeof data.settings === 'object') setSettings(data.settings)
       if (typeof data.accent === 'string') setAccent(data.accent)
@@ -812,6 +817,33 @@ function App() {
       localStorage.setItem('eightFold.scaleNames', JSON.stringify(scaleNames))
     } catch {}
   }, [scaleNames])
+
+  // ---- Notes -------------------------------------------------------------------------
+  // Every scale a note can point at, the user's own names for built-in scales, and
+  // the saved templates (flat: folders are not linkable), all for resolving
+  // [[scale ..]] / [[template ..]] links inside notes.
+  const allScales = useMemo(() => [...scales, ...customScales], [customScales])
+  // Keyed on a string so the index (and the notes' link index built from it)
+  // only rebuilds when a scale name actually changes.
+  const scaleNamesKey = JSON.stringify(scaleNames)
+  const scaleNameIndex = useMemo(() => {
+    const m = new Map()
+    for (const [id, data] of Object.entries(JSON.parse(scaleNamesKey))) {
+      for (const e of (data && data.entries) || []) {
+        if (e && e.name) m.set(e.name.trim().toLowerCase(), Number(id))
+      }
+    }
+    return m
+  }, [scaleNamesKey])
+  const flatTemplates = useMemo(() => templates.filter((t) => t.type !== 'folder'), [templates])
+  const notes = useNotes({ scales: allScales, scaleNameIndex, templates: flatTemplates })
+  // Jump to a scale in the roll (what a scale chip in a note does).
+  const openScaleInRoll = ({ scaleId, root: r = 0, modeStep: m = null }) => {
+    setSelectedId(scaleId)
+    setRoot(r)
+    setModeStep(m)
+    setView('roll')
+  }
 
   useEffect(() => {
     try { localStorage.setItem('eightFold.accent', accent) } catch {}
@@ -1350,6 +1382,49 @@ function App() {
     setIsPlaying(true)
   }
 
+  // Notes that mention the selected scale, shown on its info panel.
+  const scaleNoteIds = selectedId != null ? notes.linkIndex.scaleNotes.get(selectedId) ?? [] : []
+  const newNoteAboutScale = () => {
+    const sc = findScale(selectedId)
+    if (!sc) return
+    const custom = sc.kind === 'custom'
+    notes.create({
+      title: custom ? sc.name : `Scale ${String(sc.id).padStart(2, '0')}`,
+      body: `[[scale ${custom ? sc.name : sc.id}]]\n\n`,
+    })
+    setView('notes')
+  }
+  const scaleNotesSection =
+    selectedId != null && findScale(selectedId) ? (
+      <div className="section">
+        <div className="label">Notes</div>
+        <div className="scale-notes">
+          {scaleNoteIds.map((id) => {
+            const n = notes.notes.find((x) => x.id === id)
+            return n ? (
+              <button
+                key={id}
+                type="button"
+                className="scale-note-link"
+                onClick={() => {
+                  notes.open(n.id)
+                  setView('notes')
+                }}
+              >
+                {n.title}
+              </button>
+            ) : null
+          })}
+          {scaleNoteIds.length === 0 && (
+            <span className="scale-notes-empty">No notes about this scale yet.</span>
+          )}
+          <button type="button" className="scale-note-new" onClick={newNoteAboutScale}>
+            + New note about this scale
+          </button>
+        </div>
+      </div>
+    ) : null
+
   return (
     <div
       className="app"
@@ -1361,6 +1436,15 @@ function App() {
       }}
     >
       <div className={`frame ${matrixCollapsed ? 'matrix-collapsed' : ''}`}>
+        <button
+          type="button"
+          className={`notes-trigger ${view === 'notes' ? 'on' : ''}`}
+          onClick={() => setView(view === 'notes' ? 'matrix' : 'notes')}
+          aria-label="notes"
+          title="Notes"
+        >
+          <NotebookPen size={15} />
+        </button>
         <button
           type="button"
           className="shortcuts-trigger"
@@ -1516,6 +1600,19 @@ function App() {
               }
             }}
             tabSwitchPlayback={settings.tabSwitchPlayback}
+          />
+        ) : view === 'notes' ? (
+          <NotesView
+            store={notes}
+            scales={allScales}
+            customScales={customScales}
+            scaleNameOf={scaleNameOf}
+            scaleNameIndex={scaleNameIndex}
+            templates={flatTemplates}
+            useFlats={!!settings.useFlats}
+            noteNames={NOTE_DISPLAY}
+            onBack={() => setView('matrix')}
+            onOpenScale={openScaleInRoll}
           />
         ) : (
         <>
@@ -2068,6 +2165,7 @@ function App() {
                   </div>
                 </div>
               </div>
+              {scaleNotesSection}
               <div className="section">
                 <div className="label">Spelling</div>
                 <div className="electrons">
@@ -2217,6 +2315,7 @@ function App() {
                 </div>
               </div>
 
+              {scaleNotesSection}
               <div className="section">
                 <div className="label">Chord pair</div>
                 {(() => {

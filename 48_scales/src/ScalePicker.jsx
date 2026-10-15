@@ -26,6 +26,8 @@ export default function ScalePicker({
   noteNames,
   onChange,
   onClose,
+  confirmLabel,
+  onConfirm,
 }) {
   const [query, setQuery] = useState('')
   const wrapRef = useRef(null)
@@ -144,6 +146,11 @@ export default function ScalePicker({
           <div className="scale-picker-empty">No scale matches</div>
         )}
       </div>
+      {onConfirm && (
+        <button type="button" className="scale-picker-confirm" onClick={onConfirm}>
+          {confirmLabel ?? 'Use this scale'}
+        </button>
+      )}
     </div>
   )
 }
