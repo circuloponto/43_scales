@@ -12,6 +12,7 @@
 // chord, template) is decided by classifyWiki / notes.js, not here.
 
 import { CHORD_INTERVALS } from './chordVocab'
+import { parseFrets } from './fretParse'
 
 // ---- pitch names ------------------------------------------------------------
 const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
@@ -250,6 +251,12 @@ export function classifyWiki(raw) {
       voicing: m[3] ? Math.max(0, Number(m[3]) - 1) : 0,
       raw: text,
     }
+  }
+  // [[frets x 3 2 0 1 0]]  or  [[frets x 3 2 0 1 0 | C major]]: a hand-drawn shape
+  m = /^frets?\s+(.+?)(?:\s*\|\s*(.*))?$/i.exec(text)
+  if (m) {
+    const frets = parseFrets(m[1])
+    if (frets) return { kind: 'frets', frets, label: (m[2] ?? '').trim(), raw: text }
   }
   m = /^template\s+(.+)$/i.exec(text)
   if (m) return { kind: 'template', name: m[1].trim(), raw: text }

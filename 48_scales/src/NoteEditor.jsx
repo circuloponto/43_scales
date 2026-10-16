@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Pencil, Trash2 } from 'lucide-react'
 import NoteRender from './NoteRender'
 import ChordCard from './ChordCard'
+import FretEditor from './FretEditor'
 import ScalePicker from './ScalePicker'
 import { scales as builtInScales } from './scales'
 import { makeScaleContext } from './scaleContext'
@@ -30,7 +31,24 @@ export default function NoteEditor({
   const [draft, setDraft] = useState(note.title)
   const [flash, setFlash] = useState('')
   const [suggest, setSuggest] = useState(null) // { start, items, active }
-  const [popover, setPopover] = useState(null) // { kind: 'scale'|'chord'|'link', x, y }
+  const [popover, setPopover] = useState(null) // { kind: 'scale'|'chord'|'frets'|'link', x, y }
+  // A diagram already in the note that is being edited: { raw, frets, label, x, y }
+  const [fretEdit, setFretEdit] = useState(null)
+  // The renderer gets the same context plus "edit this diagram".
+  const renderCtx = useMemo(
+    () => ({
+      ...ctx,
+      onEditFrets: (info) => setFretEdit({ ...info, x: info.rect.left, y: info.rect.bottom + 6 }),
+    }),
+    [ctx]
+  )
+  // Rewrite the first occurrence of the diagram's text, leaving the rest alone.
+  const saveFretEdit = (text) => {
+    const old = `[[${fretEdit.raw}]]`
+    const at = note.body.indexOf(old)
+    if (at >= 0) store.updateBody(note.id, note.body.slice(0, at) + `[[${text}]]` + note.body.slice(at + old.length))
+    setFretEdit(null)
+  }
 
   const say = (msg) => {
     setFlash(msg)
@@ -175,6 +193,9 @@ export default function NoteEditor({
         <button type="button" className={popover?.kind === 'chord' ? 'on' : ''} onClick={open('chord')}>
           Chord
         </button>
+        <button type="button" className={popover?.kind === 'frets' ? 'on' : ''} onClick={open('frets')}>
+          Fret diagram
+        </button>
         <button type="button" className={popover?.kind === 'link' ? 'on' : ''} onClick={open('link')}>
           Note link
         </button>
@@ -225,7 +246,7 @@ export default function NoteEditor({
           </div>
         ) : (
           <div className="note-preview-wrap">
-            <NoteRender body={note.body} ctx={ctx} />
+            <NoteRender body={note.body} ctx={renderCtx} />
           </div>
         )}
       </div>
@@ -310,6 +331,29 @@ export default function NoteEditor({
             setPopover(null)
           }}
           onClose={() => setPopover(null)}
+        />
+      )}
+      {popover?.kind === 'frets' && (
+        <FretEditor
+          x={popover.x}
+          y={popover.y}
+          useFlats={useFlats}
+          onSave={(text) => {
+            insertText(`[[${text}]]`)
+            setPopover(null)
+          }}
+          onClose={() => setPopover(null)}
+        />
+      )}
+      {fretEdit && (
+        <FretEditor
+          key={fretEdit.raw}
+          x={fretEdit.x}
+          y={fretEdit.y}
+          initial={{ frets: fretEdit.frets, label: fretEdit.label }}
+          useFlats={useFlats}
+          onSave={saveFretEdit}
+          onClose={() => setFretEdit(null)}
         />
       )}
       {popover?.kind === 'link' && (

@@ -181,6 +181,8 @@ export function resolveWiki(raw, ctx) {
     if (c.rootPc != null && c.quality) {
       return { kind: 'chord', rootPc: c.rootPc, rootName: c.rootName, quality: c.quality, voicing: c.voicing, raw: c.raw }
     }
+  } else if (c.kind === 'frets') {
+    return { kind: 'frets', frets: c.frets, label: c.label, raw: c.raw }
   } else if (c.kind === 'template') {
     const key = titleKey(c.name)
     const template = (ctx.templates || []).find((t) => titleKey(t.name) === key) ?? null

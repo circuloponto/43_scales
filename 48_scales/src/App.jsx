@@ -837,11 +837,15 @@ function App() {
   }, [scaleNamesKey])
   const flatTemplates = useMemo(() => templates.filter((t) => t.type !== 'folder'), [templates])
   const notes = useNotes({ scales: allScales, scaleNameIndex, templates: flatTemplates })
-  // Jump to a scale in the roll (what a scale chip in a note does).
+  // The Notes window: a modal over whichever screen you are on.
+  const [notesOpen, setNotesOpen] = useState(false)
+  // Jump to a scale in the roll (what a scale chip in a note does). The notes
+  // window closes so the roll is what you see.
   const openScaleInRoll = ({ scaleId, root: r = 0, modeStep: m = null }) => {
     setSelectedId(scaleId)
     setRoot(r)
     setModeStep(m)
+    setNotesOpen(false)
     setView('roll')
   }
 
@@ -904,7 +908,8 @@ function App() {
   // Home/End jump to the first / last, Esc clears. Skips when focus is on
   // an editable element so renaming a scale doesn't hijack the keys.
   useEffect(() => {
-    if (view !== 'matrix') return
+    // (not while the Notes window is open: its keys belong to the notes)
+    if (view !== 'matrix' || notesOpen) return
     const onKey = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
@@ -936,13 +941,13 @@ function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, selectedId, hiddenScaleIds])
+  }, [view, notesOpen, selectedId, hiddenScaleIds])
 
   // Ctrl/Cmd + Z / Y for song-level undo/redo when in matrix view (where
   // PianoRoll isn't mounted). In roll view PianoRoll owns the shortcut and
   // routes overflow back here via onFallbackUndo / onFallbackRedo props.
   useEffect(() => {
-    if (view !== 'matrix') return
+    if (view !== 'matrix' || notesOpen) return
     const onKey = (e) => {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
@@ -957,7 +962,7 @@ function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, songs, songGroups, activeSongId])
+  }, [view, notesOpen, songs, songGroups, activeSongId])
 
   const scaleNameEntryOf = (id) => {
     const data = scaleNames[id]
@@ -1392,7 +1397,7 @@ function App() {
       title: custom ? sc.name : `Scale ${String(sc.id).padStart(2, '0')}`,
       body: `[[scale ${custom ? sc.name : sc.id}]]\n\n`,
     })
-    setView('notes')
+    setNotesOpen(true)
   }
   const scaleNotesSection =
     selectedId != null && findScale(selectedId) ? (
@@ -1408,7 +1413,7 @@ function App() {
                 className="scale-note-link"
                 onClick={() => {
                   notes.open(n.id)
-                  setView('notes')
+                  setNotesOpen(true)
                 }}
               >
                 {n.title}
@@ -1438,8 +1443,8 @@ function App() {
       <div className={`frame ${matrixCollapsed ? 'matrix-collapsed' : ''}`}>
         <button
           type="button"
-          className={`notes-trigger ${view === 'notes' ? 'on' : ''}`}
-          onClick={() => setView(view === 'notes' ? 'matrix' : 'notes')}
+          className={`notes-trigger ${notesOpen ? 'on' : ''}`}
+          onClick={() => setNotesOpen((open) => !open)}
           aria-label="notes"
           title="Notes"
         >
@@ -1540,7 +1545,7 @@ function App() {
             modeStep={modeStep}
             settings={settings}
             overlayOpen={
-              settingsOpen || shortcutsOpen || scaleSettingsOpen || finderOpen
+              settingsOpen || shortcutsOpen || scaleSettingsOpen || finderOpen || notesOpen
             }
             songs={songs}
             activeSongId={activeSongId}
@@ -1600,19 +1605,6 @@ function App() {
               }
             }}
             tabSwitchPlayback={settings.tabSwitchPlayback}
-          />
-        ) : view === 'notes' ? (
-          <NotesView
-            store={notes}
-            scales={allScales}
-            customScales={customScales}
-            scaleNameOf={scaleNameOf}
-            scaleNameIndex={scaleNameIndex}
-            templates={flatTemplates}
-            useFlats={!!settings.useFlats}
-            noteNames={NOTE_DISPLAY}
-            onBack={() => setView('matrix')}
-            onOpenScale={openScaleInRoll}
           />
         ) : (
         <>
@@ -2759,6 +2751,29 @@ function App() {
         </div>
       )}
 
+      {notesOpen && (
+        <div className="modal-backdrop notes-backdrop" onClick={() => setNotesOpen(false)}>
+          <div
+            className="modal notes-modal"
+            role="dialog"
+            aria-label="Notes"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <NotesView
+              store={notes}
+              scales={allScales}
+              customScales={customScales}
+              scaleNameOf={scaleNameOf}
+              scaleNameIndex={scaleNameIndex}
+              templates={flatTemplates}
+              useFlats={!!settings.useFlats}
+              noteNames={NOTE_DISPLAY}
+              onClose={() => setNotesOpen(false)}
+              onOpenScale={openScaleInRoll}
+            />
+          </div>
+        </div>
+      )}
       {settingsOpen && (
         <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
           <div

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ArrowLeft, NotebookPen, Plus, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { NotebookPen, Plus, Search, X } from 'lucide-react'
 import NoteEditor from './NoteEditor'
 import { bodyPreview } from './notes'
 
@@ -14,11 +14,24 @@ export default function NotesView({
   templates,
   useFlats,
   noteNames,
-  onBack,
+  onClose,
   onOpenScale,
 }) {
   const [query, setQuery] = useState('')
   const [activeTag, setActiveTag] = useState(null)
+
+  // Esc closes the window, unless Esc was meant for something inside it: a
+  // popover (scale / chord / diagram / link picker) or the [[ suggestions.
+  // Those are still on screen while this runs, so their presence is the signal.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (document.querySelector('.scale-picker, .note-popover, .note-suggest')) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const tagList = useMemo(
     () =>
@@ -63,14 +76,14 @@ export default function NotesView({
   return (
     <div className="notes-view">
       <div className="notes-header">
-        <button type="button" className="notes-back" onClick={onBack}>
-          <ArrowLeft size={14} /> back
-        </button>
         <h2>
           <NotebookPen size={17} /> Notes
         </h2>
         <button type="button" className="notes-new" onClick={() => store.create({})}>
           <Plus size={14} /> New note
+        </button>
+        <button type="button" className="notes-close" aria-label="Close notes" title="Close (Esc)" onClick={onClose}>
+          <X size={16} />
         </button>
       </div>
 

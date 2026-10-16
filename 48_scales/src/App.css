@@ -8257,3 +8257,263 @@
   color: var(--fg);
   border-color: var(--mute);
 }
+
+/* ================= Notes as a window over the page ================= */
+.modal.notes-modal {
+  width: min(1080px, 94vw);
+  height: min(700px, 88vh);
+  padding: 14px 16px 12px;
+  gap: 0;
+  overflow: hidden;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.7);
+}
+.notes-modal .notes-view {
+  flex: 1;
+  height: 100%;
+  gap: 12px;
+}
+/* the corner buttons are behind the window now: no clearance needed */
+.notes-modal .notes-header {
+  padding-right: 0;
+}
+.notes-modal .notes-sidebar {
+  width: 210px;
+}
+.notes-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--mute);
+  cursor: pointer;
+}
+.notes-close:hover {
+  color: var(--fg);
+  border-color: var(--mute);
+}
+/* the app's generic ".modal input" look must not leak into the notes */
+.notes-modal input {
+  margin-top: 0;
+}
+.notes-modal .note-title-input {
+  font-family: var(--sans);
+  font-size: 22px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.notes-modal .note-title-input:hover {
+  border-color: var(--hairline);
+}
+.notes-modal .note-title-input:focus {
+  border-color: var(--accent);
+}
+.notes-modal .notes-search input {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  padding: 8px 0;
+  border: none;
+  border-radius: 0;
+}
+.notes-modal .scale-picker-search {
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+.notes-modal input[type='checkbox'] {
+  padding: 0;
+  margin: 0 8px 0 0;
+}
+
+/* ================= Hand-drawn chord diagrams ================= */
+.fret-diagram {
+  display: block;
+  overflow: visible;
+  user-select: none;
+}
+.fret-diagram .fd-fret {
+  stroke: color-mix(in srgb, var(--fg) 40%, transparent);
+  stroke-width: 1;
+}
+.fret-diagram .fd-nut {
+  stroke: var(--fg);
+  stroke-width: 4;
+}
+.fret-diagram .fd-string {
+  stroke: color-mix(in srgb, var(--fg) 55%, transparent);
+  stroke-width: 1.2;
+}
+.fret-diagram .fd-fretnum {
+  fill: var(--mute);
+  font-family: var(--mono);
+}
+.fret-diagram .fd-fretnum.base {
+  fill: var(--accent);
+  font-weight: 700;
+}
+.fret-diagram .fd-mark.mute {
+  fill: var(--mute);
+  font-family: var(--sans);
+}
+.fret-diagram .fd-mark.open {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.5;
+}
+.fret-diagram .fd-dot circle {
+  fill: var(--accent);
+  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke-width: 1;
+}
+.fret-diagram .fd-dot text {
+  fill: #fff;
+  font-family: var(--sans);
+  font-weight: 700;
+  pointer-events: none;
+}
+.fret-diagram .fd-opennote,
+.fret-diagram .fd-strname {
+  fill: var(--mute);
+  font-family: var(--mono);
+}
+.fret-diagram .fd-ghost {
+  fill: color-mix(in srgb, var(--accent) 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.fret-diagram.interactive .fd-cell:hover .fd-ghost {
+  opacity: 0.7;
+}
+.fret-diagram .fd-hit {
+  fill: rgba(0, 0, 0, 0);
+}
+.fret-diagram.interactive .fd-hit {
+  cursor: pointer;
+}
+.fret-diagram.interactive .fd-hit.marker:hover {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* in a note */
+.fret-card {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 10px 6px 0;
+  padding: 8px 12px 6px;
+  vertical-align: top;
+  background: color-mix(in srgb, var(--off) 40%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.fret-card-title {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+}
+.fret-card-notes {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--mute);
+}
+.fret-card-edit {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--mute);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+}
+.fret-card:hover .fret-card-edit,
+.fret-card-edit:focus-visible {
+  opacity: 1;
+}
+.fret-card-edit:hover {
+  color: var(--fg);
+  border-color: var(--hairline);
+}
+
+/* the drawing popover */
+.note-popover.fret-editor {
+  width: 340px;
+}
+.fret-editor-help {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+.fret-editor-board {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+}
+.fret-editor-window {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.fret-editor-window button,
+.fret-editor-actions button:not(.scale-picker-confirm),
+.fret-editor-use {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.fret-editor-window button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.fret-editor-window button:hover:not(:disabled),
+.fret-editor-actions button:hover:not(.scale-picker-confirm),
+.fret-editor-use:hover {
+  border-color: var(--accent);
+}
+.fret-editor-use {
+  padding: 1px 8px;
+  margin-left: 4px;
+}
+.fret-editor-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.fret-editor-k {
+  margin-right: 4px;
+  color: var(--mute);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.fret-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fret-editor-actions .scale-picker-confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

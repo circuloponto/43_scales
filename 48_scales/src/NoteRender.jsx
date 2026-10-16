@@ -4,6 +4,8 @@ import { resolveNoteList, resolveWiki } from './notes'
 import { makeScaleContext } from './scaleContext'
 import { pcName } from './chordVocab'
 import ChordCard from './ChordCard'
+import FretDiagram from './FretDiagram'
+import { pitchesOf } from './fretShape'
 
 // Draws a note's Markdown as React elements (never as HTML strings, so nothing
 // typed into a note can inject markup). ctx comes from NotesView:
@@ -105,6 +107,36 @@ function renderInline(nodes, ctx, keyBase = 'i') {
         if (r.kind === 'chord') {
           return (
             <ChordCard key={key} rootPc={r.rootPc} quality={r.quality} voicing={r.voicing} useFlats={ctx.useFlats} />
+          )
+        }
+        if (r.kind === 'frets') {
+          // A hand-drawn shape. A span (not a div) so it may sit inside a paragraph.
+          return (
+            <span key={key} className="fret-card">
+              {r.label && <span className="fret-card-title">{r.label}</span>}
+              <FretDiagram frets={r.frets} useFlats={ctx.useFlats} size="sm" />
+              <span className="fret-card-notes">
+                {pitchesOf(r.frets).map((p) => pcName(p.pc, ctx.useFlats)).join(' ')}
+              </span>
+              {ctx.onEditFrets && (
+                <button
+                  type="button"
+                  className="fret-card-edit"
+                  title="Edit this diagram"
+                  aria-label="Edit diagram"
+                  onClick={(e) =>
+                    ctx.onEditFrets({
+                      raw: r.raw,
+                      frets: r.frets,
+                      label: r.label,
+                      rect: e.currentTarget.getBoundingClientRect(),
+                    })
+                  }
+                >
+                  ✎
+                </button>
+              )}
+            </span>
           )
         }
         if (r.kind === 'template') {
