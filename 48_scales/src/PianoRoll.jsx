@@ -919,9 +919,26 @@ export default function PianoRoll({
   // happens uses ctxAt(beat) instead.
   const scale = activeCtx ? activeCtx.scale : null
   const root = activeCtx ? activeCtx.root : homeRoot
-  const [totalBeats, setTotalBeats] = useState(
-    initialTotalBeats ?? DEFAULT_BEATS
-  )
+  // The saved length can be missing or shorter than the content (an imported
+  // session carries no length), so the timeline always opens long enough to
+  // hold every note and scale zone, rounded up to a whole measure.
+  const [totalBeats, setTotalBeats] = useState(() => {
+    const base = initialTotalBeats ?? DEFAULT_BEATS
+    const sig = initialTimeSig && initialTimeSig.num && initialTimeSig.den ? initialTimeSig : { num: 4, den: 4 }
+    const perMeasure = sig.num * (CELLS_PER_WHOLE / sig.den)
+    let end = 0
+    for (const t of initialTracks ?? []) {
+      const entries = t.notes instanceof Map ? t.notes.entries() : t.notes ?? []
+      for (const [key, len] of entries) {
+        const beat = parseFloat(String(key).split('-')[0])
+        if (Number.isFinite(beat)) end = Math.max(end, beat + (Number(len) || 1))
+      }
+      for (const z of t.zones ?? []) end = Math.max(end, z.end ?? 0)
+    }
+    for (const z of initialZones ?? []) end = Math.max(end, z.end ?? 0)
+    const fit = Math.ceil((end + 1) / perMeasure) * perMeasure
+    return Math.min(MAX_BEATS, Math.max(base, fit))
+  })
   const [bpm, setBpm] = useState(initialBpm ?? DEFAULT_BPM)
   const [swingPct, setSwingPct] = useState(initialSwing ?? DEFAULT_SWING)
   // Time signature. `num` = beats per measure, `den` = note value that gets
